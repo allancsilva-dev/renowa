@@ -9,7 +9,9 @@
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",
-    "strict": true
+    "strict": true,
+    "emitDeclarationOnly": true
+    
   },
   "include": ["vite.config.ts"]
 }
