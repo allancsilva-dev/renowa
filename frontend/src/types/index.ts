@@ -13,60 +13,63 @@ export interface AuthUser {
 
 // ─── Clientes ────────────────────────────────────────────────────────────────
 
-export interface Endereco {
-  logradouro?: string;
-  numero?: string;
-  complemento?: string;
-  bairro?: string;
-  cidade?: string;
-  estado?: string;
-  cep?: string;
-}
-
 export interface Client {
   id: number;
   uuid: string;
   tenant_id: string;
   razao_social: string;
-  nome_fantasia: string | null;
-  cnpj_cpf: string | null;
+  cnpj: string | null;
   email: string | null;
-  telefone: string | null;
-  endereco: Endereco | null;
-  observacoes: string | null;
-  is_active: boolean;
-  limite_credito: number | null;
+  tel: string | null;
+  endereco: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  cep: string | null;
+  contato: string | null;
+  inscricao_estadual: string | null;
+  suframa: string | null;
+  pgt_padrao: string | null;
+  prazo: string | null;
+  local_entrega: string | null;
+  observacao: string | null;
+  transportadora_id: number | null;
   created_at: string;
   updated_at: string;
 }
 
 // ─── Pedidos ─────────────────────────────────────────────────────────────────
 
-export type OrderStatus =
-  | 'RASCUNHO'
-  | 'ENVIADO'
-  | 'CONFIRMADO'
-  | 'FATURADO'
-  | 'CANCELADO';
+export type OrderStatus = 'em_aberto' | 'concluido' | 'cancelado';
 
 export interface OrderItem {
   uuid: string;
-  produto: Product;
-  quantidade: number;
-  preco_unitario: number;
-  desconto_percentual: number;
-  valor_total: number;
+  pedido_id: number;
+  produto_id: number | null;
+  codigo_manual: string | null;
+  descricao_manual: string | null;
+  qtd_caixas: number | null;
+  qtd_unitaria: number | null;
+  preco_unitario: number | null;
+  desconto_perc: number | null;
+  total_item: number | null;
 }
 
 export interface Order {
   uuid: string;
-  numero_pedido: number;
-  cliente: Client;
+  numero_pedido: number | null;
+  cliente_id: number | null;
+  vendedor_id: number | null;
+  fornecedor_id: number | null;
+  transportadora_id: number | null;
+  data: string | null;
   status: OrderStatus;
-  data_pedido: string;
-  data_entrega_prevista: string | null;
-  valor_total: number;
-  desconto_total: number;
+  total_sem_imposto: number | null;
+  total_com_imposto: number | null;
+  pgt: string | null;
+  prazo: string | null;
+  local_entrega: string | null;
+  observacao: string | null;
   itens: OrderItem[];
   created_at: string;
   updated_at: string;
@@ -76,30 +79,24 @@ export interface Order {
 
 export interface Product {
   uuid: string;
+  fornecedor_id: number | null;
   codigo: string | null;
   descricao: string;
-  unidade: string;
-  preco_venda: number;
-  preco_custo: number | null;
-  estoque_atual: number;
-  estoque_minimo: number | null;
-  is_active: boolean;
+  preco_base: number | null;
 }
 
 // ─── Financeiro ──────────────────────────────────────────────────────────────
 
-export type MovimentacaoTipo = 'RECEITA' | 'DESPESA';
-export type MovimentacaoStatus = 'PENDENTE' | 'PAGO' | 'CANCELADO' | 'ATRASADO';
+export type MovimentacaoTipo = 'Custo Fixo' | 'Custo Rotativo' | 'Venda';
 
 export interface FinanceMovement {
   uuid: string;
   tipo: MovimentacaoTipo;
-  status: MovimentacaoStatus;
-  descricao: string;
   valor: number;
-  data_vencimento: string;
-  data_pagamento: string | null;
-  cliente: Client | null;
+  data: string;
+  descricao: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── API Response ─────────────────────────────────────────────────────────────
@@ -122,12 +119,28 @@ export interface ApiResponse<T> {
 
 export const clientSchema = z.object({
   razao_social: z.string().min(1, 'Campo obrigatório').max(255),
-  nome_fantasia: z.string().max(255).optional(),
-  cnpj_cpf: z.string().max(20).optional(),
+  cnpj: z.string().max(20).optional(),
   email: z.string().email('E-mail inválido').optional().or(z.literal('')),
-  telefone: z.string().max(30).optional(),
-  limite_credito: z.number().min(0).optional(),
-  observacoes: z.string().optional(),
+  tel: z.string().max(30).optional(),
+  endereco: z.string().max(255).optional(),
+  bairro: z.string().max(100).optional(),
+  cidade: z.string().max(100).optional(),
+  uf: z.string().length(2, 'UF deve ter 2 caracteres').optional(),
+  cep: z.string().max(10).optional(),
+  contato: z.string().max(100).optional(),
+  inscricao_estadual: z.string().max(50).optional(),
+  suframa: z.string().max(50).optional(),
+  pgt_padrao: z.string().max(100).optional(),
+  prazo: z.string().max(100).optional(),
+  local_entrega: z.string().max(255).optional(),
+  observacao: z.string().optional(),
+  transportadora_id: z.number().int().optional(),
 });
 
 export type ClientFormData = z.infer<typeof clientSchema>;
+
+export const orderStatusLabel: Record<OrderStatus, string> = {
+  em_aberto: 'Em Aberto',
+  concluido: 'Concluído',
+  cancelado: 'Cancelado',
+};

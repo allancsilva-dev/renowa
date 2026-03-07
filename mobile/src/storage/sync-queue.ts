@@ -1,7 +1,7 @@
 import { getDatabase } from './database';
 
 export type SyncOperation = 'CREATE' | 'UPDATE' | 'DELETE';
-export type SyncEntity = 'clientes' | 'pedidos' | 'produtos' | 'fornecedores' | 'transportadoras';
+export type SyncEntity = 'clientes' | 'pedidos' | 'itens_pedido' | 'produtos' | 'fornecedores' | 'transportadoras';
 
 export interface QueueItem {
   id: number;

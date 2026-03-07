@@ -30,8 +30,8 @@ export class ResponseInterceptor implements NestInterceptor {
           const obj = value as Record<string, unknown>;
           // Já está no formato correto
           if ('data' in obj || 'error' in obj) return value;
-          // Resposta de sync com server_time
-          if ('results' in obj && 'server_time' in obj) return { data: value };
+          // Resposta de sync push — passa sem re-envolver (mobile lê data.results diretamente)
+          if ('results' in obj) return value;
         }
 
         return { data: value };
