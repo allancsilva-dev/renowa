@@ -1,13 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { Order, OrderStatus } from './entities/order.entity';
+import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
-import { ClientsService } from '../clients/clients.service';
-import { ProductsService } from '../products/products.service';
-import { TransportService } from '../transport/transport.service';
+import { RequestUser } from '../common/types/jwt-payload.type';
 
 @Injectable()
 export class OrdersService {
@@ -17,95 +15,115 @@ export class OrdersService {
     @InjectRepository(OrderItem)
     private readonly itemRepo: Repository<OrderItem>,
     private readonly dataSource: DataSource,
-    private readonly clientsService: ClientsService,
-    private readonly productsService: ProductsService,
-    private readonly transportService: TransportService,
   ) {}
 
-  async create(dto: CreateOrderDto, tenantId: string): Promise<Order> {
-    return this.dataSource.transaction(async (em) => {
-      // CHANGELOG #3: UUID→ID resolution
-      const cliente = await this.clientsService.findOne(dto.cliente_uuid, tenantId);
+  /** UUID→ID resolution — mobile envia uuid, servidor resolve para id */
+  private async resolveUuid(table: string, uuid: string, tenantId: string): Promise<number | null> {
+    if (!uuid) return null;
+    const rows = await this.dataSource.query(
+      `SELECT id FROM ${table} WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+      [uuid, tenantId],
+    );
+    return (rows[0]?.id as number) ?? null;
+  }
 
-      let transportadora_id: number | null = null;
-      if (dto.transportadora_uuid) {
-        const t = await this.transportService.findOne(dto.transportadora_uuid, tenantId);
-        transportadora_id = t.id;
-      }
+  async create(dto: CreateOrderDto, user: RequestUser): Promise<Order> {
+    return this.dataSource.transaction(async (em) => {
+      const tenantId = user.tenantId;
+
+      const cliente_id = dto.cliente_uuid
+        ? await this.resolveUuid('clientes', dto.cliente_uuid, tenantId)
+        : null;
+
+      const vendedor_id = dto.vendedor_uuid
+        ? await this.resolveUuid('usuarios', dto.vendedor_uuid, tenantId)
+        : null;
+
+      const fornecedor_id = dto.fornecedor_uuid
+        ? await this.resolveUuid('fornecedores', dto.fornecedor_uuid, tenantId)
+        : null;
+
+      const transportadora_id = dto.transportadora_uuid
+        ? await this.resolveUuid('transportadoras', dto.transportadora_uuid, tenantId)
+        : null;
 
       const order = em.create(Order, {
+        uuid: dto.uuid,
         tenant_id: tenantId,
-        cliente_id: cliente.id,
+        cliente_id,
+        vendedor_id,
+        fornecedor_id,
         transportadora_id,
-        status: dto.status ?? OrderStatus.RASCUNHO,
-        data_pedido: dto.data_pedido,
-        data_entrega_prevista: dto.data_entrega_prevista ?? null,
-        observacoes: dto.observacoes ?? null,
-        valor_total: 0,
-        desconto_total: 0,
+        data: dto.data ?? null,
+        status: dto.status ?? 'em_aberto',
+        total_sem_imposto: dto.total_sem_imposto ?? null,
+        total_com_imposto: dto.total_com_imposto ?? null,
+        pgt: dto.pgt ?? null,
+        prazo: dto.prazo ?? null,
+        local_entrega: dto.local_entrega ?? null,
+        observacao: dto.observacao ?? null,
       });
 
       const savedOrder = await em.save(order);
 
-      let valorTotal = 0;
-      let descontoTotal = 0;
+      if (dto.itens && dto.itens.length > 0) {
+        const itens: OrderItem[] = [];
 
-      const itens: OrderItem[] = [];
-      for (const itemDto of dto.itens) {
-        // CHANGELOG #3: UUID→ID resolution para produtos
-        const produto = await this.productsService.findOne(itemDto.produto_uuid, tenantId);
+        for (const itemDto of dto.itens) {
+          const produto_id = itemDto.produto_uuid
+            ? await this.resolveUuid('produtos', itemDto.produto_uuid, tenantId)
+            : null;
 
-        const desconto = itemDto.desconto_percentual ?? 0;
-        const valorBruto = itemDto.quantidade * itemDto.preco_unitario;
-        const valorDesconto = valorBruto * (desconto / 100);
-        const valorItem = valorBruto - valorDesconto;
+          const item = em.create(OrderItem, {
+            uuid: itemDto.uuid,
+            tenant_id: tenantId,
+            pedido_id: savedOrder.id,
+            produto_id,
+            codigo_manual: itemDto.codigo_manual ?? null,
+            descricao_manual: itemDto.descricao_manual ?? null,
+            qtd_caixas: itemDto.qtd_caixas ?? null,
+            qtd_unitaria: itemDto.qtd_unitaria ?? null,
+            preco_unitario: itemDto.preco_unitario ?? null,
+            desconto_perc: itemDto.desconto_perc ?? null,
+            total_item: itemDto.total_item ?? null,
+          });
 
-        valorTotal += valorItem;
-        descontoTotal += valorDesconto;
+          itens.push(item);
+        }
 
-        const item = em.create(OrderItem, {
-          tenant_id: tenantId,
-          pedido_id: savedOrder.id,
-          produto_id: produto.id,
-          quantidade: itemDto.quantidade,
-          preco_unitario: itemDto.preco_unitario,
-          desconto_percentual: desconto,
-          valor_total: valorItem,
-          observacoes: itemDto.observacoes ?? null,
-        });
-
-        itens.push(item);
+        await em.save(itens);
       }
 
-      await em.save(itens);
-
-      await em.update(Order, savedOrder.id, {
-        valor_total: valorTotal,
-        desconto_total: descontoTotal,
-      });
-
-      return { ...savedOrder, valor_total: valorTotal, desconto_total: descontoTotal, itens };
+      return savedOrder;
     });
   }
 
   async findAll(
     tenantId: string,
     pagination: PaginationDto,
-    status?: OrderStatus,
+    user: RequestUser,
+    status?: string,
   ): Promise<PaginatedResponse<Order>> {
     const { page = 1, limit = 20 } = pagination;
 
     const qb = this.orderRepo
       .createQueryBuilder('o')
       .leftJoinAndSelect('o.cliente', 'c')
-      .leftJoinAndSelect('o.transportadora', 't')
       .where('o.tenant_id = :tenantId', { tenantId })
       .andWhere('o.deleted_at IS NULL');
+
+    // VENDEDOR com somente essa role vê apenas os próprios pedidos
+    if (user.roles.length === 1 && user.roles[0] === 'VENDEDOR') {
+      qb.andWhere(
+        `o.vendedor_id = (SELECT id FROM usuarios WHERE uuid = :sub AND tenant_id = :tenantId LIMIT 1)`,
+        { sub: user.sub, tenantId },
+      );
+    }
 
     if (status) qb.andWhere('o.status = :status', { status });
 
     const [data, total] = await qb
-      .orderBy('o.numero_pedido', 'DESC')
+      .orderBy('o.created_at', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
@@ -116,14 +134,14 @@ export class OrdersService {
   async findOne(uuid: string, tenantId: string): Promise<Order> {
     const order = await this.orderRepo.findOne({
       where: { uuid, tenant_id: tenantId },
-      relations: ['cliente', 'transportadora', 'itens', 'itens.produto'],
+      relations: ['cliente', 'transportadora', 'fornecedor', 'itens', 'itens.produto'],
     });
 
-    if (!order) throw new NotFoundException(`Pedido ${uuid} não encontrado`);
+    if (!order) throw new NotFoundException(`Pedido ${uuid} não encontrado.`);
     return order;
   }
 
-  async updateStatus(uuid: string, status: OrderStatus, tenantId: string): Promise<Order> {
+  async updateStatus(uuid: string, status: string, tenantId: string): Promise<Order> {
     const order = await this.findOne(uuid, tenantId);
     order.status = status;
     return this.orderRepo.save(order);

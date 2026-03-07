@@ -4,17 +4,9 @@ import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
-import { ClientsModule } from '../clients/clients.module';
-import { ProductsModule } from '../products/products.module';
-import { TransportModule } from '../transport/transport.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Order, OrderItem]),
-    ClientsModule,
-    ProductsModule,
-    TransportModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Order, OrderItem])],
   controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],

@@ -1,61 +1,61 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, UseGuards,
 } from '@nestjs/common';
+import { IsString } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { OrderStatus } from './entities/order.entity';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
-import { IsEnum, IsOptional } from 'class-validator';
 
 class UpdateStatusDto {
-  @IsEnum(OrderStatus)
-  status: OrderStatus;
+  @IsString()
+  status: string;
 }
 
+/**
+ * Visualizar: ADMIN (todos), VENDEDOR (próprios), FINANCEIRO (todos), GESTAO (todos)
+ * Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO
+ */
 @Controller('pedidos')
 @UseGuards(RolesGuard)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Post()
-  @Roles('ADMIN', 'VENDAS')
+  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   async create(@Body() dto: CreateOrderDto, @CurrentUser() user: RequestUser) {
-    const data = await this.ordersService.create(dto, user.tenantId);
-    return { data };
+    return this.ordersService.create(dto, user);
   }
 
   @Get()
   async findAll(
     @Query() pagination: PaginationDto,
-    @Query('status') status: OrderStatus,
+    @Query('status') status: string,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.ordersService.findAll(user.tenantId, pagination, status);
+    return this.ordersService.findAll(user.tenantId, pagination, user, status);
   }
 
   @Get(':uuid')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
-    const data = await this.ordersService.findOne(uuid, user.tenantId);
-    return { data };
+    return this.ordersService.findOne(uuid, user.tenantId);
   }
 
   @Patch(':uuid/status')
-  @Roles('ADMIN', 'VENDAS')
+  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   async updateStatus(
     @Param('uuid') uuid: string,
     @Body() dto: UpdateStatusDto,
     @CurrentUser() user: RequestUser,
   ) {
-    const data = await this.ordersService.updateStatus(uuid, dto.status, user.tenantId);
-    return { data };
+    return this.ordersService.updateStatus(uuid, dto.status, user.tenantId);
   }
 
   @Delete(':uuid')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'GESTAO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.ordersService.remove(uuid, user.tenantId);

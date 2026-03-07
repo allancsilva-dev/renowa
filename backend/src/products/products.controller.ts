@@ -1,15 +1,5 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Body,
-  Param,
-  Query,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, UseGuards,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -19,16 +9,16 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
 
+/** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */
 @Controller('produtos')
 @UseGuards(RolesGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Post()
-  @Roles('ADMIN', 'ESTOQUE')
+  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   async create(@Body() dto: CreateProductDto, @CurrentUser() user: RequestUser) {
-    const data = await this.productsService.create(dto, user.tenantId);
-    return { data };
+    return this.productsService.create(dto, user.tenantId);
   }
 
   @Get()
@@ -42,23 +32,21 @@ export class ProductsController {
 
   @Get(':uuid')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
-    const data = await this.productsService.findOne(uuid, user.tenantId);
-    return { data };
+    return this.productsService.findOne(uuid, user.tenantId);
   }
 
   @Patch(':uuid')
-  @Roles('ADMIN', 'ESTOQUE')
+  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   async update(
     @Param('uuid') uuid: string,
     @Body() dto: Partial<CreateProductDto>,
     @CurrentUser() user: RequestUser,
   ) {
-    const data = await this.productsService.update(uuid, dto, user.tenantId);
-    return { data };
+    return this.productsService.update(uuid, dto, user.tenantId);
   }
 
   @Delete(':uuid')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'GESTAO')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.productsService.remove(uuid, user.tenantId);

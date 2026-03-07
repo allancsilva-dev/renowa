@@ -4,14 +4,6 @@ import { Repository } from 'typeorm';
 import { Transport } from './entities/transport.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 
-export class CreateTransportDto {
-  razao_social: string;
-  nome_fantasia?: string;
-  cnpj?: string;
-  email?: string;
-  telefone?: string;
-}
-
 @Injectable()
 export class TransportService {
   constructor(
@@ -19,7 +11,10 @@ export class TransportService {
     private readonly transportRepo: Repository<Transport>,
   ) {}
 
-  async create(dto: CreateTransportDto, tenantId: string): Promise<Transport> {
+  async create(
+    dto: { uuid: string; razao_social: string; cnpj?: string; telefone?: string; endereco_completo?: string },
+    tenantId: string,
+  ): Promise<Transport> {
     const t = this.transportRepo.create({ ...dto, tenant_id: tenantId });
     return this.transportRepo.save(t);
   }
@@ -37,11 +32,11 @@ export class TransportService {
 
   async findOne(uuid: string, tenantId: string): Promise<Transport> {
     const t = await this.transportRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!t) throw new NotFoundException(`Transportadora ${uuid} não encontrada`);
+    if (!t) throw new NotFoundException(`Transportadora ${uuid} não encontrada.`);
     return t;
   }
 
-  async update(uuid: string, dto: Partial<CreateTransportDto>, tenantId: string): Promise<Transport> {
+  async update(uuid: string, dto: Record<string, unknown>, tenantId: string): Promise<Transport> {
     const t = await this.findOne(uuid, tenantId);
     Object.assign(t, dto);
     return this.transportRepo.save(t);

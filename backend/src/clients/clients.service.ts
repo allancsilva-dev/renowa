@@ -1,10 +1,6 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Client } from './entities/client.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -15,10 +11,27 @@ export class ClientsService {
   constructor(
     @InjectRepository(Client)
     private readonly clientRepo: Repository<Client>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(dto: CreateClientDto, tenantId: string): Promise<Client> {
-    const client = this.clientRepo.create({ ...dto, tenant_id: tenantId });
+    let transportadora_id: number | null = null;
+
+    if (dto.transportadora_uuid) {
+      const result = await this.dataSource.query(
+        `SELECT id FROM transportadoras WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+        [dto.transportadora_uuid, tenantId],
+      );
+      if (result[0]) transportadora_id = result[0].id as number;
+    }
+
+    const { transportadora_uuid: _t, uuid, ...rest } = dto;
+    const client = this.clientRepo.create({
+      ...rest,
+      uuid,
+      transportadora_id,
+      tenant_id: tenantId,
+    });
     return this.clientRepo.save(client);
   }
 
@@ -36,35 +49,33 @@ export class ClientsService {
 
     if (search) {
       qb.andWhere(
-        '(c.razao_social ILIKE :search OR c.nome_fantasia ILIKE :search OR c.cnpj_cpf ILIKE :search)',
-        { search: `%${search}%` },
+        '(c.razao_social ILIKE :s OR c.cnpj ILIKE :s OR c.cidade ILIKE :s OR c.contato ILIKE :s)',
+        { s: `%${search}%` },
       );
     }
 
     const [data, total] = await qb
-      .orderBy('c.razao_social', 'ASC')
+      .orderBy('c.created_at', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
 
-    return {
-      data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-    };
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
   async findOne(uuid: string, tenantId: string): Promise<Client> {
     const client = await this.clientRepo.findOne({
       where: { uuid, tenant_id: tenantId },
+      relations: ['transportadora'],
     });
-
-    if (!client) throw new NotFoundException(`Cliente ${uuid} não encontrado`);
+    if (!client) throw new NotFoundException(`Cliente ${uuid} não encontrado.`);
     return client;
   }
 
   async update(uuid: string, dto: UpdateClientDto, tenantId: string): Promise<Client> {
     const client = await this.findOne(uuid, tenantId);
-    Object.assign(client, dto);
+    const { transportadora_uuid: _t, uuid: _u, ...rest } = dto;
+    Object.assign(client, rest);
     return this.clientRepo.save(client);
   }
 

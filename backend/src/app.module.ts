@@ -6,6 +6,7 @@ import { ClsModule } from 'nestjs-cls';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 
 import { TenantContextInterceptor } from './common/interceptors/tenant-context.interceptor';
+import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 
@@ -37,6 +38,7 @@ import { UsersModule } from './users/users.module';
         autoLoadEntities: true,
         synchronize: config.get<string>('NODE_ENV') !== 'production',
         logging: config.get<string>('NODE_ENV') === 'development',
+        timezone: 'UTC',
       }),
     }),
 
@@ -62,6 +64,9 @@ import { UsersModule } from './users/users.module';
 
     // CHANGELOG #1: Interceptor global popula CLS após Guard — req.user já disponível
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+
+    // Envolve automaticamente responses de sucesso em { data: ... }
+    { provide: APP_INTERCEPTOR, useClass: ResponseInterceptor },
   ],
 })
 export class AppModule {}

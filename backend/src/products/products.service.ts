@@ -1,34 +1,31 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
-import { SuppliersService } from '../suppliers/suppliers.service';
 
 @Injectable()
 export class ProductsService {
   constructor(
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
-    private readonly suppliersService: SuppliersService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(dto: CreateProductDto, tenantId: string): Promise<Product> {
     let fornecedor_id: number | null = null;
 
     if (dto.fornecedor_uuid) {
-      // CHANGELOG #3: UUID→ID resolution
-      const supplier = await this.suppliersService.findOne(dto.fornecedor_uuid, tenantId);
-      fornecedor_id = supplier.id;
+      const rows = await this.dataSource.query(
+        `SELECT id FROM fornecedores WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+        [dto.fornecedor_uuid, tenantId],
+      );
+      if (rows[0]) fornecedor_id = rows[0].id as number;
     }
 
-    const product = this.productRepo.create({
-      ...dto,
-      fornecedor_id,
-      tenant_id: tenantId,
-    });
-
+    const { fornecedor_uuid: _f, uuid, ...rest } = dto;
+    const product = this.productRepo.create({ ...rest, uuid, fornecedor_id, tenant_id: tenantId });
     return this.productRepo.save(product);
   }
 
@@ -47,8 +44,8 @@ export class ProductsService {
 
     if (search) {
       qb.andWhere(
-        '(p.descricao ILIKE :search OR p.codigo ILIKE :search)',
-        { search: `%${search}%` },
+        '(p.descricao ILIKE :s OR p.codigo ILIKE :s)',
+        { s: `%${search}%` },
       );
     }
 
@@ -58,10 +55,7 @@ export class ProductsService {
       .take(limit)
       .getManyAndCount();
 
-    return {
-      data,
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-    };
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
   async findOne(uuid: string, tenantId: string): Promise<Product> {
@@ -69,14 +63,14 @@ export class ProductsService {
       where: { uuid, tenant_id: tenantId },
       relations: ['fornecedor'],
     });
-
-    if (!product) throw new NotFoundException(`Produto ${uuid} não encontrado`);
+    if (!product) throw new NotFoundException(`Produto ${uuid} não encontrado.`);
     return product;
   }
 
   async update(uuid: string, dto: Partial<CreateProductDto>, tenantId: string): Promise<Product> {
     const product = await this.findOne(uuid, tenantId);
-    Object.assign(product, dto);
+    const { fornecedor_uuid: _f, uuid: _u, ...rest } = dto;
+    Object.assign(product, rest);
     return this.productRepo.save(product);
   }
 

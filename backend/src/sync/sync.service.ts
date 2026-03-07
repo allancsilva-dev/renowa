@@ -1,17 +1,14 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import { DataSource, QueryRunner } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { SyncItemDto, SyncEntity, SyncPullDto } from './dto/sync.dto';
-import { Client } from '../clients/entities/client.entity';
-import { Order } from '../orders/entities/order.entity';
-import { Product } from '../products/entities/product.entity';
-import { Supplier } from '../suppliers/entities/supplier.entity';
-import { Transport } from '../transport/entities/transport.entity';
 
-interface SyncResult {
+export interface SyncItemResult {
   uuid: string;
   status: 'ok' | 'error';
-  error?: string;
+  id?: number;
+  numero_pedido?: number | null;
+  message?: string;
 }
 
 /**
@@ -19,7 +16,16 @@ interface SyncResult {
  * CHANGELOG #4: Transaction por item — falha em um item não afeta os demais.
  * CHANGELOG #12: server_time em todo response de sync.
  * CHANGELOG #3: UUID→ID resolution — mobile envia uuid, servidor resolve para id.
- * CHANGELOG #13: Cursor por offset (limitação conhecida — migrar para cursor por updated_at na v2.0).
+ * CHANGELOG #13: Cursor por offset (limitação conhecida — migrar para updated_at na v2.0).
+ *
+ * Estratégia LWW (Last Write Wins):
+ * - UPDATE: se updated_at_banco > updated_at_recebido → descartar (banco é mais recente)
+ * - Limitação: dois usuários editando o mesmo registro offline → o segundo sobrescreve tudo.
+ *   Planejar field-level merge na v2.0.
+ *
+ * Idempotência:
+ * - CREATE com UUID já existente → retornar registro atual (nunca duplicar)
+ * - numero_pedido: gerado via nextval('pedidos_numero_seq') apenas na criação
  */
 @Injectable()
 export class SyncService {
@@ -28,93 +34,208 @@ export class SyncService {
     private readonly dataSource: DataSource,
   ) {}
 
-  // ──────────────────────────────────────────────
-  // PUSH — mobile envia mudanças offline
-  // CHANGELOG #4: cada item em sua própria transação
-  // ──────────────────────────────────────────────
+  // ── Helpers ──────────────────────────────────────────────
+
+  /** UUID→ID resolution — resolve uuid para id interno (CHANGELOG #3) */
+  private async resolveUuid(
+    qr: QueryRunner,
+    table: string,
+    uuid: string,
+    tenantId: string,
+  ): Promise<number | null> {
+    if (!uuid) return null;
+    const rows = await qr.query(
+      `SELECT id FROM ${table} WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+      [uuid, tenantId],
+    );
+    return (rows[0]?.id as number) ?? null;
+  }
+
+  // ── PUSH ─────────────────────────────────────────────────
+
+  /**
+   * Processa cada item em transação isolada (CHANGELOG #4).
+   * Falha em um item não afeta os demais.
+   */
   async pushItems(
     items: SyncItemDto[],
     tenantId: string,
-  ): Promise<{ results: SyncResult[]; server_time: string }> {
-    const results: SyncResult[] = [];
+  ): Promise<{ results: SyncItemResult[]; server_time: string }> {
+    const results: SyncItemResult[] = [];
 
     for (const item of items) {
-      try {
-        await this.dataSource.transaction(async (em) => {
-          switch (item.entity) {
-            case SyncEntity.CLIENTES:
-              await this.upsertEntity(em.getRepository(Client), item, tenantId);
-              break;
-            case SyncEntity.PRODUTOS:
-              await this.upsertEntity(em.getRepository(Product), item, tenantId);
-              break;
-            case SyncEntity.FORNECEDORES:
-              await this.upsertEntity(em.getRepository(Supplier), item, tenantId);
-              break;
-            case SyncEntity.TRANSPORTADORAS:
-              await this.upsertEntity(em.getRepository(Transport), item, tenantId);
-              break;
-            case SyncEntity.PEDIDOS:
-              await this.upsertEntity(em.getRepository(Order), item, tenantId);
-              break;
-            default:
-              throw new BadRequestException(`Entidade desconhecida: ${item.entity as string}`);
-          }
-        });
+      const qr = this.dataSource.createQueryRunner();
+      await qr.connect();
+      await qr.startTransaction();
 
-        results.push({ uuid: item.uuid, status: 'ok' });
+      try {
+        const result = await this.processItem(qr, item, tenantId);
+        await qr.commitTransaction();
+        results.push({ uuid: item.uuid, status: 'ok', ...result });
       } catch (err) {
-        // CHANGELOG #4: erro em um item não propaga — processa os demais
+        await qr.rollbackTransaction();
         results.push({
           uuid: item.uuid,
           status: 'error',
-          error: err instanceof Error ? err.message : 'Erro desconhecido',
+          message: err instanceof Error ? err.message : 'Erro desconhecido',
         });
+      } finally {
+        await qr.release();
       }
     }
 
     return { results, server_time: new Date().toISOString() };
   }
 
-  private async upsertEntity<T extends { uuid: string; tenant_id: string }>(
-    repo: Repository<T>,
+  private async processItem(
+    qr: QueryRunner,
     item: SyncItemDto,
     tenantId: string,
-  ): Promise<void> {
-    if (item.operation === 'DELETE') {
-      await repo
-        .createQueryBuilder()
-        .softDelete()
-        .where('uuid = :uuid AND tenant_id = :tenantId', { uuid: item.uuid, tenantId })
-        .execute();
-      return;
-    }
+  ): Promise<{ id?: number; numero_pedido?: number | null }> {
+    const { entity, uuid, operation, payload, client_timestamp } = item;
+    const table = entity as string;
 
-    const existing = await repo.findOne({
-      where: { uuid: item.uuid, tenant_id: tenantId } as Parameters<typeof repo.findOne>[0]['where'],
-    });
-
-    if (existing) {
-      await repo.update(
-        (existing as { id: number }).id,
-        { ...item.payload, tenant_id: tenantId } as Parameters<typeof repo.update>[1],
+    // ── DELETE ──────────────────────────────────────────────
+    if (operation === 'DELETE') {
+      await qr.query(
+        `UPDATE ${table} SET deleted_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
+        [uuid, tenantId],
       );
-    } else {
-      const entity = repo.create({
-        ...item.payload,
-        uuid: item.uuid,
-        tenant_id: tenantId,
-      } as Parameters<typeof repo.create>[0]);
-      await repo.save(entity);
+      return {};
     }
+
+    // ── Idempotência: verificar se já existe ─────────────────
+    const existing = await qr.query(
+      `SELECT id, updated_at${entity === SyncEntity.PEDIDOS ? ', numero_pedido' : ''} FROM ${table} WHERE uuid = $1 AND tenant_id = $2`,
+      [uuid, tenantId],
+    );
+
+    if (existing.length > 0 && operation === 'CREATE') {
+      // Idempotência — registro já existe, retornar sem duplicar
+      const row = existing[0] as { id: number; numero_pedido?: number };
+      return { id: row.id, numero_pedido: row.numero_pedido ?? null };
+    }
+
+    // ── UPDATE com LWW ───────────────────────────────────────
+    if (existing.length > 0 && operation === 'UPDATE') {
+      const row = existing[0] as { id: number; updated_at: string; numero_pedido?: number };
+
+      if (client_timestamp && new Date(row.updated_at) > new Date(client_timestamp)) {
+        // Banco é mais recente — descartar update do mobile (LWW)
+        return { id: row.id, numero_pedido: row.numero_pedido ?? null };
+      }
+
+      // Aplicar update com UUID→ID resolution para FKs
+      const resolved = await this.resolvePayloadFKs(qr, entity, payload, tenantId);
+      const fields = Object.keys(resolved)
+        .filter((k) => !['id', 'uuid', 'tenant_id'].includes(k))
+        .map((k, i) => `"${k}" = $${i + 3}`)
+        .join(', ');
+
+      if (fields) {
+        const values = Object.keys(resolved)
+          .filter((k) => !['id', 'uuid', 'tenant_id'].includes(k))
+          .map((k) => resolved[k]);
+
+        await qr.query(
+          `UPDATE ${table} SET ${fields}, updated_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
+          [uuid, tenantId, ...values],
+        );
+      }
+
+      return { id: row.id, numero_pedido: row.numero_pedido ?? null };
+    }
+
+    // ── CREATE ───────────────────────────────────────────────
+    const resolved = await this.resolvePayloadFKs(qr, entity, payload, tenantId);
+
+    // Remove campos que o servidor controla
+    delete resolved['id'];
+    delete resolved['tenant_id'];
+
+    let numero_pedido: number | null = null;
+
+    if (entity === SyncEntity.PEDIDOS) {
+      // SEQUENCE global — NUNCA gerado no mobile (CHANGELOG #14)
+      const seqResult = await qr.query(`SELECT nextval('pedidos_numero_seq') AS numero`);
+      numero_pedido = seqResult[0].numero as number;
+      resolved['numero_pedido'] = numero_pedido;
+    }
+
+    const keys = ['uuid', 'tenant_id', ...Object.keys(resolved)];
+    const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
+    const values = [uuid, tenantId, ...Object.values(resolved)];
+
+    const insertResult = await qr.query(
+      `INSERT INTO ${table} (${keys.map((k) => `"${k}"`).join(', ')}) VALUES (${placeholders}) RETURNING id`,
+      values,
+    );
+
+    return { id: insertResult[0]?.id as number, numero_pedido };
   }
 
-  // ──────────────────────────────────────────────
-  // PULL — mobile busca deltas por entidade
-  // CHANGELOG #8: endpoint separado por entidade
-  // CHANGELOG #12: server_time em todo response
-  // CHANGELOG #13: cursor por offset (limitação documentada)
-  // ──────────────────────────────────────────────
+  /**
+   * Resolve UUIDs de FKs no payload para IDs internos (CHANGELOG #3).
+   * Ex: cliente_uuid → cliente_id, produto_uuid → produto_id
+   */
+  private async resolvePayloadFKs(
+    qr: QueryRunner,
+    entity: SyncEntity,
+    payload: Record<string, unknown>,
+    tenantId: string,
+  ): Promise<Record<string, unknown>> {
+    const result: Record<string, unknown> = { ...payload };
+
+    const uuidFkMap: Record<SyncEntity, Record<string, string>> = {
+      [SyncEntity.CLIENTES]: { transportadora_uuid: 'transportadora_id' },
+      [SyncEntity.PEDIDOS]: {
+        cliente_uuid: 'cliente_id',
+        vendedor_uuid: 'vendedor_id',
+        fornecedor_uuid: 'fornecedor_id',
+        transportadora_uuid: 'transportadora_id',
+      },
+      [SyncEntity.PRODUTOS]: { fornecedor_uuid: 'fornecedor_id' },
+      [SyncEntity.FORNECEDORES]: {},
+      [SyncEntity.TRANSPORTADORAS]: {},
+    };
+
+    const tableMap: Record<string, string> = {
+      transportadora_uuid: 'transportadoras',
+      cliente_uuid: 'clientes',
+      vendedor_uuid: 'usuarios',
+      fornecedor_uuid: 'fornecedores',
+    };
+
+    const fkMap = uuidFkMap[entity] ?? {};
+
+    for (const [uuidKey, idKey] of Object.entries(fkMap)) {
+      if (result[uuidKey]) {
+        const table = tableMap[uuidKey];
+        const id = await this.resolveUuid(qr, table, result[uuidKey] as string, tenantId);
+        result[idKey] = id;
+        delete result[uuidKey];
+      }
+    }
+
+    // Remover campos uuid de FK que sobram no payload (sem mapeamento configurado)
+    for (const key of Object.keys(result)) {
+      if (key.endsWith('_uuid') && key !== 'uuid') {
+        delete result[key];
+      }
+    }
+
+    return result;
+  }
+
+  // ── PULL ─────────────────────────────────────────────────
+
+  /**
+   * Busca deltas por entidade desde `since`.
+   * Inclui registros deletados (withDeleted) — mobile precisa saber o que remover.
+   * CHANGELOG #8: endpoint separado por entidade.
+   * CHANGELOG #12: server_time retornado — mobile usa como próximo cursor.
+   * CHANGELOG #13: cursor por offset (limitação documentada).
+   */
   async pullEntity<T extends object>(
     entityClass: new () => T,
     dto: SyncPullDto,
@@ -129,11 +250,10 @@ export class SyncService {
 
     const qb = repo
       .createQueryBuilder('e')
-      .withDeleted()   // inclui soft-deleted para o mobile poder deletar localmente
+      .withDeleted()
       .where('e.tenant_id = :tenantId', { tenantId });
 
     if (since) {
-      // CHANGELOG #12: mobile usa server_time como âncora — nunca new Date() do dispositivo
       qb.andWhere('e.updated_at > :since', { since });
     }
 
@@ -145,13 +265,7 @@ export class SyncService {
 
     return {
       data,
-      meta: {
-        total,
-        page,
-        limit,
-        hasMore: page * limit < total,
-      },
-      // CHANGELOG #12: server_time retornado — mobile usa como próximo cursor
+      meta: { total, page, limit, hasMore: page * limit < total },
       server_time: new Date().toISOString(),
     };
   }

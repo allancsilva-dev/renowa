@@ -6,6 +6,8 @@ import { Product } from '../../products/entities/product.entity';
 @Entity('itens_pedido')
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'pedido_id'])
+@Index(['tenant_id', 'updated_at'])
+@Index(['tenant_id', 'deleted_at'])
 export class OrderItem extends BaseEntity {
   @Column({ name: 'pedido_id', type: 'int' })
   pedido_id: number;
@@ -14,25 +16,34 @@ export class OrderItem extends BaseEntity {
   @JoinColumn({ name: 'pedido_id' })
   pedido: Order;
 
-  @Column({ name: 'produto_id', type: 'int' })
-  produto_id: number;
+  /** produto_id nullable — item pode ser produto manual sem cadastro */
+  @Column({ name: 'produto_id', type: 'int', nullable: true })
+  produto_id: number | null;
 
-  @ManyToOne(() => Product)
+  @ManyToOne(() => Product, { nullable: true })
   @JoinColumn({ name: 'produto_id' })
-  produto: Product;
+  produto: Product | null;
 
-  @Column({ name: 'quantidade', type: 'decimal', precision: 15, scale: 3 })
-  quantidade: number;
+  /** Código manual quando não há produto cadastrado */
+  @Column({ name: 'codigo_manual', type: 'varchar', nullable: true })
+  codigo_manual: string | null;
 
-  @Column({ name: 'preco_unitario', type: 'decimal', precision: 15, scale: 4 })
-  preco_unitario: number;
+  /** Descrição manual quando não há produto cadastrado */
+  @Column({ name: 'descricao_manual', type: 'varchar', nullable: true })
+  descricao_manual: string | null;
 
-  @Column({ name: 'desconto_percentual', type: 'decimal', precision: 5, scale: 2, default: 0 })
-  desconto_percentual: number;
+  @Column({ name: 'qtd_caixas', type: 'decimal', precision: 10, scale: 3, nullable: true })
+  qtd_caixas: number | null;
 
-  @Column({ name: 'valor_total', type: 'decimal', precision: 15, scale: 2 })
-  valor_total: number;
+  @Column({ name: 'qtd_unitaria', type: 'decimal', precision: 10, scale: 3, nullable: true })
+  qtd_unitaria: number | null;
 
-  @Column({ name: 'observacoes', type: 'varchar', length: 500, nullable: true })
-  observacoes: string | null;
+  @Column({ name: 'preco_unitario', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  preco_unitario: number | null;
+
+  @Column({ name: 'desconto_perc', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  desconto_perc: number | null;
+
+  @Column({ name: 'total_item', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  total_item: number | null;
 }

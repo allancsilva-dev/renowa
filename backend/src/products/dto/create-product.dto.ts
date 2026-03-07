@@ -1,53 +1,23 @@
 import {
   IsNotEmpty,
   IsString,
-  MaxLength,
   IsOptional,
   IsNumber,
   IsPositive,
-  Min,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateProductDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(100)
-  codigo?: string;
+  @IsUUID('4')
+  uuid: string;
 
-  @IsNotEmpty()
-  @IsString()
-  @MaxLength(500)
+  @IsOptional() @IsUUID('4') fornecedor_uuid?: string;
+
+  @IsOptional() @IsString() codigo?: string;
+
+  @IsNotEmpty() @IsString()
   descricao: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(10)
-  unidade?: string = 'UN';
-
-  @IsNumber()
-  @IsPositive()
-  preco_venda: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  preco_custo?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  estoque_atual?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  estoque_minimo?: number;
-
-  @IsOptional()
-  @IsString()
-  fornecedor_uuid?: string;
-
-  @IsOptional()
-  @IsString()
-  observacoes?: string;
+  @IsOptional() @IsNumber() @IsPositive()
+  preco_base?: number;
 }

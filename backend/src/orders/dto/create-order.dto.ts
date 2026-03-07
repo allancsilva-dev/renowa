@@ -8,63 +8,48 @@ import {
   IsNumber,
   IsPositive,
   Min,
-  IsEnum,
-  MaxLength,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { OrderStatus } from '../entities/order.entity';
 
 export class CreateOrderItemDto {
-  @IsNotEmpty()
-  @IsString()
-  produto_uuid: string;   // CHANGELOG #3: mobile envia uuid
+  @IsUUID('4')
+  uuid: string;
 
-  @IsNumber()
-  @IsPositive()
-  quantidade: number;
-
-  @IsNumber()
-  @IsPositive()
-  preco_unitario: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  desconto_percentual?: number = 0;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  observacoes?: string;
+  @IsOptional() @IsUUID('4') produto_uuid?: string;
+  @IsOptional() @IsString() codigo_manual?: string;
+  @IsOptional() @IsString() descricao_manual?: string;
+  @IsOptional() @IsNumber() @Min(0) qtd_caixas?: number;
+  @IsOptional() @IsNumber() @Min(0) qtd_unitaria?: number;
+  @IsOptional() @IsNumber() @IsPositive() preco_unitario?: number;
+  @IsOptional() @IsNumber() @Min(0) desconto_perc?: number;
+  @IsOptional() @IsNumber() @Min(0) total_item?: number;
 }
 
 export class CreateOrderDto {
-  @IsNotEmpty()
-  @IsString()
-  cliente_uuid: string;   // CHANGELOG #3: mobile envia uuid
+  @IsUUID('4')
+  uuid: string;
+
+  @IsOptional() @IsUUID('4') cliente_uuid?: string;
+  @IsOptional() @IsUUID('4') vendedor_uuid?: string;
+  @IsOptional() @IsUUID('4') fornecedor_uuid?: string;
+  @IsOptional() @IsUUID('4') transportadora_uuid?: string;
+
+  @IsOptional() @IsDateString() data?: string;
+
+  /** 'em_aberto' | 'concluido' | 'cancelado' */
+  @IsOptional() @IsString() status?: string;
+
+  @IsOptional() @IsNumber() @Min(0) total_sem_imposto?: number;
+  @IsOptional() @IsNumber() @Min(0) total_com_imposto?: number;
+  @IsOptional() @IsString() pgt?: string;
+  @IsOptional() @IsString() prazo?: string;
+  @IsOptional() @IsString() local_entrega?: string;
+  @IsOptional() @IsString() observacao?: string;
 
   @IsOptional()
-  @IsString()
-  transportadora_uuid?: string;
-
-  @IsOptional()
-  @IsEnum(OrderStatus)
-  status?: OrderStatus = OrderStatus.RASCUNHO;
-
-  @IsNotEmpty()
-  @IsDateString()
-  data_pedido: string;
-
-  @IsOptional()
-  @IsDateString()
-  data_entrega_prevista?: string;
-
-  @IsOptional()
-  @IsString()
-  observacoes?: string;
-
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)
-  itens: CreateOrderItemDto[];
+  itens?: CreateOrderItemDto[];
 }

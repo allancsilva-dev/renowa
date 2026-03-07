@@ -20,19 +20,18 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
 
+/**
+ * Visualizar: todos | Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO
+ */
 @Controller('clientes')
 @UseGuards(RolesGuard)
 export class ClientsController {
   constructor(private readonly clientsService: ClientsService) {}
 
   @Post()
-  @Roles('ADMIN', 'VENDAS')
-  async create(
-    @Body() dto: CreateClientDto,
-    @CurrentUser() user: RequestUser,
-  ) {
-    const data = await this.clientsService.create(dto, user.tenantId);
-    return { data };
+  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
+  async create(@Body() dto: CreateClientDto, @CurrentUser() user: RequestUser) {
+    return this.clientsService.create(dto, user.tenantId);
   }
 
   @Get()
@@ -45,32 +44,24 @@ export class ClientsController {
   }
 
   @Get(':uuid')
-  async findOne(
-    @Param('uuid') uuid: string,
-    @CurrentUser() user: RequestUser,
-  ) {
-    const data = await this.clientsService.findOne(uuid, user.tenantId);
-    return { data };
+  async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
+    return this.clientsService.findOne(uuid, user.tenantId);
   }
 
   @Patch(':uuid')
-  @Roles('ADMIN', 'VENDAS')
+  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   async update(
     @Param('uuid') uuid: string,
     @Body() dto: UpdateClientDto,
     @CurrentUser() user: RequestUser,
   ) {
-    const data = await this.clientsService.update(uuid, dto, user.tenantId);
-    return { data };
+    return this.clientsService.update(uuid, dto, user.tenantId);
   }
 
   @Delete(':uuid')
-  @Roles('ADMIN')
+  @Roles('ADMIN', 'GESTAO')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(
-    @Param('uuid') uuid: string,
-    @CurrentUser() user: RequestUser,
-  ): Promise<void> {
+  async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.clientsService.remove(uuid, user.tenantId);
   }
 }

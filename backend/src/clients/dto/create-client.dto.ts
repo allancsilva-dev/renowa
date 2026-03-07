@@ -1,63 +1,33 @@
 import {
-  IsEmail,
   IsNotEmpty,
   IsOptional,
   IsString,
-  MaxLength,
-  IsBoolean,
-  IsNumber,
-  IsObject,
-  ValidateNested,
+  IsUUID,
+  Length,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-
-class EnderecoDto {
-  @IsOptional() @IsString() logradouro?: string;
-  @IsOptional() @IsString() numero?: string;
-  @IsOptional() @IsString() complemento?: string;
-  @IsOptional() @IsString() bairro?: string;
-  @IsOptional() @IsString() cidade?: string;
-  @IsOptional() @IsString() @MaxLength(2) estado?: string;
-  @IsOptional() @IsString() @MaxLength(9) cep?: string;
-}
 
 export class CreateClientDto {
+  @IsUUID('4')
+  uuid: string;
+
   @IsNotEmpty()
   @IsString()
-  @MaxLength(255)
   razao_social: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  nome_fantasia?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  cnpj_cpf?: string;
-
-  @IsOptional()
-  @IsEmail()
-  @MaxLength(255)
-  email?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(30)
-  telefone?: string;
-
-  @IsOptional()
-  @IsObject()
-  @ValidateNested()
-  @Type(() => EnderecoDto)
-  endereco?: EnderecoDto;
-
-  @IsOptional()
-  @IsString()
-  observacoes?: string;
-
-  @IsOptional()
-  @IsNumber()
-  limite_credito?: number;
+  @IsOptional() @IsString() cnpj?: string;
+  @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsString() tel?: string;
+  @IsOptional() @IsString() endereco?: string;
+  @IsOptional() @IsString() bairro?: string;
+  @IsOptional() @IsString() cidade?: string;
+  @IsOptional() @IsString() @Length(2, 2) uf?: string;
+  @IsOptional() @IsString() cep?: string;
+  @IsOptional() @IsString() contato?: string;
+  @IsOptional() @IsString() inscricao_estadual?: string;
+  @IsOptional() @IsString() suframa?: string;
+  @IsOptional() @IsString() pgt_padrao?: string;
+  @IsOptional() @IsString() prazo?: string;
+  @IsOptional() @IsString() local_entrega?: string;
+  @IsOptional() @IsString() observacao?: string;
+  @IsOptional() @IsUUID('4') transportadora_uuid?: string;
 }

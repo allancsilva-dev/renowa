@@ -1,36 +1,26 @@
 import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Client } from '../../clients/entities/client.entity';
-import { FinanceMovement } from './finance-movement.entity';
 
 @Entity('inadimplencia')
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'cliente_id'])
 @Index(['tenant_id', 'updated_at'])
+@Index(['tenant_id', 'deleted_at'])
 export class Inadimplencia extends BaseEntity {
-  @Column({ name: 'cliente_id', type: 'int' })
-  cliente_id: number;
+  @Column({ name: 'cliente_id', type: 'int', nullable: true })
+  cliente_id: number | null;
 
-  @ManyToOne(() => Client)
+  @ManyToOne(() => Client, { nullable: true })
   @JoinColumn({ name: 'cliente_id' })
-  cliente: Client;
+  cliente: Client | null;
 
-  @Column({ name: 'movimentacao_id', type: 'int' })
-  movimentacao_id: number;
+  @Column({ name: 'empresa_devedora', type: 'varchar', nullable: true })
+  empresa_devedora: string | null;
 
-  @ManyToOne(() => FinanceMovement)
-  @JoinColumn({ name: 'movimentacao_id' })
-  movimentacao: FinanceMovement;
+  @Column({ name: 'valor_aberto', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  valor_aberto: number | null;
 
-  @Column({ name: 'valor_original', type: 'decimal', precision: 15, scale: 2 })
-  valor_original: number;
-
-  @Column({ name: 'valor_atualizado', type: 'decimal', precision: 15, scale: 2 })
-  valor_atualizado: number;
-
-  @Column({ name: 'dias_atraso', type: 'int', default: 0 })
-  dias_atraso: number;
-
-  @Column({ name: 'resolvido_em', type: 'timestamptz', nullable: true })
-  resolvido_em: Date | null;
+  @Column({ name: 'observacao', type: 'text', nullable: true })
+  observacao: string | null;
 }

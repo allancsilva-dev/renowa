@@ -4,15 +4,6 @@ import { Repository } from 'typeorm';
 import { Supplier } from './entities/supplier.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 
-export class CreateSupplierDto {
-  razao_social: string;
-  nome_fantasia?: string;
-  cnpj?: string;
-  email?: string;
-  telefone?: string;
-  contato?: string;
-}
-
 @Injectable()
 export class SuppliersService {
   constructor(
@@ -20,9 +11,9 @@ export class SuppliersService {
     private readonly supplierRepo: Repository<Supplier>,
   ) {}
 
-  async create(dto: CreateSupplierDto, tenantId: string): Promise<Supplier> {
-    const supplier = this.supplierRepo.create({ ...dto, tenant_id: tenantId });
-    return this.supplierRepo.save(supplier);
+  async create(dto: { uuid: string; razao_social: string; cnpj?: string }, tenantId: string): Promise<Supplier> {
+    const s = this.supplierRepo.create({ ...dto, tenant_id: tenantId });
+    return this.supplierRepo.save(s);
   }
 
   async findAll(tenantId: string, pagination: PaginationDto): Promise<PaginatedResponse<Supplier>> {
@@ -38,11 +29,11 @@ export class SuppliersService {
 
   async findOne(uuid: string, tenantId: string): Promise<Supplier> {
     const s = await this.supplierRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!s) throw new NotFoundException(`Fornecedor ${uuid} não encontrado`);
+    if (!s) throw new NotFoundException(`Fornecedor ${uuid} não encontrado.`);
     return s;
   }
 
-  async update(uuid: string, dto: Partial<CreateSupplierDto>, tenantId: string): Promise<Supplier> {
+  async update(uuid: string, dto: Record<string, unknown>, tenantId: string): Promise<Supplier> {
     const s = await this.findOne(uuid, tenantId);
     Object.assign(s, dto);
     return this.supplierRepo.save(s);

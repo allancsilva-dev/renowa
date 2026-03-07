@@ -2,40 +2,36 @@ import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Order } from '../../orders/entities/order.entity';
 
-export enum CommissionStatus {
-  PENDENTE = 'PENDENTE',
-  APROVADA = 'APROVADA',
-  PAGA = 'PAGA',
-  CANCELADA = 'CANCELADA',
-}
-
+/**
+ * valor_comissao: snapshot imutável calculado no lançamento.
+ * NUNCA recalculado retroativamente.
+ * Sem soft delete — comissões são registros imutáveis.
+ */
 @Entity('comissoes')
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'updated_at'])
-@Index(['tenant_id', 'representante_uuid'])
+@Index(['tenant_id', 'pedido_id'])
 export class Commission extends BaseEntity {
-  @Column({ name: 'representante_uuid', type: 'uuid' })
-  representante_uuid: string;
+  @Column({ name: 'pedido_id', type: 'int', nullable: true })
+  pedido_id: number | null;
 
-  @Column({ name: 'pedido_id', type: 'int' })
-  pedido_id: number;
-
-  @ManyToOne(() => Order)
+  @ManyToOne(() => Order, { nullable: true })
   @JoinColumn({ name: 'pedido_id' })
-  pedido: Order;
+  pedido: Order | null;
 
-  @Column({ name: 'percentual', type: 'decimal', precision: 5, scale: 2 })
-  percentual: number;
+  @Column({ name: 'nfe', type: 'varchar', nullable: true })
+  nfe: string | null;
 
-  @Column({ name: 'valor_base', type: 'decimal', precision: 15, scale: 2 })
-  valor_base: number;
+  @Column({ name: 'valor_faturado', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  valor_faturado: number | null;
 
-  @Column({ name: 'valor_comissao', type: 'decimal', precision: 15, scale: 2 })
+  @Column({ name: 'perc_comissao', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  perc_comissao: number | null;
+
+  /** Snapshot imutável — calculado no lançamento, nunca atualizado */
+  @Column({ name: 'valor_comissao', type: 'decimal', precision: 10, scale: 2 })
   valor_comissao: number;
 
-  @Column({ name: 'status', type: 'enum', enum: CommissionStatus, default: CommissionStatus.PENDENTE })
-  status: CommissionStatus;
-
-  @Column({ name: 'data_pagamento', type: 'date', nullable: true })
-  data_pagamento: string | null;
+  @Column({ name: 'data_faturamento', type: 'date', nullable: true })
+  data_faturamento: string | null;
 }

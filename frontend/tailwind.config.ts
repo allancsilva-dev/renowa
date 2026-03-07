@@ -6,10 +6,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Paleta Renowa
+        border: 'hsl(var(--border))',
+        input: 'hsl(var(--input))',
+        ring: 'hsl(var(--ring))',
+        background: 'hsl(var(--background))',
+        foreground: 'hsl(var(--foreground))',
         primary: {
-          DEFAULT: '#2A9D8F',   // Verde Teal — sidebar, botões de ação principal
-          foreground: '#FFFFFF',
+          DEFAULT: 'hsl(var(--primary))',
+          foreground: 'hsl(var(--primary-foreground))',
           50: '#e6f5f3',
           100: '#c2e8e3',
           200: '#9adbd2',
@@ -21,11 +25,34 @@ const config: Config = {
           800: '#135e53',
           900: '#0a4840',
         },
-        background: '#F4F7F6',   // Off-white — fundo geral
+        secondary: {
+          DEFAULT: 'hsl(var(--secondary))',
+          foreground: 'hsl(var(--secondary-foreground))',
+        },
+        destructive: {
+          DEFAULT: 'hsl(var(--destructive))',
+          foreground: 'hsl(var(--destructive-foreground))',
+        },
+        muted: {
+          DEFAULT: 'hsl(var(--muted))',
+          foreground: 'hsl(var(--muted-foreground))',
+        },
+        accent: {
+          DEFAULT: 'hsl(var(--accent))',
+          foreground: 'hsl(var(--accent-foreground))',
+        },
+        card: {
+          DEFAULT: 'hsl(var(--card))',
+          foreground: 'hsl(var(--card-foreground))',
+        },
+        popover: {
+          DEFAULT: 'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
         sidebar: {
           DEFAULT: '#2A9D8F',
           hover: '#F4F7F6',
-          'hover-text': '#0f172a',  // slate-900
+          'hover-text': '#0f172a',
         },
       },
       fontFamily: {
