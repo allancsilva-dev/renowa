@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Renowa",
+    "slug": "renowa",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2A9D8F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "tech.zonadev.renowa"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2A9D8F"
+      },
+      "package": "tech.zonadev.renowa"
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3000/api",
+      "authUrl": "https://auth.zonadev.tech"
+    }
+  }
+}
