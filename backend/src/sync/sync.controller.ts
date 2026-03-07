@@ -6,7 +6,6 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { SyncService } from './sync.service';
@@ -15,6 +14,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { Client } from '../clients/entities/client.entity';
 import { Order } from '../orders/entities/order.entity';
+import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { Supplier } from '../suppliers/entities/supplier.entity';
 import { Transport } from '../transport/entities/transport.entity';
@@ -46,31 +46,43 @@ export class SyncController {
   // ── PULL por entidade (CHANGELOG #8) ──────────────────────
 
   /**
-   * GET /api/sync/clientes?since=<ISO>&page=1&limit=100
-   * CHANGELOG #12: server_time retornado em todo response de sync.
+   * GET /api/sync/<entidade>?since=<ISO>&cursor=0&limit=200
+   * CHANGELOG #12: server_time dentro de meta — mobile usa como próximo cursor.
+   * CHANGELOG #13: cursor é offset numérico simples.
    */
   @Get('clientes')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullClientes(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Client, dto, user.tenantId);
   }
 
   @Get('pedidos')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullPedidos(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Order, dto, user.tenantId);
   }
 
   @Get('produtos')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullProdutos(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Product, dto, user.tenantId);
   }
 
   @Get('fornecedores')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullFornecedores(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Supplier, dto, user.tenantId);
   }
 
   @Get('transportadoras')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullTransportadoras(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Transport, dto, user.tenantId);
+  }
+
+  @Get('itens-pedido')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  async pullItensPedido(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
+    return this.syncService.pullEntity(OrderItem, dto, user.tenantId);
   }
 }

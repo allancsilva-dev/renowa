@@ -17,6 +17,7 @@ export enum SyncEntity {
   PRODUTOS = 'produtos',
   FORNECEDORES = 'fornecedores',
   TRANSPORTADORAS = 'transportadoras',
+  ITENS_PEDIDO = 'itens_pedido',
 }
 
 export class SyncItemDto {
@@ -53,18 +54,20 @@ export class SyncPushDto {
 }
 
 /**
- * CHANGELOG #8: Sync por entidade — cursor único para múltiplas tabelas era indefinido
+ * CHANGELOG #8: Sync por entidade — cursor único para múltiplas tabelas era indefinido.
+ * CHANGELOG #13: cursor é offset numérico simples (limitação documentada — migrar para keyset na v2.0).
  */
 export class SyncPullDto {
   @IsOptional()
   @IsDateString()
   since?: string;
 
+  /** Offset numérico — ex: 0, 200, 400 */
   @IsOptional()
   @Type(() => Number)
-  page?: number = 1;
+  cursor?: number = 0;
 
   @IsOptional()
   @Type(() => Number)
-  limit?: number = 100;
+  limit?: number = 200;
 }

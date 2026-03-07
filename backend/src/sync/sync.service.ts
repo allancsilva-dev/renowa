@@ -195,6 +195,10 @@ export class SyncService {
         transportadora_uuid: 'transportadora_id',
       },
       [SyncEntity.PRODUTOS]: { fornecedor_uuid: 'fornecedor_id' },
+      [SyncEntity.ITENS_PEDIDO]: {
+        pedido_uuid: 'pedido_id',
+        produto_uuid: 'produto_id',
+      },
       [SyncEntity.FORNECEDORES]: {},
       [SyncEntity.TRANSPORTADORAS]: {},
     };
@@ -204,6 +208,8 @@ export class SyncService {
       cliente_uuid: 'clientes',
       vendedor_uuid: 'usuarios',
       fornecedor_uuid: 'fornecedores',
+      pedido_uuid: 'pedidos',
+      produto_uuid: 'produtos',
     };
 
     const fkMap = uuidFkMap[entity] ?? {};
@@ -233,8 +239,8 @@ export class SyncService {
    * Busca deltas por entidade desde `since`.
    * Inclui registros deletados (withDeleted) — mobile precisa saber o que remover.
    * CHANGELOG #8: endpoint separado por entidade.
-   * CHANGELOG #12: server_time retornado — mobile usa como próximo cursor.
-   * CHANGELOG #13: cursor por offset (limitação documentada).
+   * CHANGELOG #12: server_time dentro de meta — mobile usa como próximo cursor.
+   * CHANGELOG #13: cursor por offset (limitação documentada — migrar para keyset na v2.0).
    */
   async pullEntity<T extends object>(
     entityClass: new () => T,
@@ -242,11 +248,10 @@ export class SyncService {
     tenantId: string,
   ): Promise<{
     data: T[];
-    meta: { total: number; page: number; limit: number; hasMore: boolean };
-    server_time: string;
+    meta: { total: number; hasMore: boolean; nextCursor: number; server_time: string };
   }> {
     const repo = this.dataSource.getRepository(entityClass);
-    const { since, page = 1, limit = 100 } = dto;
+    const { since, cursor = 0, limit = 200 } = dto;
 
     const qb = repo
       .createQueryBuilder('e')
@@ -259,14 +264,20 @@ export class SyncService {
 
     const [data, total] = await qb
       .orderBy('e.updated_at', 'ASC')
-      .skip((page - 1) * limit)
+      .skip(cursor)
       .take(limit)
       .getManyAndCount();
 
+    const hasMore = cursor + limit < total;
+
     return {
       data,
-      meta: { total, page, limit, hasMore: page * limit < total },
-      server_time: new Date().toISOString(),
+      meta: {
+        total,
+        hasMore,
+        nextCursor: hasMore ? cursor + limit : cursor,
+        server_time: new Date().toISOString(),
+      },
     };
   }
 }

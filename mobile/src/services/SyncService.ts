@@ -11,11 +11,14 @@ import { getDatabase } from '../storage/database';
 
 const SYNC_ENTITIES = [
   'clientes',
-  'pedidos',
   'produtos',
-  'fornecedores',
   'transportadoras',
+  'fornecedores',
+  'pedidos',
+  'itens-pedido',
 ] as const;
+
+type SyncEntityName = (typeof SYNC_ENTITIES)[number];
 
 interface SyncResult {
   uuid: string;
@@ -23,26 +26,48 @@ interface SyncResult {
   error?: string;
 }
 
+/**
+ * CHANGELOG #12: server_time está dentro de meta — não no topo do response.
+ * Mobile usa meta.server_time como âncora, NUNCA new Date() do dispositivo.
+ */
+interface PullMeta {
+  total: number;
+  hasMore: boolean;
+  nextCursor: number;
+  server_time: string;
+}
+
 interface PullResponse<T> {
   data: T[];
-  meta: { total: number; page: number; limit: number; hasMore: boolean };
-  server_time: string;  // CHANGELOG #12: mobile usa como âncora
+  meta: PullMeta;
 }
+
+/** Mapa: nome do endpoint → nome da tabela SQLite */
+const ENTITY_TABLE: Record<SyncEntityName, string> = {
+  'clientes': 'clientes',
+  'produtos': 'produtos',
+  'transportadoras': 'transportadoras',
+  'fornecedores': 'fornecedores',
+  'pedidos': 'pedidos',
+  'itens-pedido': 'itens_pedido',
+};
 
 /**
  * SyncService — gerencia sincronização bidirecional com o servidor.
  *
  * FLUXO:
- * 1. syncPendingItems() — envia queue local para POST /api/sync
+ * 1. syncPendingItems() — envia queue local para POST /api/sync (lotes de 200)
  * 2. fetchDeltas() — busca atualizações por entidade desde last_sync_timestamp
  *
  * CHANGELOG #3: UUID→ID resolution — mobile sempre opera por uuid localmente.
  * CHANGELOG #8: Sync por entidade — um GET por tabela.
  * CHANGELOG #12: server_time como âncora — NUNCA usar new Date() do dispositivo.
+ * CHANGELOG #13: cursor por offset numérico (0, 200, 400...).
  */
 export class SyncService {
   /**
    * Sincroniza items pendentes da queue local com o servidor.
+   * Retry com backoff exponencial: 1s, 2s, 4s (máx 3 tentativas).
    * Chamado automaticamente ao recuperar conexão.
    */
   async syncPendingItems(): Promise<{ ok: number; errors: number }> {
@@ -52,48 +77,65 @@ export class SyncService {
     const pendingCount = await getPendingCount();
     if (pendingCount === 0) return { ok: 0, errors: 0 };
 
-    // CHANGELOG #11: POST /api/sync — limite 200 items por batch
+    // CHANGELOG #11: limite 200 items por batch
     const items = await dequeue(200);
     if (items.length === 0) return { ok: 0, errors: 0 };
 
-    try {
-      const { data } = await apiService.post<{ results: SyncResult[] }>('/sync', {
-        items: items.map((item) => ({
-          uuid: item.uuid,
-          entity: item.entity,
-          operation: item.operation,
-          payload: item.payload,
-          client_timestamp: item.client_timestamp,
-        })),
-      });
+    const MAX_RETRIES = 3;
+    let attempt = 0;
+    let lastError: unknown;
 
-      const okIds: number[] = [];
-      const errorIds: number[] = [];
+    while (attempt < MAX_RETRIES) {
+      try {
+        const { data } = await apiService.post<{ results: SyncResult[] }>('/sync', {
+          items: items.map((item) => ({
+            uuid: item.uuid,
+            entity: item.entity,
+            operation: item.operation,
+            payload: item.payload,
+            client_timestamp: item.client_timestamp,
+          })),
+        });
 
-      for (let i = 0; i < data.results.length; i++) {
-        const result = data.results[i];
-        const queueItem = items[i] as QueueItem;
+        const okIds: number[] = [];
+        const errorIds: number[] = [];
 
-        if (result.status === 'ok') {
-          okIds.push(queueItem.id);
-        } else {
-          errorIds.push(queueItem.id);
-          await incrementRetry(queueItem.id);
+        for (let i = 0; i < data.results.length; i++) {
+          const result = data.results[i];
+          const queueItem = items[i] as QueueItem;
+
+          if (result.status === 'ok') {
+            okIds.push(queueItem.id);
+          } else {
+            errorIds.push(queueItem.id);
+            await incrementRetry(queueItem.id);
+          }
+        }
+
+        await removeFromQueue(okIds);
+        return { ok: okIds.length, errors: errorIds.length };
+      } catch (err) {
+        lastError = err;
+        attempt++;
+        if (attempt < MAX_RETRIES) {
+          // Backoff exponencial: 1s, 2s, 4s
+          await sleep(1000 * Math.pow(2, attempt - 1));
         }
       }
-
-      await removeFromQueue(okIds);
-
-      return { ok: okIds.length, errors: errorIds.length };
-    } catch {
-      return { ok: 0, errors: items.length };
     }
+
+    console.warn('[SyncService] syncPendingItems falhou após 3 tentativas:', lastError);
+    return { ok: 0, errors: items.length };
   }
 
   /**
    * Busca deltas do servidor por entidade.
    * CHANGELOG #8: endpoint separado por entidade.
-   * CHANGELOG #12: usa server_time como próximo cursor, nunca Date.now() do dispositivo.
+   * CHANGELOG #12: usa meta.server_time como âncora, nunca Date.now() do dispositivo.
+   * CHANGELOG #13: cursor por offset — 0, 200, 400...
+   *
+   * Full Sync (first install): chamar com since = '1970-01-01T00:00:00.000Z'
+   * Delta Sync: chamar com since = last_sync_timestamp salvo
    */
   async fetchDeltas(since?: string): Promise<string> {
     const isConnected = await this.isOnline();
@@ -102,27 +144,29 @@ export class SyncService {
     let latestServerTime = since ?? '';
 
     for (const entity of SYNC_ENTITIES) {
-      let page = 1;
+      const table = ENTITY_TABLE[entity];
+      let cursor = 0;
       let hasMore = true;
 
       while (hasMore) {
         try {
           const { data } = await apiService.get<PullResponse<Record<string, unknown>>>(
             `/sync/${entity}`,
-            { params: { since, page, limit: 100 } },
+            { params: { since, cursor, limit: 200 } },
           );
 
-          await this.applyDeltas(entity, data.data);
+          await this.applyDeltas(table, data.data);
 
           hasMore = data.meta.hasMore;
-          page++;
+          cursor = data.meta.nextCursor;
 
           // CHANGELOG #12: server_time como âncora — atualizar a cada página
-          if (data.server_time > latestServerTime) {
-            latestServerTime = data.server_time;
+          if (data.meta.server_time > latestServerTime) {
+            latestServerTime = data.meta.server_time;
           }
         } catch {
-          hasMore = false; // Para este entity e continua com o próximo
+          // Para este entity e continua com o próximo
+          hasMore = false;
         }
       }
     }
@@ -131,7 +175,7 @@ export class SyncService {
   }
 
   private async applyDeltas(
-    entity: string,
+    table: string,
     rows: Record<string, unknown>[],
   ): Promise<void> {
     if (rows.length === 0) return;
@@ -143,34 +187,39 @@ export class SyncService {
       const deletedAt = row['deleted_at'] as string | null;
 
       if (deletedAt) {
-        // Soft delete local
+        // Soft delete local — marcar como deletado
         await db.runAsync(
-          `UPDATE ${entity} SET deleted_at = ? WHERE uuid = ?`,
+          `UPDATE ${table} SET deleted_at = ? WHERE uuid = ?`,
           [deletedAt, uuid],
         );
         continue;
       }
 
       // Upsert: tenta atualizar, se não existir insere
-      const existing = await db.getFirstAsync(
-        `SELECT id FROM ${entity} WHERE uuid = ?`,
+      const existing = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM ${table} WHERE uuid = ?`,
         [uuid],
       );
 
       if (existing) {
-        // Campos comuns — atualizar updated_at e synced
-        await db.runAsync(
-          `UPDATE ${entity} SET synced = 1, updated_at = ? WHERE uuid = ?`,
-          [row['updated_at'] as string, uuid],
-        );
+        // Atualizar todos os campos do servidor (LWW — servidor vence no pull)
+        const keys = Object.keys(row).filter((k) => !['id', 'uuid'].includes(k));
+        if (keys.length > 0) {
+          const setClauses = keys.map((k) => `${k} = ?`).join(', ');
+          const values = keys.map((k) => row[k] ?? null);
+          await db.runAsync(
+            `UPDATE ${table} SET ${setClauses}, synced = 1 WHERE uuid = ?`,
+            [...values, uuid],
+          );
+        }
       } else {
-        // Inserir nova linha — construção dinâmica simples
+        // Inserir nova linha vinda do servidor
         const keys = Object.keys(row).filter((k) => k !== 'id');
         const placeholders = keys.map(() => '?').join(', ');
         const values = keys.map((k) => row[k] ?? null);
 
         await db.runAsync(
-          `INSERT OR IGNORE INTO ${entity} (${keys.join(', ')}, synced) VALUES (${placeholders}, 1)`,
+          `INSERT OR IGNORE INTO ${table} (${keys.join(', ')}, synced) VALUES (${placeholders}, 1)`,
           values,
         );
       }
@@ -179,14 +228,17 @@ export class SyncService {
 
   /**
    * Ciclo completo de sincronização:
-   * 1. Envia pendentes
-   * 2. Busca deltas
-   * 3. Salva novo cursor (server_time)
+   * 1. Envia pendentes (push)
+   * 2. Busca deltas por entidade (pull)
+   * 3. Salva novo cursor (server_time) — NUNCA new Date() do dispositivo
    */
   async runFullSync(): Promise<void> {
     const pushResult = await this.syncPendingItems();
+
     const lastSync = await apiService.getLastSyncTimestamp();
-    const newCursor = await this.fetchDeltas(lastSync ?? undefined);
+    // Full sync no primeiro uso — epoch retorna tudo do servidor
+    const since = lastSync ?? '1970-01-01T00:00:00.000Z';
+    const newCursor = await this.fetchDeltas(since);
 
     if (newCursor) {
       await apiService.setLastSyncTimestamp(newCursor);
@@ -199,6 +251,10 @@ export class SyncService {
     const state = await NetInfo.fetch();
     return state.isConnected === true && state.isInternetReachable !== false;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export const syncService = new SyncService();
