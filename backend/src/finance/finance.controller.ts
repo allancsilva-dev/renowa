@@ -1,40 +1,15 @@
 import {
   Controller, Get, Post, Body, Param, Query, UseGuards, Delete, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 import { FinanceService } from './finance.service';
+import { CreateMovementDto } from './dto/create-movement.dto';
+import { CreateComissaoDto } from './dto/create-comissao.dto';
+import { CreateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
-
-class CreateMovementDto {
-  @IsUUID('4') uuid: string;
-  /** 'Custo Fixo' | 'Custo Rotativo' | 'Venda' */
-  @IsNotEmpty() @IsString() tipo: string;
-  @IsNumber() @Min(0) valor: number;
-  @IsOptional() @IsString() data?: string;
-  @IsOptional() @IsString() descricao?: string;
-}
-
-class CreateComissaoDto {
-  @IsUUID('4') uuid: string;
-  @IsOptional() @IsUUID('4') pedido_uuid?: string;
-  @IsOptional() @IsString() nfe?: string;
-  @IsOptional() @IsNumber() @Min(0) valor_faturado?: number;
-  @IsOptional() @IsNumber() @Min(0) perc_comissao?: number;
-  @IsNumber() @Min(0) valor_comissao: number;
-  @IsOptional() @IsString() data_faturamento?: string;
-}
-
-class CreateInadimplenciaDto {
-  @IsUUID('4') uuid: string;
-  @IsOptional() @IsUUID('4') cliente_uuid?: string;
-  @IsOptional() @IsString() empresa_devedora?: string;
-  @IsOptional() @IsNumber() @Min(0) valor_aberto?: number;
-  @IsOptional() @IsString() observacao?: string;
-}
 
 /**
  * Visualizar: ADMIN, FINANCEIRO, GESTAO

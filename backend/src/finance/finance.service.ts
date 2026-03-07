@@ -5,6 +5,9 @@ import { FinanceMovement } from './entities/finance-movement.entity';
 import { Commission } from './entities/commission.entity';
 import { Inadimplencia } from './entities/inadimplencia.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
+import { CreateMovementDto } from './dto/create-movement.dto';
+import { CreateComissaoDto } from './dto/create-comissao.dto';
+import { CreateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 
 @Injectable()
 export class FinanceService {
@@ -20,16 +23,13 @@ export class FinanceService {
 
   // ── Movimentações ─────────────────────────────────────────
 
-  async createMovimento(dto: Record<string, unknown>, tenantId: string): Promise<FinanceMovement> {
-    const { uuid, tipo, valor, data, descricao } = dto as {
-      uuid: string; tipo: string; valor: number; data?: string; descricao?: string;
-    };
+  async createMovimento(dto: CreateMovementDto, tenantId: string): Promise<FinanceMovement> {
     const m = this.movimentoRepo.create({
-      uuid,
-      tipo,
-      valor,
-      data: data ?? null,
-      descricao: descricao ?? null,
+      uuid: dto.uuid,
+      tipo: dto.tipo,
+      valor: dto.valor,
+      data: dto.data ?? null,
+      descricao: dto.descricao ?? null,
       tenant_id: tenantId,
     });
     return this.movimentoRepo.save(m);
@@ -71,31 +71,25 @@ export class FinanceService {
 
   // ── Comissões ─────────────────────────────────────────────
 
-  async createComissao(dto: Record<string, unknown>, tenantId: string): Promise<Commission> {
-    const { uuid, pedido_uuid, nfe, valor_faturado, perc_comissao, valor_comissao, data_faturamento } = dto as {
-      uuid: string; pedido_uuid?: string; nfe?: string;
-      valor_faturado?: number; perc_comissao?: number;
-      valor_comissao: number; data_faturamento?: string;
-    };
-
+  async createComissao(dto: CreateComissaoDto, tenantId: string): Promise<Commission> {
     let pedido_id: number | null = null;
-    if (pedido_uuid) {
+    if (dto.pedido_uuid) {
       const rows = await this.dataSource.query(
         `SELECT id FROM pedidos WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-        [pedido_uuid, tenantId],
+        [dto.pedido_uuid, tenantId],
       );
       pedido_id = (rows[0]?.id as number) ?? null;
     }
 
     const c = this.comissaoRepo.create({
-      uuid,
+      uuid: dto.uuid,
       tenant_id: tenantId,
       pedido_id,
-      nfe: nfe ?? null,
-      valor_faturado: valor_faturado ?? null,
-      perc_comissao: perc_comissao ?? null,
-      valor_comissao,  // snapshot imutável
-      data_faturamento: data_faturamento ?? null,
+      nfe: dto.nfe ?? null,
+      valor_faturado: dto.valor_faturado ?? null,
+      perc_comissao: dto.perc_comissao ?? null,
+      valor_comissao: dto.valor_comissao,  // snapshot imutável
+      data_faturamento: dto.data_faturamento ?? null,
     });
     return this.comissaoRepo.save(c);
   }
@@ -116,28 +110,23 @@ export class FinanceService {
 
   // ── Inadimplência ─────────────────────────────────────────
 
-  async createInadimplencia(dto: Record<string, unknown>, tenantId: string): Promise<Inadimplencia> {
-    const { uuid, cliente_uuid, empresa_devedora, valor_aberto, observacao } = dto as {
-      uuid: string; cliente_uuid?: string; empresa_devedora?: string;
-      valor_aberto?: number; observacao?: string;
-    };
-
+  async createInadimplencia(dto: CreateInadimplenciaDto, tenantId: string): Promise<Inadimplencia> {
     let cliente_id: number | null = null;
-    if (cliente_uuid) {
+    if (dto.cliente_uuid) {
       const rows = await this.dataSource.query(
         `SELECT id FROM clientes WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-        [cliente_uuid, tenantId],
+        [dto.cliente_uuid, tenantId],
       );
       cliente_id = (rows[0]?.id as number) ?? null;
     }
 
     const i = this.inadimplenciaRepo.create({
-      uuid,
+      uuid: dto.uuid,
       tenant_id: tenantId,
       cliente_id,
-      empresa_devedora: empresa_devedora ?? null,
-      valor_aberto: valor_aberto ?? null,
-      observacao: observacao ?? null,
+      empresa_devedora: dto.empresa_devedora ?? null,
+      valor_aberto: dto.valor_aberto ?? null,
+      observacao: dto.observacao ?? null,
     });
     return this.inadimplenciaRepo.save(i);
   }
