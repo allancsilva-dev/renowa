@@ -15,8 +15,9 @@ ENV VITE_AUTH_URL=$VITE_AUTH_URL
 ENV VITE_EXPECTED_AUD=$VITE_EXPECTED_AUD
 
 COPY package*.json ./
-# npm ci garante instalação idempotente baseada no package-lock.json
-RUN npm ci --ignore-scripts
+# npm install em vez de npm ci — o package-lock.json fica na raiz do monorepo (npm workspaces)
+# e não é copiado para o contexto de build do frontend, então o npm ci falharia sem ele
+RUN npm install --ignore-scripts
 
 COPY . .
 RUN npm run build
