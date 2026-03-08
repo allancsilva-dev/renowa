@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY package*.json ./
 # Instala todas as deps (incluindo devDeps para o nest build)
-RUN npm ci
+RUN npm install --ignore-scripts
 
 COPY . .
 RUN npm run build
@@ -19,7 +19,7 @@ ENV NODE_ENV=production
 
 COPY package*.json ./
 # Apenas dependências de produção
-RUN npm ci --omit=dev
+RUN npm install --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist ./dist
 
