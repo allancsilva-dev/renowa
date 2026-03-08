@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
 import { useAuthStore } from '@/store/authStore';
@@ -14,10 +15,33 @@ const AUD = import.meta.env.VITE_EXPECTED_AUD ?? 'renowa.zonadev.tech';
 
 function ProtectedRoute() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const setUser = useAuthStore((s) => s.setUser);
+  const clearAuth = useAuthStore((s) => s.clearAuth);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    fetch(`${AUTH_URL}/api/auth/me`, { credentials: 'include' })
+      .then((res) => {
+        if (!res.ok) throw new Error('Unauthorized');
+        return res.json();
+      })
+      .then((data) => {
+        setUser(data);
+        setChecking(false);
+      })
+      .catch(() => {
+        clearAuth();
+        setChecking(false);
+      });
+  }, []);
+
+  if (checking) return null;
+
   if (!isAuthenticated) {
     window.location.href = `${AUTH_URL}/login?aud=${AUD}&redirect=${encodeURIComponent(window.location.href)}`;
     return null;
   }
+
   return <Outlet />;
 }
 

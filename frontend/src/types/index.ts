@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 export interface AuthUser {
   sub: string;
-  nome: string;
+  email: string;
   roles: string[];
   tenantId: string;
   tenantSubdomain: string;
