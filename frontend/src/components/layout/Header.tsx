@@ -19,10 +19,10 @@ export default function Header({ title }: HeaderProps) {
 
         <div className='flex items-center gap-2'>
           <div className='flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white'>
-            {user?.nome?.charAt(0).toUpperCase() ?? 'U'}
+            {user?.email?.charAt(0).toUpperCase() ?? 'U'}
           </div>
           <span className='hidden text-sm font-medium text-slate-700 sm:block'>
-            {user?.nome ?? 'Usuário'}
+            {user?.email ?? 'Usuário'}
           </span>
         </div>
       </div>

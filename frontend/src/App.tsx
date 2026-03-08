@@ -14,10 +14,9 @@ const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
 const AUD = import.meta.env.VITE_EXPECTED_AUD ?? 'renowa.zonadev.tech';
 
 function ProtectedRoute() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setUser = useAuthStore((s) => s.setUser);
   const clearAuth = useAuthStore((s) => s.clearAuth);
-  const [checking, setChecking] = useState(true);
+  const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
 
   useEffect(() => {
     fetch(`${AUTH_URL}/api/auth/me`, { credentials: 'include' })
@@ -27,17 +26,17 @@ function ProtectedRoute() {
       })
       .then((data) => {
         setUser(data);
-        setChecking(false);
+        setAuthState('authenticated');
       })
       .catch(() => {
         clearAuth();
-        setChecking(false);
+        setAuthState('unauthenticated');
       });
-  }, []);
+  }, [setUser, clearAuth]);
 
-  if (checking) return null;
+  if (authState === 'checking') return null;
 
-  if (!isAuthenticated) {
+  if (authState === 'unauthenticated') {
     window.location.href = `${AUTH_URL}/login?aud=${AUD}&redirect=${encodeURIComponent(window.location.href)}`;
     return null;
   }

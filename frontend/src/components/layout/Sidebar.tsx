@@ -64,7 +64,7 @@ export default function Sidebar() {
       <div className='border-t border-primary-600 p-3'>
         <div className='mb-2 px-3 py-1'>
           <p className='truncate text-sm font-medium text-white'>
-            {user?.nome ?? 'Usuário'}
+            {user?.email ?? 'Usuário'}
           </p>
           <p className='truncate text-xs text-white/60'>
             {user?.roles?.join(', ') ?? ''}

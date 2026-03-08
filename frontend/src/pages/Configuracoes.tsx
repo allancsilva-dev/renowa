@@ -9,8 +9,8 @@ export default function Configuracoes() {
         <h2 className='mb-4 text-base font-semibold text-slate-900'>Perfil</h2>
         <dl className='space-y-3 text-sm'>
           <div className='flex gap-4'>
-            <dt className='w-32 font-medium text-slate-500'>Nome</dt>
-            <dd className='text-slate-900'>{user?.nome ?? '—'}</dd>
+            <dt className='w-32 font-medium text-slate-500'>E-mail</dt>
+            <dd className='text-slate-900'>{user?.email ?? '—'}</dd>
           </div>
           <div className='flex gap-4'>
             <dt className='w-32 font-medium text-slate-500'>Tenant</dt>
