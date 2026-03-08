@@ -20,7 +20,7 @@ export default function AppShell() {
       <div className='flex flex-1 flex-col overflow-hidden min-w-0'>
         <Header onToggle={() => setSidebarOpen((prev) => !prev)} />
 
-        <main className='flex-1 overflow-y-auto p-6'>
+        <main className='flex-1 overflow-y-auto p-6' style={{ backgroundColor: '#F4F7F6' }}>
           <Outlet />
         </main>
       </div>

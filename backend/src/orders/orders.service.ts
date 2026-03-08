@@ -103,6 +103,7 @@ export class OrdersService {
     pagination: PaginationDto,
     user: RequestUser,
     status?: string,
+    search?: string,
   ): Promise<PaginatedResponse<Order>> {
     const { page = 1, limit = 20 } = pagination;
 
@@ -121,6 +122,13 @@ export class OrdersService {
     }
 
     if (status) qb.andWhere('o.status = :status', { status });
+
+    if (search) {
+      qb.andWhere(
+        'CAST(o.numero_pedido AS TEXT) ILIKE :search',
+        { search: `%${search}%` },
+      );
+    }
 
     const [data, total] = await qb
       .orderBy('o.created_at', 'DESC')

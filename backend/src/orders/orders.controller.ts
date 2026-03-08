@@ -34,9 +34,10 @@ export class OrdersController {
   async findAll(
     @Query() pagination: PaginationDto,
     @Query('status') status: string,
+    @Query('search') search: string,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.ordersService.findAll(user.tenantId, pagination, user, status);
+    return this.ordersService.findAll(user.tenantId, pagination, user, status, search);
   }
 
   @Get(':uuid')

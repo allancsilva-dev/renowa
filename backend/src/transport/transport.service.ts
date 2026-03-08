@@ -19,14 +19,31 @@ export class TransportService {
     return this.transportRepo.save(t);
   }
 
-  async findAll(tenantId: string, pagination: PaginationDto): Promise<PaginatedResponse<Transport>> {
+  async findAll(
+    tenantId: string,
+    pagination: PaginationDto,
+    search?: string,
+  ): Promise<PaginatedResponse<Transport>> {
     const { page = 1, limit = 20 } = pagination;
-    const [data, total] = await this.transportRepo.findAndCount({
-      where: { tenant_id: tenantId },
-      order: { razao_social: 'ASC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+
+    const qb = this.transportRepo
+      .createQueryBuilder('t')
+      .where('t.tenant_id = :tenantId', { tenantId })
+      .andWhere('t.deleted_at IS NULL');
+
+    if (search) {
+      qb.andWhere(
+        '(t.razao_social ILIKE :search OR t.cnpj ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    const [data, total] = await qb
+      .orderBy('t.razao_social', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 

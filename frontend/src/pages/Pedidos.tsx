@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import EmptyState from '@/components/feedback/EmptyState';
@@ -22,6 +23,7 @@ const STATUS_COLORS: Record<OrderStatus, string> = {
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function Pedidos() {
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<OrderStatus | ''>('');
 
   const fetcher = useCallback(
@@ -86,7 +88,10 @@ export default function Pedidos() {
           ))}
         </select>
 
-        <button className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'>
+        <button
+          onClick={() => navigate('/pedidos/novo')}
+          className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
+        >
           <Plus className='h-4 w-4' />
           Novo Pedido
         </button>

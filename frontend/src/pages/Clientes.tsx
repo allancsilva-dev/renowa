@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import EmptyState from '@/components/feedback/EmptyState';
@@ -9,6 +10,7 @@ import { fetchClients } from '@/services/clients.service';
 import type { Client } from '@/types';
 
 export default function Clientes() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
 
@@ -66,7 +68,10 @@ export default function Clientes() {
           />
         </div>
 
-        <button className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'>
+        <button
+          onClick={() => navigate('/clientes/novo')}
+          className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
+        >
           <Plus className='h-4 w-4' />
           Novo Cliente
         </button>

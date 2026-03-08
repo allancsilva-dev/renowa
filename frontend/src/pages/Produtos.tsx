@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import EmptyState from '@/components/feedback/EmptyState';
@@ -11,6 +12,7 @@ import type { Product, PaginatedResponse } from '@/types';
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function Produtos() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
 
@@ -55,7 +57,10 @@ export default function Produtos() {
             className='w-full rounded-lg border bg-white py-2 pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary/40'
           />
         </div>
-        <button className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'>
+        <button
+          onClick={() => navigate('/produtos/novo')}
+          className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
+        >
           <Plus className='h-4 w-4' />
           Novo Produto
         </button>

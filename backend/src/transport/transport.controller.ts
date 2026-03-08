@@ -30,8 +30,12 @@ export class TransportController {
   }
 
   @Get()
-  async findAll(@Query() pagination: PaginationDto, @CurrentUser() user: RequestUser) {
-    return this.transportService.findAll(user.tenantId, pagination);
+  async findAll(
+    @Query() pagination: PaginationDto,
+    @Query('search') search: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.transportService.findAll(user.tenantId, pagination, search);
   }
 
   @Get(':uuid')

@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import {
   AreaChart,
   Area,
@@ -24,40 +25,38 @@ import {
   TrendingDown,
 } from 'lucide-react';
 
-// ─── Dados mock ────────────────────────────────────────────────────────────────
+// ─── Dados zerados ─────────────────────────────────────────────────────────────
 
-const salesData = [
-  { mes: 'Jan', valor: 180000 },
-  { mes: 'Fev', valor: 220000 },
-  { mes: 'Mar', valor: 195000 },
-  { mes: 'Abr', valor: 260000 },
-  { mes: 'Mai', valor: 248500 },
-  { mes: 'Jun', valor: 310000 },
-];
+const salesData = Array(6).fill(0).map((_, i) => ({
+  mes: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'][i],
+  valor: 0,
+}));
+
+const faturamento = 0;
+const pedidosCount = 0;
+const ticketMedio = 0;
+const totalClientes = 0;
+const pedidosAbertos = 0;
+const produtosAtivos = 0;
+const receitaPrevista = 0;
 
 const desempenhoData = [
-  { name: 'Atingido', value: 82.8, color: '#2A9D8F' },
-  { name: 'Pendente', value: 12.2, color: '#F4A261' },
-  { name: 'Abaixo', value: 5, color: '#E76F51' },
+  { name: 'Atingido', value: 50, color: '#2A9D8F' },
+  { name: 'Pendente', value: 30, color: '#F4A261' },
+  { name: 'Abaixo',   value: 20, color: '#E76F51' },
 ];
 
 const carteiraData = [
-  { name: 'Ativos', value: 68, color: '#2A9D8F' },
-  { name: 'Inativos', value: 22, color: '#F4A261' },
-  { name: 'Prospect', value: 10, color: '#E76F51' },
-];
-
-const abcData = [
-  { cliente: 'Distribuidora Norte', valor: 'R$ 45.200', badge: 'Prioridade' },
-  { cliente: 'Comércio Sul Ltda',   valor: 'R$ 32.100', badge: 'Prioridade' },
-  { cliente: 'Mercado Central',     valor: 'R$ 18.500', badge: 'Atenção' },
-  { cliente: 'Loja do Povo',        valor: 'R$ 9.800',  badge: 'Normal' },
-  { cliente: 'Atacado Fácil',       valor: 'R$ 5.200',  badge: 'Normal' },
+  { name: 'Ativos',   value: 50, color: '#2A9D8F' },
+  { name: 'Inativos', value: 30, color: '#F4A261' },
+  { name: 'Prospect', value: 20, color: '#E76F51' },
 ];
 
 const positivacaoData = [
-  { name: 'Positivação', value: 92.4, fill: '#2A9D8F' },
+  { name: 'Positivação', value: 0, fill: '#2A9D8F' },
 ];
+
+const abcData: { cliente: string; valor: string; badge: string }[] = [];
 
 // ─── Formatação ────────────────────────────────────────────────────────────────
 
@@ -147,6 +146,7 @@ function badgeStyle(badge: string): string {
 // ─── Componente principal ──────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
   return (
@@ -171,7 +171,8 @@ export default function Dashboard() {
         </div>
 
         {/* Ações */}
-        <div className='flex items-center gap-2'>
+        <div className='flex items-center gap-3'>
+          <img src='/assets/logo-renowa.png' className='h-12 w-auto object-contain' alt='Renowa' />
           <button className='flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'>
             <Download className='h-4 w-4' />
             Exportar
@@ -181,6 +182,7 @@ export default function Dashboard() {
             Imprimir
           </button>
           <button
+            onClick={() => navigate('/pedidos/novo')}
             className='flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-medium text-white hover:opacity-90 transition-opacity'
             style={{ backgroundColor: '#2A9D8F' }}
           >
@@ -239,9 +241,9 @@ export default function Dashboard() {
         <Card className='col-span-12 lg:col-span-3'>
           <CardHeader title='Resumo' />
           <div className='px-5'>
-            <MetricRow label='Faturamento' value='R$ 248.500' pct={12.4} up={true} />
-            <MetricRow label='Pedidos'     value='142'        pct={8.7}  up={true} />
-            <MetricRow label='Ticket Médio' value='R$ 1.750' pct={3.2}  up={false} />
+            <MetricRow label='Faturamento'  value={fmt(faturamento)}   pct={0} up={true} />
+            <MetricRow label='Pedidos'      value={String(pedidosCount)} pct={0} up={true} />
+            <MetricRow label='Ticket Médio' value={fmt(ticketMedio)}   pct={0} up={false} />
           </div>
         </Card>
 
@@ -290,12 +292,12 @@ export default function Dashboard() {
             <div className='w-full'>
               <div className='flex justify-between text-xs text-slate-500 mb-1'>
                 <span>Meta</span>
-                <span className='font-semibold text-slate-700'>82.8%</span>
+                <span className='font-semibold text-slate-700'>0%</span>
               </div>
               <div className='h-2 w-full rounded-full bg-slate-100'>
                 <div
                   className='h-2 rounded-full'
-                  style={{ width: '82.8%', backgroundColor: '#2A9D8F' }}
+                  style={{ width: '0%', backgroundColor: '#2A9D8F' }}
                 />
               </div>
             </div>
@@ -307,32 +309,32 @@ export default function Dashboard() {
       <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4'>
         <KpiCard
           title='Total de Clientes'
-          value='1.284'
-          subtitle='+24 este mês'
+          value={String(totalClientes)}
+          subtitle='Sem dados ainda'
           icon={Users}
           iconBg='#3B82F6'
           up={true}
         />
         <KpiCard
           title='Pedidos em Aberto'
-          value='47'
-          subtitle='+5 desde ontem'
+          value={String(pedidosAbertos)}
+          subtitle='Sem dados ainda'
           icon={FileText}
           iconBg='#EF4444'
           up={false}
         />
         <KpiCard
           title='Produtos Ativos'
-          value='892'
-          subtitle='+12 novos produtos'
+          value={String(produtosAtivos)}
+          subtitle='Sem dados ainda'
           icon={Package}
           iconBg='#2A9D8F'
           up={true}
         />
         <KpiCard
           title='Receita Prevista'
-          value='R$ 89.200'
-          subtitle='+8.3% vs meta'
+          value={fmt(receitaPrevista)}
+          subtitle='Sem dados ainda'
           icon={Wallet}
           iconBg='#2A9D8F'
           up={true}
@@ -408,8 +410,8 @@ export default function Dashboard() {
             </ResponsiveContainer>
 
             <div className='text-center -mt-8'>
-              <p className='text-4xl font-bold text-slate-900'>92,4%</p>
-              <p className='mt-1 text-sm font-semibold text-green-600'>Ótimo</p>
+              <p className='text-4xl font-bold text-slate-900'>0%</p>
+              <p className='mt-1 text-sm font-semibold text-slate-400'>Sem dados</p>
               <p className='text-xs text-slate-400'>Taxa de positivação mensal</p>
             </div>
           </div>
@@ -428,28 +430,36 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {abcData.map((row, i) => (
-                  <tr
-                    key={row.cliente}
-                    className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}
-                  >
-                    <td className='py-2.5 pr-2'>
-                      <span className='font-medium text-slate-700 text-xs leading-snug'>
-                        {row.cliente}
-                      </span>
-                    </td>
-                    <td className='py-2.5 text-right text-xs font-semibold text-slate-900 whitespace-nowrap'>
-                      {row.valor}
-                    </td>
-                    <td className='py-2.5 text-right'>
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeStyle(row.badge)}`}
-                      >
-                        {row.badge}
-                      </span>
+                {abcData.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className='py-6 text-center text-sm text-slate-400'>
+                      Nenhum dado
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  abcData.map((row, i) => (
+                    <tr
+                      key={row.cliente}
+                      className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}
+                    >
+                      <td className='py-2.5 pr-2'>
+                        <span className='font-medium text-slate-700 text-xs leading-snug'>
+                          {row.cliente}
+                        </span>
+                      </td>
+                      <td className='py-2.5 text-right text-xs font-semibold text-slate-900 whitespace-nowrap'>
+                        {row.valor}
+                      </td>
+                      <td className='py-2.5 text-right'>
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeStyle(row.badge)}`}
+                        >
+                          {row.badge}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

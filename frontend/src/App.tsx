@@ -4,8 +4,11 @@ import AppShell from '@/components/layout/AppShell';
 import { useAuthStore } from '@/store/authStore';
 import Dashboard from '@/pages/Dashboard';
 import Clientes from '@/pages/Clientes';
+import ClienteForm from '@/pages/ClienteForm';
 import Pedidos from '@/pages/Pedidos';
+import PedidoForm from '@/pages/PedidoForm';
 import Produtos from '@/pages/Produtos';
+import ProdutoForm from '@/pages/ProdutoForm';
 import Transporte from '@/pages/Transporte';
 import Financeiro from '@/pages/Financeiro';
 import Configuracoes from '@/pages/Configuracoes';
@@ -59,8 +62,13 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route path='dashboard' element={<Dashboard />} />
             <Route path='clientes' element={<Clientes />} />
+            <Route path='clientes/novo' element={<ClienteForm />} />
+            <Route path='clientes/:uuid/editar' element={<ClienteForm />} />
             <Route path='pedidos' element={<Pedidos />} />
+            <Route path='pedidos/novo' element={<PedidoForm />} />
             <Route path='produtos' element={<Produtos />} />
+            <Route path='produtos/novo' element={<ProdutoForm />} />
+            <Route path='produtos/:uuid/editar' element={<ProdutoForm />} />
             <Route path='transporte' element={<Transporte />} />
             <Route path='financeiro' element={<Financeiro />} />
             <Route element={<RoleRoute roles={['ADMIN']} />}>
