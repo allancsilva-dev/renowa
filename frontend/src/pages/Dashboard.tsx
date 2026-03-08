@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TrendingUp, Users, ShoppingCart, DollarSign, AlertTriangle } from 'lucide-react';
+import { TrendingUp, ShoppingCart, DollarSign, AlertTriangle } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';

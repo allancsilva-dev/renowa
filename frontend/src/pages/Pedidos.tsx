@@ -8,19 +8,15 @@ import { fetchOrders } from '@/services/orders.service';
 import type { Order, OrderStatus } from '@/types';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
-  RASCUNHO:   'Rascunho',
-  ENVIADO:    'Enviado',
-  CONFIRMADO: 'Confirmado',
-  FATURADO:   'Faturado',
-  CANCELADO:  'Cancelado',
+  em_aberto: 'Em Aberto',
+  concluido: 'Concluído',
+  cancelado:  'Cancelado',
 };
 
 const STATUS_COLORS: Record<OrderStatus, string> = {
-  RASCUNHO:   'bg-slate-100 text-slate-600',
-  ENVIADO:    'bg-blue-100 text-blue-700',
-  CONFIRMADO: 'bg-green-100 text-green-700',
-  FATURADO:   'bg-primary/10 text-primary-700',
-  CANCELADO:  'bg-red-100 text-red-700',
+  em_aberto: 'bg-blue-100 text-blue-700',
+  concluido: 'bg-green-100 text-green-700',
+  cancelado:  'bg-red-100 text-red-700',
 };
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -40,23 +36,30 @@ export default function Pedidos() {
     {
       key: 'numero',
       header: 'Nº',
-      cell: (row: Order) => <span className='font-mono font-medium'>#{row.numero_pedido}</span>,
+      cell: (row: Order) => (
+        <span className='font-mono font-medium'>
+          {row.numero_pedido != null ? `#${row.numero_pedido}` : '—'}
+        </span>
+      ),
       className: 'w-20',
     },
     {
-      key: 'cliente',
+      // Order não carrega join de cliente — exibe o ID até haver endpoint com join
+      key: 'cliente_id',
       header: 'Cliente',
-      cell: (row: Order) => row.cliente?.razao_social ?? '—',
+      cell: (row: Order) => row.cliente_id != null ? `ID ${row.cliente_id}` : '—',
     },
     {
       key: 'data',
       header: 'Data',
-      cell: (row: Order) => new Date(row.data_pedido).toLocaleDateString('pt-BR'),
+      cell: (row: Order) =>
+        row.data ? new Date(row.data).toLocaleDateString('pt-BR') : '—',
     },
     {
-      key: 'valor',
-      header: 'Valor Total',
-      cell: (row: Order) => BRL.format(row.valor_total),
+      key: 'total',
+      header: 'Total s/ Imposto',
+      cell: (row: Order) =>
+        row.total_sem_imposto != null ? BRL.format(row.total_sem_imposto) : '—',
     },
     {
       key: 'status',

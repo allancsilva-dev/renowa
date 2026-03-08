@@ -34,17 +34,11 @@ export default function Produtos() {
         </div>
       ),
     },
-    { key: 'unidade', header: 'Un.', cell: (row: Product) => row.unidade, className: 'w-16' },
-    { key: 'preco_venda', header: 'Preço Venda', cell: (row: Product) => BRL.format(row.preco_venda) },
-    { key: 'estoque', header: 'Estoque', cell: (row: Product) => `${row.estoque_atual} ${row.unidade}` },
     {
-      key: 'status',
-      header: 'Status',
-      cell: (row: Product) => (
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
-          {row.is_active ? 'Ativo' : 'Inativo'}
-        </span>
-      ),
+      key: 'preco_base',
+      header: 'Preço Base',
+      // preco_base é nullable no modelo de dados
+      cell: (row: Product) => row.preco_base != null ? BRL.format(row.preco_base) : '—',
     },
   ];
 

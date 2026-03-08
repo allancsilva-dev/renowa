@@ -25,23 +25,18 @@ export default function Clientes() {
       key: 'razao_social',
       header: 'Razão Social',
       cell: (row: Client) => (
-        <div>
-          <p className='font-medium text-slate-900'>{row.razao_social}</p>
-          {row.nome_fantasia && (
-            <p className='text-xs text-slate-500'>{row.nome_fantasia}</p>
-          )}
-        </div>
+        <p className='font-medium text-slate-900'>{row.razao_social}</p>
       ),
     },
     {
-      key: 'cnpj_cpf',
-      header: 'CNPJ / CPF',
-      cell: (row: Client) => row.cnpj_cpf ?? '—',
+      key: 'cnpj',
+      header: 'CNPJ',
+      cell: (row: Client) => row.cnpj ?? '—',
     },
     {
-      key: 'telefone',
+      key: 'tel',
       header: 'Telefone',
-      cell: (row: Client) => row.telefone ?? '—',
+      cell: (row: Client) => row.tel ?? '—',
     },
     {
       key: 'email',
@@ -49,17 +44,10 @@ export default function Clientes() {
       cell: (row: Client) => row.email ?? '—',
     },
     {
-      key: 'status',
-      header: 'Status',
-      cell: (row: Client) => (
-        <span
-          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-            row.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'
-          }`}
-        >
-          {row.is_active ? 'Ativo' : 'Inativo'}
-        </span>
-      ),
+      key: 'cidade',
+      header: 'Cidade / UF',
+      cell: (row: Client) =>
+        row.cidade ? `${row.cidade}${row.uf ? ` / ${row.uf}` : ''}` : '—',
     },
   ];
 
