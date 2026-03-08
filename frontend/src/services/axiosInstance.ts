@@ -14,8 +14,8 @@ api.interceptors.response.use(
     if (axios.isAxiosError(err) && err.response?.status === 401) {
       useAuthStore.getState().clearAuth();
       const authUrl = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
-      const aud = import.meta.env.VITE_AUTH_AUD ?? 'renowa.zonadev.tech';
-      window.location.href = `${authUrl}?aud=${aud}&redirect=${encodeURIComponent(window.location.href)}`;
+      const aud = import.meta.env.VITE_EXPECTED_AUD ?? 'renowa.zonadev.tech';
+      window.location.href = `${authUrl}/login?aud=${aud}&redirect=${encodeURIComponent(window.location.href)}`;
     }
     return Promise.reject(err);
   },

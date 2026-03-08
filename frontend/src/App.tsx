@@ -10,12 +10,12 @@ import Financeiro from '@/pages/Financeiro';
 import Configuracoes from '@/pages/Configuracoes';
 
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
-const AUD = import.meta.env.VITE_AUTH_AUD ?? 'renowa.zonadev.tech';
+const AUD = import.meta.env.VITE_EXPECTED_AUD ?? 'renowa.zonadev.tech';
 
 function ProtectedRoute() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   if (!isAuthenticated) {
-    window.location.href = `${AUTH_URL}?aud=${AUD}&redirect=${encodeURIComponent(window.location.href)}`;
+    window.location.href = `${AUTH_URL}/login?aud=${AUD}&redirect=${encodeURIComponent(window.location.href)}`;
     return null;
   }
   return <Outlet />;
