@@ -1,65 +1,223 @@
 import {
-  Controller, Get, Post, Body, Param, Query, UseGuards, Delete, HttpCode, HttpStatus,
+  Controller, Get, Post, Patch, Body, Param, Query,
+  UseGuards, Delete, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { FinanceService } from './finance.service';
 import { CreateMovementDto } from './dto/create-movement.dto';
-import { CreateComissaoDto } from './dto/create-comissao.dto';
+import { UpdateMovementDto } from './dto/update-movement.dto';
+import { CreateComissaoDto, UpdateComissaoDto } from './dto/create-comissao.dto';
 import { CreateInadimplenciaDto } from './dto/create-inadimplencia.dto';
+import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
 
-/**
- * Visualizar: ADMIN, FINANCEIRO, GESTAO
- * Lançar: ADMIN, FINANCEIRO, GESTAO
- */
 @Controller('financeiro')
 @UseGuards(RolesGuard)
 @Roles('ADMIN', 'FINANCEIRO', 'GESTAO')
 export class FinanceController {
   constructor(private readonly financeService: FinanceService) {}
 
+  // ── Dashboard ─────────────────────────────────────────────
+
   @Get('dashboard')
   async dashboard(@CurrentUser() user: RequestUser) {
     return this.financeService.getDashboard(user.tenantId);
   }
 
-  @Post('movimentacoes')
+  // ── Fluxo de Caixa ────────────────────────────────────────
+
+  @Get('fluxo-caixa')
+  async fluxoCaixa(
+    @Query('mes') mes: string,
+    @Query('ano') ano: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const now = new Date();
+    return this.financeService.getFluxoCaixa(
+      user.tenantId,
+      mes ? Number(mes) : now.getMonth() + 1,
+      ano ? Number(ano) : now.getFullYear(),
+    );
+  }
+
+  // ── Movimentações / Lançamentos ───────────────────────────
+
+  @Post('lancamentos')
   async create(@Body() dto: CreateMovementDto, @CurrentUser() user: RequestUser) {
     return this.financeService.createMovimento(dto, user.tenantId);
   }
 
-  @Get('movimentacoes')
+  @Get('lancamentos')
   async findAll(
+    @Query() pagination: PaginationDto,
+    @Query('tipo') tipo: string,
+    @Query('mes') mes: string,
+    @Query('ano') ano: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.findAllMovimentos(
+      user.tenantId,
+      pagination,
+      tipo || undefined,
+      mes ? Number(mes) : undefined,
+      ano ? Number(ano) : undefined,
+    );
+  }
+
+  @Get('lancamentos/:uuid')
+  async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
+    return this.financeService.findOneMovimento(uuid, user.tenantId);
+  }
+
+  @Patch('lancamentos/:uuid')
+  async update(
+    @Param('uuid') uuid: string,
+    @Body() dto: UpdateMovementDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.updateMovimento(uuid, dto, user.tenantId);
+  }
+
+  @Delete('lancamentos/:uuid')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeMovimento(uuid, user.tenantId);
+  }
+
+  // Rotas legadas (alias para movimentacoes)
+  @Post('movimentacoes')
+  async createMovimentacao(@Body() dto: CreateMovementDto, @CurrentUser() user: RequestUser) {
+    return this.financeService.createMovimento(dto, user.tenantId);
+  }
+
+  @Get('movimentacoes')
+  async findAllMovimentacoes(
     @Query() pagination: PaginationDto,
     @Query('tipo') tipo: string,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.financeService.findAllMovimentos(user.tenantId, pagination, tipo);
+    return this.financeService.findAllMovimentos(user.tenantId, pagination, tipo || undefined);
   }
 
   @Get('movimentacoes/:uuid')
-  async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
+  async findOneMovimentacao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
     return this.financeService.findOneMovimento(uuid, user.tenantId);
   }
 
   @Delete('movimentacoes/:uuid')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
+  async removeMovimentacao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.financeService.removeMovimento(uuid, user.tenantId);
   }
+
+  // ── Comissões ─────────────────────────────────────────────
 
   @Post('comissoes')
   async createComissao(@Body() dto: CreateComissaoDto, @CurrentUser() user: RequestUser) {
     return this.financeService.createComissao(dto, user.tenantId);
   }
 
-  @Get('comissoes')
-  async findAllComissoes(@Query() pagination: PaginationDto, @CurrentUser() user: RequestUser) {
-    return this.financeService.findAllComissoes(user.tenantId, pagination);
+  @Get('comissoes/resumo')
+  async resumoComissoes(
+    @Query('mes') mes: string,
+    @Query('ano') ano: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.getResumoComissoes(
+      user.tenantId,
+      mes ? Number(mes) : undefined,
+      ano ? Number(ano) : undefined,
+    );
   }
+
+  @Get('comissoes/por-empresa')
+  async vendasPorEmpresa(
+    @Query('fornecedor_id') fornecedor_id: string,
+    @Query('mes') mes: string,
+    @Query('ano') ano: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.getVendasPorEmpresa(
+      user.tenantId,
+      mes ? Number(mes) : undefined,
+      ano ? Number(ano) : undefined,
+      fornecedor_id ? Number(fornecedor_id) : undefined,
+    );
+  }
+
+  @Get('comissoes')
+  async findAllComissoes(
+    @Query() pagination: PaginationDto,
+    @Query('fornecedor_id') fornecedor_id: string,
+    @Query('mes') mes: string,
+    @Query('ano') ano: string,
+    @Query('status') status: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.findAllComissoes(user.tenantId, pagination, {
+      fornecedor_id: fornecedor_id ? Number(fornecedor_id) : undefined,
+      mes: mes ? Number(mes) : undefined,
+      ano: ano ? Number(ano) : undefined,
+      status: status || undefined,
+    });
+  }
+
+  @Patch('comissoes/:uuid')
+  async updateComissao(
+    @Param('uuid') uuid: string,
+    @Body() dto: UpdateComissaoDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.updateComissao(uuid, dto, user.tenantId);
+  }
+
+  @Delete('comissoes/:uuid')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeComissao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeComissao(uuid, user.tenantId);
+  }
+
+  // ── Parceiros Comerciais ───────────────────────────────────
+
+  @Post('parceiros')
+  async createParceiro(@Body() dto: CreateParceiroDto, @CurrentUser() user: RequestUser) {
+    return this.financeService.createParceiro(dto, user.tenantId);
+  }
+
+  @Get('parceiros')
+  async findAllParceiros(
+    @Query() pagination: PaginationDto,
+    @Query('nome_parceiro') nome_parceiro: string,
+    @Query('mes') mes: string,
+    @Query('ano') ano: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.findAllParceiros(user.tenantId, pagination, {
+      nome_parceiro: nome_parceiro || undefined,
+      mes: mes ? Number(mes) : undefined,
+      ano: ano ? Number(ano) : undefined,
+    });
+  }
+
+  @Patch('parceiros/:uuid')
+  async updateParceiro(
+    @Param('uuid') uuid: string,
+    @Body() dto: UpdateParceiroDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.updateParceiro(uuid, dto, user.tenantId);
+  }
+
+  @Delete('parceiros/:uuid')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeParceiro(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeParceiro(uuid, user.tenantId);
+  }
+
+  // ── Inadimplência ─────────────────────────────────────────
 
   @Post('inadimplencia')
   async createInadimplencia(@Body() dto: CreateInadimplenciaDto, @CurrentUser() user: RequestUser) {
@@ -69,5 +227,20 @@ export class FinanceController {
   @Get('inadimplencia')
   async findAllInadimplencia(@Query() pagination: PaginationDto, @CurrentUser() user: RequestUser) {
     return this.financeService.findAllInadimplencia(user.tenantId, pagination);
+  }
+
+  @Patch('inadimplencia/:uuid')
+  async updateInadimplencia(
+    @Param('uuid') uuid: string,
+    @Body() dto: Partial<CreateInadimplenciaDto>,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.updateInadimplencia(uuid, dto, user.tenantId);
+  }
+
+  @Delete('inadimplencia/:uuid')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeInadimplencia(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeInadimplencia(uuid, user.tenantId);
   }
 }

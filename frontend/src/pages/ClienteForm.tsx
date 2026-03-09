@@ -3,6 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/services/axiosInstance';
 import type { Client } from '@/types';
 
+const UFS = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
+  'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI',
+  'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+];
+
 type FormFields = {
   razao_social: string;
   cnpj: string;
@@ -56,6 +62,32 @@ function toFields(c: Client): FormFields {
   };
 }
 
+// ─── Funções de máscara ─────────────────────────────────────────────────────
+
+function maskCnpj(value: string): string {
+  const d = value.replace(/\D/g, '').slice(0, 14);
+  return d
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2');
+}
+
+function maskCep(value: string): string {
+  const d = value.replace(/\D/g, '').slice(0, 8);
+  return d.replace(/^(\d{5})(\d)/, '$1-$2');
+}
+
+function maskTel(value: string): string {
+  const d = value.replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 10) {
+    return d.replace(/^(\d{2})(\d{4})(\d)/, '($1) $2-$3').replace(/^(\d{2})(\d)/, '($1) $2');
+  }
+  return d.replace(/^(\d{2})(\d{5})(\d)/, '($1) $2-$3');
+}
+
+// ─── Componente ─────────────────────────────────────────────────────────────
+
 export default function ClienteForm() {
   const { uuid } = useParams<{ uuid: string }>();
   const navigate = useNavigate();
@@ -64,6 +96,7 @@ export default function ClienteForm() {
   const [form, setForm] = useState<FormFields>(empty);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
+  const [cepLoading, setCepLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,16 +104,49 @@ export default function ClienteForm() {
     setFetching(true);
     api
       .get<Client>(`/clientes/${uuid}`)
-      .then((r) => {
-        setForm(toFields(r.data));
-      })
+      .then((r) => setForm(toFields(r.data)))
       .catch(() => setError('Erro ao carregar cliente.'))
       .finally(() => setFetching(false));
   }, [uuid]);
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  function handleCnpj(e: React.ChangeEvent<HTMLInputElement>) {
+    setForm((prev) => ({ ...prev, cnpj: maskCnpj(e.target.value) }));
+  }
+
+  function handleTel(e: React.ChangeEvent<HTMLInputElement>) {
+    setForm((prev) => ({ ...prev, tel: maskTel(e.target.value) }));
+  }
+
+  async function handleCep(e: React.ChangeEvent<HTMLInputElement>) {
+    const masked = maskCep(e.target.value);
+    setForm((prev) => ({ ...prev, cep: masked }));
+
+    const cepLimpo = masked.replace(/\D/g, '');
+    if (cepLimpo.length !== 8) return;
+
+    setCepLoading(true);
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
+      const data = await res.json();
+      if (!data.erro) {
+        setForm((prev) => ({
+          ...prev,
+          endereco: data.logradouro ?? prev.endereco,
+          bairro: data.bairro ?? prev.bairro,
+          cidade: data.localidade ?? prev.cidade,
+          uf: data.uf ?? prev.uf,
+        }));
+      }
+    } catch {
+      // Falha silenciosa — usuário preenche manualmente
+    } finally {
+      setCepLoading(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -92,7 +158,6 @@ export default function ClienteForm() {
     setLoading(true);
     setError(null);
 
-    // Build payload — omit empty strings as null
     const payload: Record<string, string | null> = {};
     (Object.keys(form) as (keyof FormFields)[]).forEach((k) => {
       if (k === 'razao_social') {
@@ -124,27 +189,7 @@ export default function ClienteForm() {
     );
   }
 
-  const field = (
-    label: string,
-    name: keyof FormFields,
-    opts?: { required?: boolean; placeholder?: string },
-  ) => (
-    <div className='flex flex-col gap-1'>
-      <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
-        {label}
-        {opts?.required && <span className='text-red-500 ml-0.5'>*</span>}
-      </label>
-      <input
-        type='text'
-        name={name}
-        value={form[name]}
-        onChange={handleChange}
-        placeholder={opts?.placeholder ?? ''}
-        required={opts?.required}
-        className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
-      />
-    </div>
-  );
+  const inputClass = 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40';
 
   return (
     <div className='max-w-4xl mx-auto'>
@@ -171,11 +216,73 @@ export default function ClienteForm() {
               Dados Principais
             </h2>
             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
-              {field('Razão Social', 'razao_social', { required: true })}
-              {field('CNPJ', 'cnpj', { placeholder: '00.000.000/0001-00' })}
-              {field('E-mail', 'email', { placeholder: 'email@empresa.com' })}
-              {field('Telefone', 'tel', { placeholder: '(00) 00000-0000' })}
-              {field('Contato', 'contato')}
+              {/* Razão Social */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                  Razão Social <span className='text-red-500'>*</span>
+                </label>
+                <input
+                  type='text'
+                  name='razao_social'
+                  value={form.razao_social}
+                  onChange={handleChange}
+                  required
+                  className={inputClass}
+                />
+              </div>
+
+              {/* CNPJ */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>CNPJ</label>
+                <input
+                  type='text'
+                  name='cnpj'
+                  value={form.cnpj}
+                  onChange={handleCnpj}
+                  placeholder='00.000.000/0001-00'
+                  inputMode='numeric'
+                  className={inputClass}
+                />
+              </div>
+
+              {/* E-mail */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>E-mail</label>
+                <input
+                  type='text'
+                  name='email'
+                  value={form.email}
+                  onChange={handleChange}
+                  placeholder='email@empresa.com'
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Telefone */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Telefone</label>
+                <input
+                  type='text'
+                  name='tel'
+                  value={form.tel}
+                  onChange={handleTel}
+                  placeholder='(00) 00000-0000'
+                  inputMode='numeric'
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Contato */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Contato</label>
+                <input
+                  type='text'
+                  name='contato'
+                  value={form.contato}
+                  onChange={handleChange}
+                  className={inputClass}
+                />
+              </div>
             </div>
           </div>
 
@@ -185,11 +292,73 @@ export default function ClienteForm() {
               Endereço
             </h2>
             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
-              {field('CEP', 'cep', { placeholder: '00000-000' })}
-              {field('Endereço', 'endereco')}
-              {field('Bairro', 'bairro')}
-              {field('Cidade', 'cidade')}
-              {field('UF', 'uf', { placeholder: 'SP' })}
+              {/* CEP */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                  CEP {cepLoading && <span className='text-slate-400 normal-case font-normal'>(buscando...)</span>}
+                </label>
+                <input
+                  type='text'
+                  name='cep'
+                  value={form.cep}
+                  onChange={handleCep}
+                  placeholder='00000-000'
+                  inputMode='numeric'
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Endereço */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Endereço</label>
+                <input
+                  type='text'
+                  name='endereco'
+                  value={form.endereco}
+                  onChange={handleChange}
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Bairro */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Bairro</label>
+                <input
+                  type='text'
+                  name='bairro'
+                  value={form.bairro}
+                  onChange={handleChange}
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Cidade */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Cidade</label>
+                <input
+                  type='text'
+                  name='cidade'
+                  value={form.cidade}
+                  onChange={handleChange}
+                  className={inputClass}
+                />
+              </div>
+
+              {/* UF — dropdown */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>UF</label>
+                <select
+                  name='uf'
+                  value={form.uf}
+                  onChange={handleChange}
+                  className={inputClass}
+                >
+                  <option value=''>Selecione</option>
+                  {UFS.map((uf) => (
+                    <option key={uf} value={uf}>{uf}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -199,17 +368,24 @@ export default function ClienteForm() {
               Comercial
             </h2>
             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
-              {field('Pagamento Padrão', 'pgt_padrao')}
-              {field('Prazo', 'prazo')}
-              {field('Local de Entrega', 'local_entrega')}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Pagamento Padrão</label>
+                <input type='text' name='pgt_padrao' value={form.pgt_padrao} onChange={handleChange} className={inputClass} />
+              </div>
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Prazo</label>
+                <input type='text' name='prazo' value={form.prazo} onChange={handleChange} className={inputClass} />
+              </div>
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Local de Entrega</label>
+                <input type='text' name='local_entrega' value={form.local_entrega} onChange={handleChange} className={inputClass} />
+              </div>
             </div>
           </div>
 
           {/* Observação */}
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
-              Observação
-            </label>
+            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Observação</label>
             <textarea
               name='observacao'
               value={form.observacao}

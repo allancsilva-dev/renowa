@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart,
@@ -147,7 +148,30 @@ function badgeStyle(badge: string): string {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const now = new Date();
   const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const [mes, setMes] = useState(now.getMonth() + 1); // 1-12
+  const [ano, setAno] = useState(now.getFullYear());
+
+  const anosDisponiveis = Array.from(
+    { length: now.getFullYear() - 2024 + 1 },
+    (_, i) => 2024 + i,
+  );
+
+  const handleExport = () => {
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      'Métrica,Valor\n' +
+      `Faturamento,${faturamento}\n` +
+      `Pedidos,${pedidosCount}\n` +
+      `Ticket Médio,${ticketMedio}`;
+    const link = document.createElement('a');
+    link.href = encodeURI(csvContent);
+    link.download = `dashboard_${mes}_${ano}.csv`;
+    link.click();
+  };
+
+  const handlePrint = () => window.print();
 
   return (
     <div className='space-y-5'>
@@ -158,14 +182,22 @@ export default function Dashboard() {
           <span className='text-xs font-semibold uppercase tracking-wider text-slate-400'>
             Filtrar por:
           </span>
-          <select className='rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'>
-            {months.map((m) => (
-              <option key={m}>{m}</option>
+          <select
+            value={mes}
+            onChange={(e) => setMes(Number(e.target.value))}
+            className='rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
+          >
+            {months.map((m, i) => (
+              <option key={m} value={i + 1}>{m}</option>
             ))}
           </select>
-          <select className='rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'>
-            {[2024, 2025, 2026].map((y) => (
-              <option key={y}>{y}</option>
+          <select
+            value={ano}
+            onChange={(e) => setAno(Number(e.target.value))}
+            className='rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
+          >
+            {anosDisponiveis.map((y) => (
+              <option key={y} value={y}>{y}</option>
             ))}
           </select>
         </div>
@@ -173,11 +205,17 @@ export default function Dashboard() {
         {/* Ações */}
         <div className='flex items-center gap-3'>
           <img src='/assets/logo-renowa.png' className='h-12 w-auto object-contain' alt='Renowa' />
-          <button className='flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'>
+          <button
+            onClick={handleExport}
+            className='flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'
+          >
             <Download className='h-4 w-4' />
             Exportar
           </button>
-          <button className='flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'>
+          <button
+            onClick={handlePrint}
+            className='flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'
+          >
             <Printer className='h-4 w-4' />
             Imprimir
           </button>

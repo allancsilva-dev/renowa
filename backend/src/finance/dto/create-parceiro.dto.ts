@@ -1,8 +1,15 @@
 import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
-export class CreateComissaoDto {
+export class CreateParceiroDto {
   @IsUUID('4')
   uuid: string;
+
+  @IsString()
+  nome_parceiro: string;
+
+  @IsOptional()
+  @IsString()
+  empresa_parceiro?: string;
 
   @IsOptional()
   @IsUUID('4')
@@ -20,9 +27,8 @@ export class CreateComissaoDto {
   @IsString()
   numero_nfe?: string;
 
-  @IsOptional()
   @IsString()
-  data_pedido?: string;
+  data_pedido: string;
 
   @IsOptional()
   @IsString()
@@ -41,9 +47,8 @@ export class CreateComissaoDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  perc_comissao?: number;
+  percentual_comissao?: number;
 
-  /** Snapshot calculado no lançamento */
   @IsNumber()
   @Min(0)
   valor_comissao: number;
@@ -53,7 +58,7 @@ export class CreateComissaoDto {
   status?: string;
 }
 
-export class UpdateComissaoDto {
+export class UpdateParceiroDto {
   @IsOptional()
   @IsString()
   numero_nfe?: string;
@@ -66,6 +71,11 @@ export class UpdateComissaoDto {
   @IsNumber()
   @Min(0)
   valor_faturado?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  percentual_comissao?: number;
 
   @IsOptional()
   @IsNumber()

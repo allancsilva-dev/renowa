@@ -74,19 +74,19 @@ export default function Sidebar() {
                 to={to}
                 style={({ isActive }) => ({
                   ...itemBase,
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
-                  background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+                  color: isActive ? '#2A9D8F' : 'rgba(255,255,255,0.7)',
+                  background: isActive ? '#F4F7F6' : 'transparent',
                 })}
                 onMouseEnter={(e) => {
                   const el = e.currentTarget;
-                  if (!el.classList.contains('active')) {
+                  if (el.getAttribute('aria-current') !== 'page') {
                     el.style.color = '#fff';
-                    el.style.background = 'rgba(255,255,255,0.05)';
+                    el.style.background = '#E8ECEB';
                   }
                 }}
                 onMouseLeave={(e) => {
                   const el = e.currentTarget;
-                  if (!el.classList.contains('active')) {
+                  if (el.getAttribute('aria-current') !== 'page') {
                     el.style.color = 'rgba(255,255,255,0.7)';
                     el.style.background = 'transparent';
                   }
@@ -106,13 +106,15 @@ export default function Sidebar() {
           to='/configuracoes'
           style={({ isActive }) => ({
             ...itemBase,
-            color: isActive ? '#fff' : 'rgba(255,255,255,0.7)',
-            background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+            color: isActive ? '#2A9D8F' : 'rgba(255,255,255,0.7)',
+            background: isActive ? '#F4F7F6' : 'transparent',
           })}
           onMouseEnter={(e) => {
             const el = e.currentTarget;
-            el.style.color = '#fff';
-            el.style.background = 'rgba(255,255,255,0.05)';
+            if (el.getAttribute('aria-current') !== 'page') {
+              el.style.color = '#fff';
+              el.style.background = '#E8ECEB';
+            }
           }}
           onMouseLeave={(e) => {
             const el = e.currentTarget;
