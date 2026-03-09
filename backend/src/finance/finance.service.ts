@@ -152,7 +152,10 @@ export class FinanceService {
       valor_pedido: dto.valor_pedido ?? null,
       valor_faturado: dto.valor_faturado ?? null,
       perc_comissao: dto.perc_comissao ?? null,
-      valor_comissao: dto.valor_comissao,
+      valor_comissao: dto.valor_comissao
+        ?? (dto.valor_pedido && dto.perc_comissao
+          ? Math.round(dto.valor_pedido * (dto.perc_comissao / 100) * 100) / 100
+          : 0),
       status: dto.status ?? 'pendente',
     });
     return this.comissaoRepo.save(c);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, X, Wallet, TrendingDown, BarChart2, Trash2 } from 'lucide-react';
 import api from '@/services/axiosInstance';
+import { InputMoney } from '@/components/ui/InputMoney';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -161,7 +162,7 @@ function FluxoCaixa() {
   const [data, setData] = useState<{ receitas: number; custos: number; saldo: number; lancamentos: Lancamento[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ tipo: 'Custo Fixo', descricao: '', valor: '', data: '' });
+  const [form, setForm] = useState<{ tipo: string; descricao: string; valor: number | null; data: string }>({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
   const [saving, setSaving] = useState(false);
 
   const TIPO_COLORS: Record<string, string> = {
@@ -192,11 +193,11 @@ function FluxoCaixa() {
         uuid: crypto.randomUUID(),
         tipo: form.tipo,
         descricao: form.descricao || null,
-        valor: parseFloat(form.valor),
+        valor: form.valor ?? 0,
         data: form.data || null,
       });
       setShowForm(false);
-      setForm({ tipo: 'Custo Fixo', descricao: '', valor: '', data: '' });
+      setForm({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
       load();
     } finally {
       setSaving(false);
@@ -292,7 +293,7 @@ function FluxoCaixa() {
               <input type='text' value={form.descricao} onChange={(e) => setForm((p) => ({ ...p, descricao: e.target.value }))} className={inputCls} />
             </Field>
             <Field label='Valor (R$)'>
-              <input type='number' step='0.01' min='0' required value={form.valor} onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} className={inputCls} />
+              <InputMoney value={form.valor} onChange={(val) => setForm((p) => ({ ...p, valor: val }))} required />
             </Field>
             <Field label='Data'>
               <input type='date' value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} className={inputCls} />
@@ -371,7 +372,7 @@ function Empresas() {
   );
 }
 
-// ─── Tab: Comissão (Aluíne) ──────────────────────────────────────────────────
+// ─── Tab: Comissão ────────────────────────────────────────────────────────────
 
 function ComissaoAlune() {
   const [mes, setMes] = useState(now.getMonth() + 1);
@@ -383,10 +384,15 @@ function ComissaoAlune() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    data_pedido: string; data_faturamento: string; fornecedor_id: string;
+    numero_pedido: string; numero_nfe: string; valor_pedido: number | null;
+    valor_faturado: number | null; perc_comissao: string; valor_comissao: number | null;
+    status: string;
+  }>({
     data_pedido: '', data_faturamento: '', fornecedor_id: '',
-    numero_pedido: '', numero_nfe: '', valor_pedido: '', valor_faturado: '',
-    perc_comissao: '', valor_comissao: '', status: 'pendente',
+    numero_pedido: '', numero_nfe: '', valor_pedido: null, valor_faturado: null,
+    perc_comissao: '', valor_comissao: null, status: 'pendente',
   });
   const [saving, setSaving] = useState(false);
 
@@ -416,10 +422,10 @@ function ComissaoAlune() {
 
   useEffect(() => { load(); }, [load]);
 
-  function calcComissao(vf: string, pc: string): string {
-    const a = parseFloat(vf);
-    const b = parseFloat(pc);
-    return !isNaN(a) && !isNaN(b) ? (a * b / 100).toFixed(2) : '';
+  function calcVc(vp: number | null, pc: string): number | null {
+    const pcNum = parseFloat(pc);
+    if (vp === null || isNaN(pcNum)) return null;
+    return Math.round(vp * (pcNum / 100) * 100) / 100;
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -433,10 +439,10 @@ function ComissaoAlune() {
         numero_nfe: form.numero_nfe || null,
         data_pedido: form.data_pedido || null,
         data_faturamento: form.data_faturamento || null,
-        valor_pedido: form.valor_pedido ? parseFloat(form.valor_pedido) : undefined,
-        valor_faturado: form.valor_faturado ? parseFloat(form.valor_faturado) : undefined,
+        valor_pedido: form.valor_pedido ?? undefined,
+        valor_faturado: form.valor_faturado ?? undefined,
         perc_comissao: form.perc_comissao ? parseFloat(form.perc_comissao) : undefined,
-        valor_comissao: parseFloat(form.valor_comissao || '0'),
+        valor_comissao: form.valor_comissao ?? 0,
         status: form.status,
       });
       setShowForm(false);
@@ -547,26 +553,27 @@ function ComissaoAlune() {
             </div>
             <div className='grid grid-cols-2 gap-3'>
               <Field label='Valor do Pedido'>
-                <input type='number' step='0.01' min='0' value={form.valor_pedido} onChange={(e) => setForm((p) => ({ ...p, valor_pedido: e.target.value }))} className={inputCls} />
+                <InputMoney value={form.valor_pedido} onChange={(val) => {
+                  setForm((p) => ({ ...p, valor_pedido: val, valor_comissao: calcVc(val, p.perc_comissao) }));
+                }} />
               </Field>
               <Field label='Valor Faturado'>
-                <input type='number' step='0.01' min='0' value={form.valor_faturado}
-                  onChange={(e) => {
-                    const vf = e.target.value;
-                    setForm((p) => ({ ...p, valor_faturado: vf, valor_comissao: calcComissao(vf, p.perc_comissao) }));
-                  }} className={inputCls} />
+                <InputMoney value={form.valor_faturado} onChange={(val) => setForm((p) => ({ ...p, valor_faturado: val }))} />
               </Field>
             </div>
             <div className='grid grid-cols-2 gap-3'>
               <Field label='% Comissão'>
-                <input type='number' step='0.01' min='0' max='100' value={form.perc_comissao}
-                  onChange={(e) => {
-                    const pc = e.target.value;
-                    setForm((p) => ({ ...p, perc_comissao: pc, valor_comissao: calcComissao(p.valor_faturado, pc) }));
-                  }} className={inputCls} />
+                <div className='relative'>
+                  <input type='number' step='0.01' min='0' max='100' value={form.perc_comissao}
+                    onChange={(e) => {
+                      const pc = e.target.value;
+                      setForm((p) => ({ ...p, perc_comissao: pc, valor_comissao: calcVc(p.valor_pedido, pc) }));
+                    }} className={`${inputCls} pr-8`} />
+                  <span className='absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none'>%</span>
+                </div>
               </Field>
               <Field label='Valor Comissão'>
-                <input type='number' step='0.01' min='0' required value={form.valor_comissao} onChange={(e) => setForm((p) => ({ ...p, valor_comissao: e.target.value }))} className={inputCls} />
+                <InputMoney value={form.valor_comissao} onChange={(val) => setForm((p) => ({ ...p, valor_comissao: val }))} required />
               </Field>
             </div>
             <Field label='Status'>
@@ -592,10 +599,14 @@ function Parceiros() {
   const [parceiros, setParceiros] = useState<Parceiro[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    nome_parceiro: string; empresa_parceiro: string; data_pedido: string;
+    data_faturamento: string; valor_faturado: number | null; percentual_comissao: string;
+    valor_comissao: number | null; status: string;
+  }>({
     nome_parceiro: '', empresa_parceiro: '', data_pedido: '',
-    data_faturamento: '', valor_faturado: '', percentual_comissao: '50',
-    valor_comissao: '', status: 'pendente',
+    data_faturamento: '', valor_faturado: null, percentual_comissao: '50',
+    valor_comissao: null, status: 'pendente',
   });
   const [saving, setSaving] = useState(false);
 
@@ -619,9 +630,9 @@ function Parceiros() {
         empresa_parceiro: form.empresa_parceiro || null,
         data_pedido: form.data_pedido,
         data_faturamento: form.data_faturamento || null,
-        valor_faturado: form.valor_faturado ? parseFloat(form.valor_faturado) : undefined,
+        valor_faturado: form.valor_faturado ?? undefined,
         percentual_comissao: parseFloat(form.percentual_comissao || '50'),
-        valor_comissao: parseFloat(form.valor_comissao || '0'),
+        valor_comissao: form.valor_comissao ?? 0,
         status: form.status,
       });
       setShowForm(false);
@@ -709,26 +720,27 @@ function Parceiros() {
             </div>
             <div className='grid grid-cols-2 gap-3'>
               <Field label='Valor Faturado'>
-                <input type='number' step='0.01' min='0' value={form.valor_faturado}
-                  onChange={(e) => {
-                    const vf = e.target.value;
-                    const pc = parseFloat(form.percentual_comissao || '50');
-                    const vc = !isNaN(parseFloat(vf)) ? (parseFloat(vf) * pc / 100).toFixed(2) : '';
-                    setForm((p) => ({ ...p, valor_faturado: vf, valor_comissao: vc }));
-                  }} className={inputCls} />
+                <InputMoney value={form.valor_faturado} onChange={(val) => {
+                  const pc = parseFloat(form.percentual_comissao || '50');
+                  const vc = val !== null && !isNaN(pc) ? Math.round(val * (pc / 100) * 100) / 100 : null;
+                  setForm((p) => ({ ...p, valor_faturado: val, valor_comissao: vc }));
+                }} />
               </Field>
               <Field label='% Comissão'>
-                <input type='number' step='0.01' min='0' max='100' value={form.percentual_comissao}
-                  onChange={(e) => {
-                    const pc = e.target.value;
-                    const vf = parseFloat(form.valor_faturado || '0');
-                    const vc = !isNaN(vf) ? (vf * parseFloat(pc || '0') / 100).toFixed(2) : '';
-                    setForm((p) => ({ ...p, percentual_comissao: pc, valor_comissao: vc }));
-                  }} className={inputCls} />
+                <div className='relative'>
+                  <input type='number' step='0.01' min='0' max='100' value={form.percentual_comissao}
+                    onChange={(e) => {
+                      const pc = e.target.value;
+                      const pcNum = parseFloat(pc);
+                      const vc = form.valor_faturado !== null && !isNaN(pcNum) ? Math.round(form.valor_faturado * (pcNum / 100) * 100) / 100 : null;
+                      setForm((p) => ({ ...p, percentual_comissao: pc, valor_comissao: vc }));
+                    }} className={`${inputCls} pr-8`} />
+                  <span className='absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none'>%</span>
+                </div>
               </Field>
             </div>
             <Field label='Valor Comissão'>
-              <input type='number' step='0.01' min='0' required value={form.valor_comissao} onChange={(e) => setForm((p) => ({ ...p, valor_comissao: e.target.value }))} className={inputCls} />
+              <InputMoney value={form.valor_comissao} onChange={(val) => setForm((p) => ({ ...p, valor_comissao: val }))} required />
             </Field>
             <Field label='Status'>
               <select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} className={inputCls}>
@@ -754,7 +766,7 @@ function Custos() {
   const [rotativos, setRotativos] = useState<Lancamento[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ tipo: 'Custo Fixo', descricao: '', valor: '', data: '' });
+  const [form, setForm] = useState<{ tipo: string; descricao: string; valor: number | null; data: string }>({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
@@ -781,7 +793,7 @@ function Custos() {
         uuid: crypto.randomUUID(),
         tipo: form.tipo,
         descricao: form.descricao || null,
-        valor: parseFloat(form.valor),
+        valor: form.valor ?? 0,
         data: form.data || null,
       });
       setShowForm(false);
@@ -880,7 +892,7 @@ function Custos() {
               <input type='text' required value={form.descricao} onChange={(e) => setForm((p) => ({ ...p, descricao: e.target.value }))} className={inputCls} />
             </Field>
             <Field label='Valor (R$)'>
-              <input type='number' step='0.01' min='0' required value={form.valor} onChange={(e) => setForm((p) => ({ ...p, valor: e.target.value }))} className={inputCls} />
+              <InputMoney value={form.valor} onChange={(val) => setForm((p) => ({ ...p, valor: val }))} required />
             </Field>
             <Field label='Data'>
               <input type='date' value={form.data} onChange={(e) => setForm((p) => ({ ...p, data: e.target.value }))} className={inputCls} />
@@ -899,7 +911,7 @@ function InadimplenciaTab() {
   const [items, setItems] = useState<Inadimplencia[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ empresa_devedora: '', valor_aberto: '', observacao: '' });
+  const [form, setForm] = useState<{ empresa_devedora: string; valor_aberto: number | null; observacao: string }>({ empresa_devedora: '', valor_aberto: null, observacao: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(() => {
@@ -919,11 +931,11 @@ function InadimplenciaTab() {
       await api.post('/financeiro/inadimplencia', {
         uuid: crypto.randomUUID(),
         empresa_devedora: form.empresa_devedora,
-        valor_aberto: parseFloat(form.valor_aberto || '0'),
+        valor_aberto: form.valor_aberto ?? 0,
         observacao: form.observacao || null,
       });
       setShowForm(false);
-      setForm({ empresa_devedora: '', valor_aberto: '', observacao: '' });
+      setForm({ empresa_devedora: '', valor_aberto: null, observacao: '' });
       load();
     } finally {
       setSaving(false);
@@ -996,7 +1008,7 @@ function InadimplenciaTab() {
               <input type='text' required value={form.empresa_devedora} onChange={(e) => setForm((p) => ({ ...p, empresa_devedora: e.target.value }))} className={inputCls} />
             </Field>
             <Field label='Valor em Aberto (R$)'>
-              <input type='number' step='0.01' min='0' required value={form.valor_aberto} onChange={(e) => setForm((p) => ({ ...p, valor_aberto: e.target.value }))} className={inputCls} />
+              <InputMoney value={form.valor_aberto} onChange={(val) => setForm((p) => ({ ...p, valor_aberto: val }))} required />
             </Field>
             <Field label='Observação'>
               <textarea value={form.observacao} onChange={(e) => setForm((p) => ({ ...p, observacao: e.target.value }))} rows={3} className={`${inputCls} resize-none`} />
@@ -1017,7 +1029,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'fluxo-caixa', label: 'Fluxo de Caixa' },
   { id: 'empresas', label: 'Empresas' },
   { id: 'parceiros', label: 'Parceiros' },
-  { id: 'comissao', label: 'Comissão (Aluíne)' },
+  { id: 'comissao', label: 'Comissão' },
   { id: 'custos', label: 'Custos' },
   { id: 'inadimplencia', label: 'Inadimplência' },
 ];

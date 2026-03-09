@@ -4,6 +4,139 @@ Sistema de gestão comercial B2B SaaS com suporte a múltiplos tenants, pensado 
 
 ---
 
+## Deploy com Docker (atualizar produção)
+
+Os containers de backend e frontend são independentes e ficam em diretórios separados.
+
+### Backend (`renowa-api`)
+
+```bash
+cd backend
+
+# 1. Rebuild da imagem com o código atual
+docker compose -f docker-compose.prod.yml build --no-cache
+
+# 2. Recriar o container (zero downtime se tiver health check)
+docker compose -f docker-compose.prod.yml up -d --force-recreate
+
+# 3. Acompanhar os logs
+docker logs -f renowa-api
+```
+
+> O backend usa `synchronize: true` fora de produção (`NODE_ENV != production`).
+> Em produção, as migrações de schema devem ser aplicadas manualmente antes do deploy.
+
+### Frontend (`renowa-frontend`)
+
+```bash
+cd frontend
+
+# 1. Rebuild da imagem (as variáveis VITE_* são embutidas no bundle em build time)
+docker compose -f docker-compose.prod.yml build --no-cache
+
+# 2. Recriar o container
+docker compose -f docker-compose.prod.yml up -d --force-recreate
+
+# 3. Verificar se subiu
+docker logs renowa-frontend
+```
+
+### Comandos úteis
+
+```bash
+# Ver status dos containers
+docker ps | grep renowa
+
+# Reiniciar sem rebuild
+docker restart renowa-api
+docker restart renowa-frontend
+
+# Ver uso de recursos
+docker stats renowa-api renowa-frontend
+
+# Remover imagens antigas (libera espaço)
+docker image prune -f
+```
+
+---
+
+## Changelog
+
+### v3.0 — Módulo Financeiro (Mar 2026)
+
+#### Visual
+- Background global alterado para `#F4F7F6` (cinza esverdeado)
+- Sidebar: item ativo agora exibe fundo `#F4F7F6` com texto `#2A9D8F` (antes era branco com fundo transparente)
+- Dashboard: filtros de mês/ano inicializam com a data atual (antes iniciavam em Janeiro/2024)
+
+#### Dashboard
+- Adicionados botões **Exportar CSV** e **Imprimir** no cabeçalho do dashboard
+- Anos disponíveis no filtro gerados dinamicamente a partir de 2024 até o ano atual
+
+#### Formulário de Clientes
+- Máscara automática de **CNPJ** (`00.000.000/0000-00`)
+- Máscara automática de **CEP** (`00000-000`) com autocomplete via **ViaCEP** (preenche endereço, bairro, cidade e UF automaticamente)
+- Máscara automática de **telefone** (`(00) 00000-0000`)
+- Dropdown de **UF** com todos os 27 estados
+
+#### Transporte
+- Corrigido modal "Nova Transportadora" que não funcionava — reescrito com estado controlado e POST para `/transportadoras`
+- Máscara de CNPJ e telefone no formulário de transportadora
+
+#### Backend — Módulo Financeiro
+
+**Entidade `comissoes` expandida:**
+| Campo novo | Tipo | Descrição |
+|---|---|---|
+| `cliente_id` | FK | Referência ao cliente |
+| `fornecedor_id` | FK | Referência ao fornecedor |
+| `numero_pedido` | varchar | Número do pedido |
+| `numero_nfe` | varchar | Número da NF-e |
+| `data_pedido` | date | Data do pedido |
+| `data_faturamento` | date | Data do faturamento |
+| `valor_pedido` | decimal | Valor bruto do pedido |
+| `valor_faturado` | decimal | Valor efetivamente faturado |
+| `perc_comissao` | decimal | Percentual de comissão |
+| `status` | varchar | `pendente` / `pago` |
+
+**Nova entidade `parceiros_comerciais`:** registra vendas intermediadas por parceiros com divisão de comissão configurável (padrão 50%).
+
+**Novos endpoints:**
+
+```
+GET    /api/financeiro/fluxo-caixa?mes=&ano=
+         → receitas (soma valor_comissao do mês), custos, saldo, lançamentos
+
+GET    /api/financeiro/comissoes/resumo?mes=&ano=
+GET    /api/financeiro/comissoes/por-empresa?fornecedor_id=&mes=&ano=
+PATCH  /api/financeiro/lancamentos/:uuid
+PATCH  /api/financeiro/comissoes/:uuid
+DELETE /api/financeiro/comissoes/:uuid
+POST   /api/financeiro/parceiros
+GET    /api/financeiro/parceiros?page&limit&nome_parceiro&mes&ano
+PATCH  /api/financeiro/parceiros/:uuid
+DELETE /api/financeiro/parceiros/:uuid
+PATCH  /api/financeiro/inadimplencia/:uuid
+DELETE /api/financeiro/inadimplencia/:uuid
+```
+
+#### Frontend — Financeiro (`/financeiro`)
+
+Página completamente reescrita com 6 abas:
+
+| Aba | Conteúdo |
+|---|---|
+| **Fluxo de Caixa** | Receitas, custos e saldo do mês com filtro mês/ano |
+| **Empresas** | Vendas agrupadas por fornecedor com totais de comissão |
+| **Parceiros** | Gestão de parceiros comerciais com divisão de comissão |
+| **Comissão** | Lançamento e acompanhamento de comissões individuais |
+| **Custos** | Lançamentos de Custo Fixo e Custo Rotativo |
+| **Inadimplência** | Registro e gestão de clientes inadimplentes |
+
+> **Regra de negócio:** Receitas no Fluxo de Caixa = soma de `valor_comissao` das comissões com `data_faturamento` no mês (não o valor bruto de vendas).
+
+---
+
 ## Índice
 
 - [Visão Geral](#visão-geral)
@@ -56,16 +189,16 @@ A autenticação é delegada ao serviço externo **ZonaDev Auth** (`auth.zonadev
 ┌──────────────────────────────────────────────────────────────────┐
 │                         RENOWA MONOREPO                          │
 │                                                                  │
-│  ┌────────────┐    REST/JSON    ┌──────────────────────────────┐ │
-│  │  Frontend  │◄──────────────►│                              │ │
-│  │  (React)   │                │         Backend              │ │
-│  └────────────┘                │         (NestJS)             │ │
-│                                │                              │ │
-│  ┌────────────┐  REST/Sync API  │  ┌──────────┐  TypeORM      │ │
-│  │   Mobile   │◄──────────────►│  │  Guards  │◄─────────────►│ │
+│  ┌────────────┐    REST/JSON   ┌───────────────────────────────┐ │
+│  │  Frontend  │◄──────────────►│                               │ │
+│  │  (React)   │                │         Backend               │ │
+│  └────────────┘                │         (NestJS)              │ │
+│                                │                               │ │
+│  ┌────────────┐  REST/Sync API │  ┌──────────┐  TypeORM        │ │
+│  │   Mobile   │◄──────────────►│  │  Guards  │◄─────────────►  │ │
 │  │ (Expo/RN)  │                │  │ Throttle │    PostgreSQL   │ │
-│  │            │                │  │   CLS    │               │ │
-│  │  SQLite    │                └──────────────────────────────┘ │
+│  │            │                │  │   CLS    │                 │ │
+│  │  SQLite    │                └───────────────────────────────┘ │
 │  │  (offline) │                                                  │
 │  └────────────┘                                                  │
 │                                                                  │
@@ -647,17 +780,34 @@ DELETE /api/transportadoras/:uuid      (ADMIN | GESTAO)  → 204
 
 ```
 GET    /api/financeiro/dashboard
+GET    /api/financeiro/fluxo-caixa?mes&ano
 
-GET    /api/financeiro/movimentacoes?page&limit&tipo
-POST   /api/financeiro/movimentacoes
-GET    /api/financeiro/movimentacoes/:uuid
-DELETE /api/financeiro/movimentacoes/:uuid              → 204
+# Lançamentos (alias: /movimentacoes)
+GET    /api/financeiro/lancamentos?page&limit&tipo&mes&ano
+POST   /api/financeiro/lancamentos
+GET    /api/financeiro/lancamentos/:uuid
+PATCH  /api/financeiro/lancamentos/:uuid
+DELETE /api/financeiro/lancamentos/:uuid                → 204
 
-GET    /api/financeiro/comissoes?page&limit
+# Comissões
+GET    /api/financeiro/comissoes/resumo?mes&ano
+GET    /api/financeiro/comissoes/por-empresa?fornecedor_id&mes&ano
+GET    /api/financeiro/comissoes?page&limit&fornecedor_id&mes&ano&status
 POST   /api/financeiro/comissoes
+PATCH  /api/financeiro/comissoes/:uuid
+DELETE /api/financeiro/comissoes/:uuid                  → 204
 
+# Parceiros Comerciais
+GET    /api/financeiro/parceiros?page&limit&nome_parceiro&mes&ano
+POST   /api/financeiro/parceiros
+PATCH  /api/financeiro/parceiros/:uuid
+DELETE /api/financeiro/parceiros/:uuid                  → 204
+
+# Inadimplência
 GET    /api/financeiro/inadimplencia?page&limit
 POST   /api/financeiro/inadimplencia
+PATCH  /api/financeiro/inadimplencia/:uuid
+DELETE /api/financeiro/inadimplencia/:uuid              → 204
 ```
 
 #### Sync (Mobile)
@@ -960,8 +1110,8 @@ Isso garante isolamento completo sem a necessidade de schemas separados por tena
 ## Papéis e Permissões
 
 | Recurso                  | ADMIN | VENDEDOR | FINANCEIRO | GESTAO |
-|--------------------------|:-----:|:--------:|:----------:|:------:|
-| Ver clientes             |  ✓    |    ✓     |     ✓      |   ✓    |
+|--------------------------|:-----:|:--------:|:----------:|:------: |
+| Ver clientes             |  ✓    |    ✓     |     ✓      |   ✓   |
 | Criar/editar clientes    |  ✓    |    ✓     |            |   ✓    |
 | Deletar clientes         |  ✓    |          |            |   ✓    |
 | Ver pedidos              |  ✓    | só seus  |     ✓      |   ✓    |
@@ -987,23 +1137,24 @@ Isso garante isolamento completo sem a necessidade de schemas separados por tena
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          DIAGRAMA ER (simplificado)                  │
 │                                                                      │
-│  users ──────────────────────────────────────────┐                  │
+│  users ──────────────────────────────────────────┐                   │
 │    │                                              │                  │
 │    │ (vendedor_id)                                │ (user_uuid)      │
 │    ▼                                              ▼                  │
-│  pedidos ◄──────────── itens_pedido          mobile_sessions        │
+│  pedidos ◄──────────── itens_pedido          mobile_sessions         │
 │    │  │  │                  │                                        │
 │    │  │  │                  └──► produtos ──► fornecedores           │
 │    │  │  │                                                           │
-│    │  │  └──► transportadoras ◄───────────── clientes               │
+│    │  │  └──► transportadoras ◄───────────── clientes                │
 │    │  │                                          │                   │
 │    │  └──────────────────────────────────────────┘                   │
 │    │         (cliente_id)                                            │
 │    │                                                                 │
-│    ├──► comissoes                                                    │
+│    ├──► comissoes ──► clientes / fornecedores                        │
 │    │                                                                 │
-│  inadimplencias ──► clientes                                        │
-│  movimentacoes_financeiras (independente)                           │
+│  parceiros_comerciais ──► clientes / fornecedores                    │
+│  inadimplencias ──► clientes                                         │
+│  movimentacoes_financeiras (independente)                            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
