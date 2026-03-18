@@ -66,10 +66,6 @@ export class JwtAuthGuard implements CanActivate {
       return authHeader.slice(7);
     }
 
-    // 2. Cookie HTTP-only (web)
-    const cookieToken = (req.cookies as Record<string, string>)?.['access_token'];
-    if (cookieToken) return cookieToken;
-
     return null;
   }
 }
