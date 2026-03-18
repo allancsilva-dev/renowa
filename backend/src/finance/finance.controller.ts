@@ -10,6 +10,7 @@ import { CreateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -23,6 +24,7 @@ export class FinanceController {
   // ── Dashboard ─────────────────────────────────────────────
 
   @Get('dashboard')
+  @RequirePermission('financeiro.ver')
   async dashboard(@CurrentUser() user: RequestUser) {
     return this.financeService.getDashboard(user.tenantId);
   }
@@ -30,6 +32,7 @@ export class FinanceController {
   // ── Fluxo de Caixa ────────────────────────────────────────
 
   @Get('fluxo-caixa')
+  @RequirePermission('financeiro.ver')
   async fluxoCaixa(
     @Query('mes') mes: string,
     @Query('ano') ano: string,
@@ -46,11 +49,13 @@ export class FinanceController {
   // ── Movimentações / Lançamentos ───────────────────────────
 
   @Post('lancamentos')
+  @RequirePermission('financeiro.editar')
   async create(@Body() dto: CreateMovementDto, @CurrentUser() user: RequestUser) {
     return this.financeService.createMovimento(dto, user.tenantId);
   }
 
   @Get('lancamentos')
+  @RequirePermission('financeiro.ver')
   async findAll(
     @Query() pagination: PaginationDto,
     @Query('tipo') tipo: string,
@@ -68,11 +73,13 @@ export class FinanceController {
   }
 
   @Get('lancamentos/:uuid')
+  @RequirePermission('financeiro.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
     return this.financeService.findOneMovimento(uuid, user.tenantId);
   }
 
   @Patch('lancamentos/:uuid')
+  @RequirePermission('financeiro.editar')
   async update(
     @Param('uuid') uuid: string,
     @Body() dto: UpdateMovementDto,
@@ -82,6 +89,7 @@ export class FinanceController {
   }
 
   @Delete('lancamentos/:uuid')
+  @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.financeService.removeMovimento(uuid, user.tenantId);
@@ -89,11 +97,13 @@ export class FinanceController {
 
   // Rotas legadas (alias para movimentacoes)
   @Post('movimentacoes')
+  @RequirePermission('financeiro.editar')
   async createMovimentacao(@Body() dto: CreateMovementDto, @CurrentUser() user: RequestUser) {
     return this.financeService.createMovimento(dto, user.tenantId);
   }
 
   @Get('movimentacoes')
+  @RequirePermission('financeiro.ver')
   async findAllMovimentacoes(
     @Query() pagination: PaginationDto,
     @Query('tipo') tipo: string,
@@ -103,11 +113,13 @@ export class FinanceController {
   }
 
   @Get('movimentacoes/:uuid')
+  @RequirePermission('financeiro.ver')
   async findOneMovimentacao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
     return this.financeService.findOneMovimento(uuid, user.tenantId);
   }
 
   @Delete('movimentacoes/:uuid')
+  @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeMovimentacao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.financeService.removeMovimento(uuid, user.tenantId);
@@ -116,11 +128,13 @@ export class FinanceController {
   // ── Comissões ─────────────────────────────────────────────
 
   @Post('comissoes')
+  @RequirePermission('financeiro.editar')
   async createComissao(@Body() dto: CreateComissaoDto, @CurrentUser() user: RequestUser) {
     return this.financeService.createComissao(dto, user.tenantId);
   }
 
   @Get('comissoes/resumo')
+  @RequirePermission('financeiro.ver')
   async resumoComissoes(
     @Query('mes') mes: string,
     @Query('ano') ano: string,
@@ -134,6 +148,7 @@ export class FinanceController {
   }
 
   @Get('comissoes/por-empresa')
+  @RequirePermission('financeiro.ver')
   async vendasPorEmpresa(
     @Query('fornecedor_id') fornecedor_id: string,
     @Query('mes') mes: string,
@@ -149,6 +164,7 @@ export class FinanceController {
   }
 
   @Get('comissoes')
+  @RequirePermission('financeiro.ver')
   async findAllComissoes(
     @Query() pagination: PaginationDto,
     @Query('fornecedor_id') fornecedor_id: string,
@@ -166,6 +182,7 @@ export class FinanceController {
   }
 
   @Patch('comissoes/:uuid')
+  @RequirePermission('financeiro.editar')
   async updateComissao(
     @Param('uuid') uuid: string,
     @Body() dto: UpdateComissaoDto,
@@ -175,6 +192,7 @@ export class FinanceController {
   }
 
   @Delete('comissoes/:uuid')
+  @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeComissao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.financeService.removeComissao(uuid, user.tenantId);
@@ -183,11 +201,13 @@ export class FinanceController {
   // ── Parceiros Comerciais ───────────────────────────────────
 
   @Post('parceiros')
+  @RequirePermission('financeiro.editar')
   async createParceiro(@Body() dto: CreateParceiroDto, @CurrentUser() user: RequestUser) {
     return this.financeService.createParceiro(dto, user.tenantId);
   }
 
   @Get('parceiros')
+  @RequirePermission('financeiro.ver')
   async findAllParceiros(
     @Query() pagination: PaginationDto,
     @Query('nome_parceiro') nome_parceiro: string,
@@ -203,6 +223,7 @@ export class FinanceController {
   }
 
   @Patch('parceiros/:uuid')
+  @RequirePermission('financeiro.editar')
   async updateParceiro(
     @Param('uuid') uuid: string,
     @Body() dto: UpdateParceiroDto,
@@ -212,6 +233,7 @@ export class FinanceController {
   }
 
   @Delete('parceiros/:uuid')
+  @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeParceiro(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.financeService.removeParceiro(uuid, user.tenantId);
@@ -220,16 +242,19 @@ export class FinanceController {
   // ── Inadimplência ─────────────────────────────────────────
 
   @Post('inadimplencia')
+  @RequirePermission('financeiro.editar')
   async createInadimplencia(@Body() dto: CreateInadimplenciaDto, @CurrentUser() user: RequestUser) {
     return this.financeService.createInadimplencia(dto, user.tenantId);
   }
 
   @Get('inadimplencia')
+  @RequirePermission('financeiro.ver')
   async findAllInadimplencia(@Query() pagination: PaginationDto, @CurrentUser() user: RequestUser) {
     return this.financeService.findAllInadimplencia(user.tenantId, pagination);
   }
 
   @Patch('inadimplencia/:uuid')
+  @RequirePermission('financeiro.editar')
   async updateInadimplencia(
     @Param('uuid') uuid: string,
     @Body() dto: Partial<CreateInadimplenciaDto>,
@@ -239,6 +264,7 @@ export class FinanceController {
   }
 
   @Delete('inadimplencia/:uuid')
+  @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeInadimplencia(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.financeService.removeInadimplencia(uuid, user.tenantId);

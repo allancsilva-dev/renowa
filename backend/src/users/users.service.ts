@@ -22,6 +22,15 @@ export class UsersService {
     return user;
   }
 
+  async findOptionalByUuidAndTenant(
+    uuid: string,
+    tenantId: string,
+  ): Promise<User | null> {
+    return this.userRepo.findOne({
+      where: { uuid, tenant_id: tenantId },
+    });
+  }
+
   async findAllByTenant(tenantId: string): Promise<User[]> {
     return this.userRepo.find({
       where: { tenant_id: tenantId, is_active: true },

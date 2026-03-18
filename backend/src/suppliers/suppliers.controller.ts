@@ -5,6 +5,7 @@ import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { SuppliersService } from './suppliers.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -23,22 +24,26 @@ export class SuppliersController {
 
   @Post()
   @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
+  @RequirePermission('fornecedores.criar')
   async create(@Body() dto: CreateSupplierDto, @CurrentUser() user: RequestUser) {
     return this.suppliersService.create(dto, user.tenantId);
   }
 
   @Get()
+  @RequirePermission('fornecedores.ver')
   async findAll(@Query() pagination: PaginationDto, @CurrentUser() user: RequestUser) {
     return this.suppliersService.findAll(user.tenantId, pagination);
   }
 
   @Get(':uuid')
+  @RequirePermission('fornecedores.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
     return this.suppliersService.findOne(uuid, user.tenantId);
   }
 
   @Patch(':uuid')
   @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
+  @RequirePermission('fornecedores.editar')
   async update(
     @Param('uuid') uuid: string,
     @Body() dto: Partial<CreateSupplierDto>,
@@ -49,6 +54,7 @@ export class SuppliersController {
 
   @Delete(':uuid')
   @Roles('ADMIN', 'GESTAO')
+  @RequirePermission('fornecedores.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.suppliersService.remove(uuid, user.tenantId);

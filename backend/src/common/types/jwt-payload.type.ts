@@ -6,6 +6,8 @@ export interface JwtPayload {
   tenantSubdomain: string;
   plan: string;
   roles: string[];       // CHANGELOG #7: sempre array
+  email?: string;
+  defaultRole?: string;
   iss: string;
   aud: string;
   iat: number;
@@ -20,4 +22,6 @@ export interface RequestUser {
   plan: string;
   tokenVersion: number;
   jti: string;
+  email?: string;
+  defaultRole?: string;
 }

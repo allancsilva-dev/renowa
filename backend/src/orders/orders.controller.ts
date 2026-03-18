@@ -6,6 +6,7 @@ import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -26,11 +27,13 @@ export class OrdersController {
 
   @Post()
   @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
+  @RequirePermission('pedidos.criar')
   async create(@Body() dto: CreateOrderDto, @CurrentUser() user: RequestUser) {
     return this.ordersService.create(dto, user);
   }
 
   @Get()
+  @RequirePermission('pedidos.ver')
   async findAll(
     @Query() pagination: PaginationDto,
     @Query('status') status: string,
@@ -41,12 +44,14 @@ export class OrdersController {
   }
 
   @Get(':uuid')
+  @RequirePermission('pedidos.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
     return this.ordersService.findOne(uuid, user.tenantId);
   }
 
   @Patch(':uuid/status')
   @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
+  @RequirePermission('pedidos.editar')
   async updateStatus(
     @Param('uuid') uuid: string,
     @Body() dto: UpdateStatusDto,
@@ -57,6 +62,7 @@ export class OrdersController {
 
   @Delete(':uuid')
   @Roles('ADMIN', 'GESTAO')
+  @RequirePermission('pedidos.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.ordersService.remove(uuid, user.tenantId);

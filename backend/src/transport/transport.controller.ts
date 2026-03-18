@@ -5,6 +5,7 @@ import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { TransportService } from './transport.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -25,11 +26,13 @@ export class TransportController {
 
   @Post()
   @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
+  @RequirePermission('transportadoras.criar')
   async create(@Body() dto: CreateTransportDto, @CurrentUser() user: RequestUser) {
     return this.transportService.create(dto, user.tenantId);
   }
 
   @Get()
+  @RequirePermission('transportadoras.ver')
   async findAll(
     @Query() pagination: PaginationDto,
     @Query('search') search: string,
@@ -39,12 +42,14 @@ export class TransportController {
   }
 
   @Get(':uuid')
+  @RequirePermission('transportadoras.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
     return this.transportService.findOne(uuid, user.tenantId);
   }
 
   @Patch(':uuid')
   @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
+  @RequirePermission('transportadoras.editar')
   async update(
     @Param('uuid') uuid: string,
     @Body() dto: Partial<CreateTransportDto>,
@@ -55,6 +60,7 @@ export class TransportController {
 
   @Delete(':uuid')
   @Roles('ADMIN', 'GESTAO')
+  @RequirePermission('transportadoras.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
     await this.transportService.remove(uuid, user.tenantId);

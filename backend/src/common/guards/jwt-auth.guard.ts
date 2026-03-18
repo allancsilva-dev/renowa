@@ -43,6 +43,8 @@ export class JwtAuthGuard implements CanActivate {
         plan: payload.plan,
         tokenVersion: payload.tokenVersion,
         jti: payload.jti,
+        email: payload.email,
+        defaultRole: payload.defaultRole,
       };
       return true;
     } catch {
