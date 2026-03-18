@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AuthUser } from '@/types';
+import { clearToken } from '@/lib/auth';
 
 interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
   setUser: (user: AuthUser) => void;
   clearAuth: () => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   hasRole: (role: string) => boolean;
   hasAnyRole: (roles: string[]) => boolean;
 }
@@ -22,10 +23,21 @@ export const useAuthStore = create<AuthState>()(
 
       clearAuth: () => set({ user: null, isAuthenticated: false }),
 
-      logout: () => {
+      logout: async () => {
+        const authUrl = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
+        const aud = import.meta.env.VITE_EXPECTED_AUD ?? 'renowa.zonadev.tech';
+
+        clearToken();
         set({ user: null, isAuthenticated: false });
-        // Cookie HTTP-only é limpo pelo backend — não há como remover via JS
-        window.location.href = `${import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech'}/logout`;
+
+        try {
+          await fetch(`${authUrl}/auth/logout`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+        } finally {
+          window.location.href = `${authUrl}/login?app=${aud}`;
+        }
       },
 
       // CHANGELOG #7: roles é string[] — sempre iterar o array

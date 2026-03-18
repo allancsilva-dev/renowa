@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
 import { useAuthStore } from '@/store/authStore';
+import { clearToken, getAccessToken } from '@/lib/auth';
 import Dashboard from '@/pages/Dashboard';
 import Clientes from '@/pages/Clientes';
 import ClienteForm from '@/pages/ClienteForm';
@@ -22,7 +23,10 @@ function ProtectedRoute() {
   const [authState, setAuthState] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
 
   useEffect(() => {
-    fetch(`${AUTH_URL}/api/auth/me`, { credentials: 'include' })
+    getAccessToken()
+      .then((token) => fetch(`${AUTH_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }))
       .then((res) => {
         if (!res.ok) throw new Error('Unauthorized');
         return res.json();
@@ -32,6 +36,7 @@ function ProtectedRoute() {
         setAuthState('authenticated');
       })
       .catch(() => {
+        clearToken();
         clearAuth();
         setAuthState('unauthenticated');
       });
@@ -40,7 +45,7 @@ function ProtectedRoute() {
   if (authState === 'checking') return null;
 
   if (authState === 'unauthenticated') {
-    window.location.href = `${AUTH_URL}/login?aud=${AUD}&redirect=${encodeURIComponent(window.location.href)}`;
+    window.location.href = `${AUTH_URL}/login?app=${AUD}&redirect=${encodeURIComponent(window.location.href)}`;
     return null;
   }
 
