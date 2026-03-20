@@ -56,7 +56,7 @@ export class AutoProvisionGuard implements CanActivate {
         tenantId: user.tenantId,
         email: user.email ?? `${user.sub}@placeholder.local`,
         nome: user.email?.split('@')[0] ?? user.sub,
-        roles: this.normalizeRoles(user.roles, user.defaultRole),
+        roles: [this.resolveProvisionRole(user.defaultRole)],
       });
     } else {
       localUser = await this.usersService.upsertFromJwt({
@@ -64,7 +64,7 @@ export class AutoProvisionGuard implements CanActivate {
         tenantId: user.tenantId,
         email: user.email ?? localUser.email,
         nome: localUser.nome,
-        roles: this.normalizeRoles(user.roles, user.defaultRole, localUser.roles),
+        roles: localUser.roles,
       });
     }
 
@@ -72,26 +72,8 @@ export class AutoProvisionGuard implements CanActivate {
     return true;
   }
 
-  private normalizeRoles(
-    jwtRoles: string[] | undefined,
-    defaultRole?: string,
-    fallbackRoles?: string[],
-  ): string[] {
-    const allowed = new Set(['ADMIN', 'VENDEDOR', 'FINANCEIRO', 'GESTAO']);
-    const mappedDefault = this.mapDefaultRole(defaultRole);
-
-    const normalized = (jwtRoles ?? [])
-      .map((role) => String(role).toUpperCase().trim())
-      .filter((role) => allowed.has(role));
-
-    if (normalized.length > 0) return normalized;
-    if (mappedDefault) return [mappedDefault];
-    if (fallbackRoles?.length) return fallbackRoles;
-    return ['VENDEDOR'];
-  }
-
-  private mapDefaultRole(defaultRole?: string): string | null {
-    if (!defaultRole) return null;
+  private resolveProvisionRole(defaultRole?: string): string {
+    if (!defaultRole) return 'VENDEDOR';
 
     const value = defaultRole.toLowerCase().trim();
     if (value === 'admin') return 'ADMIN';
@@ -100,6 +82,6 @@ export class AutoProvisionGuard implements CanActivate {
     if (value === 'vendedor') return 'VENDEDOR';
     if (value === 'viewer') return 'VENDEDOR';
 
-    return null;
+    return 'VENDEDOR';
   }
 }

@@ -77,6 +77,25 @@ export class UsersService {
       last_login_at: new Date(),
     });
 
-    return this.userRepo.save(user);
+    try {
+      return await this.userRepo.save(user);
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        const concurrent = await this.userRepo.findOne({
+          where: { uuid: params.uuid, tenant_id: params.tenantId },
+        });
+
+        if (concurrent) {
+          await this.userRepo.update(concurrent.id, {
+            email: params.email,
+            nome: params.nome,
+            last_login_at: new Date(),
+          });
+          return { ...concurrent, email: params.email, nome: params.nome, last_login_at: new Date() };
+        }
+      }
+
+      throw err;
+    }
   }
 }
