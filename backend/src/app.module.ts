@@ -25,6 +25,7 @@ import { TransportModule } from './transport/transport.module';
 import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
+import { PermissionsModule } from './permissions/permissions.module';
 
 @Module({
   controllers: [AppController],
@@ -64,6 +65,7 @@ import { RolesModule } from './roles/roles.module';
     SyncModule,
     UsersModule,
     RolesModule,
+    PermissionsModule,
   ],
   providers: [
     // Guard global — JwtAuthGuard roda antes do Interceptor (fluxo correto)
