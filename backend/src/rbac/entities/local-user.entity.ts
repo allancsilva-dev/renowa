@@ -1,0 +1,56 @@
+import {
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+  Entity,
+  Generated,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  Unique,
+  UpdateDateColumn,
+} from 'typeorm';
+import { TenantRole } from './tenant-role.entity';
+
+@Entity('local_users')
+@Unique(['authUserId', 'tenantId'])
+@Index(['tenantId'])
+@Index(['tenantId', 'active'])
+@Index(['tenantId', 'roleId'])
+export class LocalUser {
+  @PrimaryGeneratedColumn('increment')
+  id: number;
+
+  @Column({ type: 'uuid' })
+  @Generated('uuid')
+  uuid: string;
+
+  @Column({ name: 'tenant_id', type: 'uuid' })
+  tenantId: string;
+
+  @Column({ name: 'auth_user_id', type: 'uuid' })
+  authUserId: string;
+
+  @Column({ type: 'varchar', length: 255 })
+  email: string;
+
+  @Column({ name: 'role_id', type: 'int' })
+  roleId: number;
+
+  @Column({ type: 'boolean', default: true })
+  active: boolean;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  deletedAt: Date | null;
+
+  @ManyToOne(() => TenantRole)
+  @JoinColumn({ name: 'role_id' })
+  role: TenantRole;
+}
