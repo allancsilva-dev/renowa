@@ -1,5 +1,5 @@
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
-const APP_AUD = import.meta.env.VITE_EXPECTED_AUD ?? 'renowa.zonadev.tech';
+const APP_AUD = import.meta.env.VITE_APP_AUD ?? 'renowa.zonadev.tech';
 
 let accessToken: string | null = null;
 let tokenExpiresAt = 0;
@@ -25,6 +25,7 @@ async function doTokenExchange(): Promise<string> {
     try {
       const res = await fetch(`${AUTH_URL}/oauth/token?aud=${APP_AUD}`, {
         credentials: 'include',
+        signal: AbortSignal.timeout(3000),
       });
 
       if (res.status === 401) {
@@ -61,4 +62,15 @@ async function doTokenExchange(): Promise<string> {
 export function clearToken(): void {
   accessToken = null;
   tokenExpiresAt = 0;
+}
+
+export async function authFetch(url: string, opts: RequestInit = {}) {
+  const token = await getAccessToken();
+  return fetch(url, {
+    ...opts,
+    headers: {
+      ...opts.headers,
+      Authorization: `Bearer ${token}`,
+    },
+  });
 }
