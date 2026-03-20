@@ -1,10 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { LocalUser } from '../rbac/entities/local-user.entity';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -149,6 +155,134 @@ export class UsersService {
         active: hydrated.active,
       },
       permissions,
+    };
+  }
+
+  async listTenantUsers(tenantId: string): Promise<Array<{
+    id: string;
+    authUserId: string;
+    email: string;
+    role: string;
+    tenantId: string;
+    active: boolean;
+  }>> {
+    const users = await this.localUserRepo.find({
+      where: { tenantId },
+      relations: ['role'],
+      order: { createdAt: 'ASC' },
+    });
+
+    return users.map((entry) => ({
+      id: entry.uuid,
+      authUserId: entry.authUserId,
+      email: entry.email,
+      role: entry.role?.name ?? 'viewer',
+      tenantId: entry.tenantId,
+      active: entry.active,
+    }));
+  }
+
+  private async resolveAuthUserId(
+    dto: CreateUserDto,
+  ): Promise<string> {
+    if (dto.authUserId) return dto.authUserId;
+
+    throw new BadRequestException(
+      'authUserId é obrigatório até a integração de lookup por e-mail com o Auth estar disponível',
+    );
+  }
+
+  async createTenantUser(
+    tenantId: string,
+    dto: CreateUserDto,
+  ): Promise<{
+    id: string;
+    authUserId: string;
+    email: string;
+    role: string;
+    tenantId: string;
+    active: boolean;
+  }> {
+    const roleName = this.normalizeRoleName(dto.role);
+    const authUserId = await this.resolveAuthUserId(dto);
+    const role = await this.ensureTenantRole(tenantId, roleName);
+
+    const existing = await this.localUserRepo.findOne({
+      where: { tenantId, authUserId },
+      relations: ['role'],
+    });
+
+    if (existing) {
+      throw new BadRequestException('Usuário já existe neste tenant');
+    }
+
+    const created = this.localUserRepo.create({
+      tenantId,
+      authUserId,
+      email: dto.email,
+      roleId: role.id,
+      active: true,
+    });
+
+    const saved = await this.localUserRepo.save(created);
+
+    return {
+      id: saved.uuid,
+      authUserId: saved.authUserId,
+      email: saved.email,
+      role: role.name,
+      tenantId: saved.tenantId,
+      active: saved.active,
+    };
+  }
+
+  async updateTenantUser(
+    tenantId: string,
+    userUuid: string,
+    dto: UpdateUserDto,
+  ): Promise<{
+    id: string;
+    authUserId: string;
+    email: string;
+    role: string;
+    tenantId: string;
+    active: boolean;
+  }> {
+    const existing = await this.localUserRepo.findOne({
+      where: { tenantId, uuid: userUuid },
+      relations: ['role'],
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Usuário não encontrado no tenant');
+    }
+
+    let nextRoleId = existing.roleId;
+    let nextRoleName = existing.role?.name ?? 'viewer';
+
+    if (dto.role) {
+      const normalized = this.normalizeRoleName(dto.role);
+      const role = await this.ensureTenantRole(tenantId, normalized);
+      nextRoleId = role.id;
+      nextRoleName = role.name;
+    }
+
+    await this.localUserRepo.update(existing.id, {
+      roleId: nextRoleId,
+      active: dto.active ?? existing.active,
+    });
+
+    const updated = await this.localUserRepo.findOneOrFail({
+      where: { tenantId, uuid: userUuid },
+    });
+
+    return {
+      id: updated.uuid,
+      authUserId: updated.authUserId,
+      email: updated.email,
+      role: nextRoleName,
+      tenantId: updated.tenantId,
+      active: updated.active,
     };
   }
 
