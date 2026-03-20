@@ -2,13 +2,155 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
+import { LocalUser } from '../rbac/entities/local-user.entity';
+import { TenantRole } from '../rbac/entities/tenant-role.entity';
+import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+    @InjectRepository(LocalUser)
+    private readonly localUserRepo: Repository<LocalUser>,
+    @InjectRepository(TenantRole)
+    private readonly tenantRoleRepo: Repository<TenantRole>,
+    @InjectRepository(TenantRolePermission)
+    private readonly tenantRolePermissionRepo: Repository<TenantRolePermission>,
   ) {}
+
+  private normalizeRoleName(defaultRole?: string): string {
+    const role = (defaultRole ?? 'viewer').trim().toLowerCase();
+
+    if (!role) return 'viewer';
+    return role;
+  }
+
+  private async ensureTenantRole(
+    tenantId: string,
+    roleName: string,
+  ): Promise<TenantRole> {
+    const existing = await this.tenantRoleRepo.findOne({
+      where: { tenantId, name: roleName, active: true },
+    });
+
+    if (existing) return existing;
+
+    const created = this.tenantRoleRepo.create({
+      tenantId,
+      name: roleName,
+      description: roleName === 'admin'
+        ? 'Role administrativa padrão'
+        : 'Role provisionada automaticamente',
+      active: true,
+    });
+
+    try {
+      return await this.tenantRoleRepo.save(created);
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        const concurrent = await this.tenantRoleRepo.findOne({
+          where: { tenantId, name: roleName },
+        });
+        if (concurrent) return concurrent;
+      }
+      throw err;
+    }
+  }
+
+  async getCurrentUserContext(params: {
+    authUserId: string;
+    tenantId: string;
+    email: string;
+    defaultRole?: string;
+  }): Promise<{
+    user: {
+      id: string;
+      authUserId: string;
+      email: string;
+      role: string;
+      tenantId: string;
+      active: boolean;
+    };
+    permissions: string[];
+  }> {
+    const roleName = this.normalizeRoleName(params.defaultRole);
+    const tenantRole = await this.ensureTenantRole(params.tenantId, roleName);
+
+    let localUser = await this.localUserRepo.findOne({
+      where: {
+        authUserId: params.authUserId,
+        tenantId: params.tenantId,
+      },
+      relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
+    });
+
+    if (!localUser) {
+      const created = this.localUserRepo.create({
+        tenantId: params.tenantId,
+        authUserId: params.authUserId,
+        email: params.email,
+        roleId: tenantRole.id,
+        active: true,
+      });
+
+      try {
+        localUser = await this.localUserRepo.save(created);
+      } catch (err: any) {
+        if (err?.code === '23505') {
+          const concurrent = await this.localUserRepo.findOne({
+            where: {
+              authUserId: params.authUserId,
+              tenantId: params.tenantId,
+            },
+          });
+          if (concurrent) {
+            localUser = concurrent;
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      const nextRoleId = localUser.roleId ?? tenantRole.id;
+      const shouldUpdateEmail = localUser.email !== params.email;
+      const shouldUpdateRole = localUser.roleId !== nextRoleId;
+
+      if (shouldUpdateEmail || shouldUpdateRole) {
+        await this.localUserRepo.update(localUser.id, {
+          email: params.email,
+          roleId: nextRoleId,
+        });
+      }
+    }
+
+    const hydrated = await this.localUserRepo.findOneOrFail({
+      where: {
+        authUserId: params.authUserId,
+        tenantId: params.tenantId,
+      },
+      relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
+    });
+
+    const rolePermissions = hydrated.role?.rolePermissions ?? [];
+    const permissions = Array.from(
+      new Set(rolePermissions.map((entry) => entry.permission.slug)),
+    );
+
+    return {
+      user: {
+        id: hydrated.uuid,
+        authUserId: hydrated.authUserId,
+        email: hydrated.email,
+        role: hydrated.role?.name ?? roleName,
+        tenantId: hydrated.tenantId,
+        active: hydrated.active,
+      },
+      permissions,
+    };
+  }
 
   async findByUuidAndTenant(uuid: string, tenantId: string): Promise<User> {
     const user = await this.userRepo.findOne({
