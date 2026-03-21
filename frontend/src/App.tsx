@@ -1,7 +1,9 @@
+import { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
 import { AuthProvider } from '@/context/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import LoadingState from '@/components/feedback/LoadingState';
 import Dashboard from '@/pages/Dashboard';
 import Clientes from '@/pages/Clientes';
 import ClienteForm from '@/pages/ClienteForm';
@@ -12,6 +14,9 @@ import ProdutoForm from '@/pages/ProdutoForm';
 import Transporte from '@/pages/Transporte';
 import Financeiro from '@/pages/Financeiro';
 import Configuracoes from '@/pages/Configuracoes';
+
+const UsuariosPage = lazy(() => import('@/pages/configuracoes/UsuariosPage'));
+const RolesPage = lazy(() => import('@/pages/configuracoes/RolesPage'));
 
 export default function App() {
   return (
@@ -99,7 +104,25 @@ export default function App() {
               </ProtectedRoute>
             )}
           >
-            <Route index element={<Configuracoes />} />
+            <Route element={<Configuracoes />}>
+              <Route index element={<Navigate to='usuarios' replace />} />
+              <Route
+                path='usuarios'
+                element={(
+                  <Suspense fallback={<LoadingState />}>
+                    <UsuariosPage />
+                  </Suspense>
+                )}
+              />
+              <Route
+                path='roles'
+                element={(
+                  <Suspense fallback={<LoadingState />}>
+                    <RolesPage />
+                  </Suspense>
+                )}
+              />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>
