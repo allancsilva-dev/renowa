@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,6 +12,8 @@ import { TenantRole } from '../rbac/entities/tenant-role.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { AuthApiService } from '../auth-api/auth-api.service';
+import { RequestUser } from '../common/types/jwt-payload.type';
 
 @Injectable()
 export class UsersService {
@@ -23,6 +26,7 @@ export class UsersService {
     private readonly tenantRoleRepo: Repository<TenantRole>,
     @InjectRepository(TenantRolePermission)
     private readonly tenantRolePermissionRepo: Repository<TenantRolePermission>,
+    private readonly authApiService: AuthApiService,
   ) {}
 
   private normalizeRoleName(defaultRole?: string): string {
@@ -158,6 +162,43 @@ export class UsersService {
     };
   }
 
+  async findOrProvisionLocalUserFromJwt(user: RequestUser): Promise<LocalUser> {
+    const roleName = this.normalizeRoleName(user.defaultRole);
+    const tenantRole = await this.ensureTenantRole(user.tenantId, roleName);
+
+    let localUser = await this.localUserRepo.findOne({
+      where: {
+        authUserId: user.sub,
+        tenantId: user.tenantId,
+      },
+      relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
+    });
+
+    if (!localUser) {
+      localUser = await this.localUserRepo.save(
+        this.localUserRepo.create({
+          tenantId: user.tenantId,
+          authUserId: user.sub,
+          email: user.email ?? `${user.sub}@placeholder.local`,
+          roleId: tenantRole.id,
+          active: true,
+        }),
+      );
+    }
+
+    if (user.email && localUser.email !== user.email) {
+      await this.localUserRepo.update(localUser.id, { email: user.email });
+    }
+
+    return this.localUserRepo.findOneOrFail({
+      where: {
+        authUserId: user.sub,
+        tenantId: user.tenantId,
+      },
+      relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
+    });
+  }
+
   async listTenantUsers(tenantId: string): Promise<Array<{
     id: string;
     authUserId: string;
@@ -182,18 +223,9 @@ export class UsersService {
     }));
   }
 
-  private async resolveAuthUserId(
-    dto: CreateUserDto,
-  ): Promise<string> {
-    if (dto.authUserId) return dto.authUserId;
-
-    throw new BadRequestException(
-      'authUserId é obrigatório até a integração de lookup por e-mail com o Auth estar disponível',
-    );
-  }
-
   async createTenantUser(
     tenantId: string,
+    authorization: string | undefined,
     dto: CreateUserDto,
   ): Promise<{
     id: string;
@@ -204,7 +236,17 @@ export class UsersService {
     active: boolean;
   }> {
     const roleName = this.normalizeRoleName(dto.role);
-    const authUserId = await this.resolveAuthUserId(dto);
+    const authUserId = await this.authApiService.resolveAuthUserIdByEmail(
+      dto.email,
+      authorization,
+    );
+
+    if (!authUserId) {
+      throw new UnprocessableEntityException(
+        'Usuário não encontrado no ZonaDev Auth. O usuário precisa estar cadastrado no Auth antes de ser adicionado ao Renowa.',
+      );
+    }
+
     const role = await this.ensureTenantRole(tenantId, roleName);
 
     const existing = await this.localUserRepo.findOne({

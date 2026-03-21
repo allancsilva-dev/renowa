@@ -6,9 +6,11 @@ import { UsersController } from './users.controller';
 import { LocalUser } from '../rbac/entities/local-user.entity';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
+import { AuthApiModule } from '../auth-api/auth-api.module';
 
 @Module({
   imports: [
+    AuthApiModule,
     TypeOrmModule.forFeature([
       User,
       LocalUser,

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -27,9 +28,10 @@ export class UsersController {
   @Post()
   async create(
     @CurrentUser() user: RequestUser,
+    @Headers('authorization') authorization: string | undefined,
     @Body() dto: CreateUserDto,
   ) {
-    return this.usersService.createTenantUser(user.tenantId, dto);
+    return this.usersService.createTenantUser(user.tenantId, authorization, dto);
   }
 
   @Patch(':id')
