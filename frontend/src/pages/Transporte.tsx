@@ -4,7 +4,7 @@ import DataTable from '@/components/tables/DataTable';
 import EmptyState from '@/components/feedback/EmptyState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
-import api from '@/services/axiosInstance';
+import api from '@/lib/apiClient';
 import type { PaginatedResponse } from '@/types';
 
 interface Transport {

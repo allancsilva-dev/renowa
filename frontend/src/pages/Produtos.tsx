@@ -6,7 +6,7 @@ import EmptyState from '@/components/feedback/EmptyState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
-import api from '@/services/axiosInstance';
+import api from '@/lib/apiClient';
 import type { Product, PaginatedResponse } from '@/types';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });

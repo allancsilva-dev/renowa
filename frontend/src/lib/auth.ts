@@ -4,6 +4,22 @@ const APP_AUD = import.meta.env.VITE_APP_AUD ?? 'renowa.zonadev.tech';
 let accessToken: string | null = null;
 let tokenExpiresAt = 0;
 let refreshPromise: Promise<string> | null = null;
+let isLoggingOut = false;
+
+function isAlreadyOnLoginRoute(): boolean {
+  return window.location.pathname.toLowerCase().includes('/login');
+}
+
+export function redirectToLogin(redirectTo: string = window.location.href): void {
+  if (isLoggingOut || isAlreadyOnLoginRoute()) {
+    return;
+  }
+
+  isLoggingOut = true;
+  window.location.href = `${AUTH_URL}/login`
+    + `?app=${APP_AUD}`
+    + `&redirect=${encodeURIComponent(redirectTo)}`;
+}
 
 export async function getAccessToken(): Promise<string> {
   if (accessToken && Date.now() < tokenExpiresAt - 60_000) {
@@ -29,9 +45,8 @@ async function doTokenExchange(): Promise<string> {
       });
 
       if (res.status === 401) {
-        window.location.href = `${AUTH_URL}/login`
-          + `?app=${APP_AUD}`
-          + `&redirect=${encodeURIComponent(window.location.href)}`;
+        clearToken();
+        redirectToLogin();
         throw new Error('Session expired');
       }
 

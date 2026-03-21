@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '@/services/axiosInstance';
+import api from '@/lib/apiClient';
 import type { OrderStatus } from '@/types';
 
 type FormFields = {

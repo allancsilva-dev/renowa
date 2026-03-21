@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, X, Wallet, TrendingDown, BarChart2, Trash2 } from 'lucide-react';
-import api from '@/services/axiosInstance';
+import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ function FluxoCaixa() {
       .get(`/financeiro/fluxo-caixa?mes=${mes}&ano=${ano}`)
       .then((r) => {
         const d = (r.data as { data: typeof data }).data ?? r.data;
-        setData(d);
+        setData(d as { receitas: number; custos: number; saldo: number; lancamentos: Lancamento[] });
       })
       .catch(() => setData(null))
       .finally(() => setLoading(false));

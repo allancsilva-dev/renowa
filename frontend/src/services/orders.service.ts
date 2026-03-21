@@ -1,4 +1,4 @@
-import api from './axiosInstance';
+import api from '@/lib/apiClient';
 import type { Order, PaginatedResponse, ApiResponse, OrderStatus } from '@/types';
 
 export async function fetchOrders(params: {

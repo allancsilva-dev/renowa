@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api from '@/services/axiosInstance';
+import api from '@/lib/apiClient';
 import type { Client } from '@/types';
 
 const UFS = [
