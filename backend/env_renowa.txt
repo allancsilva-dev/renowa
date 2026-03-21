@@ -10,7 +10,7 @@ ZONADEV_JWKS_URL=https://auth.zonadev.tech/.well-known/jwks.json
 ZONADEV_EXPECTED_ISS=auth.zonadev.tech
 ZONADEV_EXPECTED_AUD=renowa.zonadev.tech
 AUTH_URL=https://auth.zonadev.tech
-AUTH_INTERNAL_SECRET=change_me_same_as_auth
+AUTH_INTERNAL_SECRET=3ea52d1290e2354460fefcebf564c694d4828d95f32ca4151c2a63f8db7046f2
 
 # Segredo para sessões mobile (JWT HS256, 30 dias)
 RENOWA_JWT_SECRET=7b7ead9e1b074683e70c99c32880e28f2c70b6a57c98f65f525a49c3f22437de
