@@ -9,7 +9,7 @@ import {
   Settings,
   LogOut,
 } from 'lucide-react';
-import { useAuthStore } from '@/store/authStore';
+import { useAuth } from '@/hooks/useAuth';
 
 const mainNavItems = [
   { to: '/dashboard',  label: 'Dashboard',    icon: LayoutDashboard },
@@ -44,9 +44,9 @@ const itemBase: React.CSSProperties = {
 };
 
 export default function Sidebar() {
-  const { user, logout } = useAuthStore();
+  const { user, logout } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
-  const role = user?.roles?.[0] ?? '';
+  const role = user?.role ?? '';
 
   return (
     <aside

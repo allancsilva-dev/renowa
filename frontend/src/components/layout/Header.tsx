@@ -1,5 +1,5 @@
 import { Bell, Menu, Search } from 'lucide-react';
-import { useAuthStore } from '@/store/authStore';
+import { useAuth } from '@/hooks/useAuth';
 
 interface HeaderProps {
   onToggle: () => void;
@@ -14,7 +14,7 @@ function getInitials(email: string): string {
 }
 
 export default function Header({ onToggle }: HeaderProps) {
-  const user = useAuthStore((s) => s.user);
+  const { user } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
 
   return (

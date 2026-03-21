@@ -14,15 +14,15 @@ export default function Configuracoes() {
           </div>
           <div className='flex gap-4'>
             <dt className='w-32 font-medium text-slate-500'>Tenant</dt>
-            <dd className='text-slate-900'>{user?.tenantSubdomain ?? '—'}</dd>
+            <dd className='text-slate-900'>{user?.tenantId ?? '—'}</dd>
           </div>
           <div className='flex gap-4'>
-            <dt className='w-32 font-medium text-slate-500'>Roles</dt>
-            <dd className='text-slate-900'>{user?.roles?.join(', ') ?? '—'}</dd>
+            <dt className='w-32 font-medium text-slate-500'>Role</dt>
+            <dd className='text-slate-900'>{user?.role ?? '—'}</dd>
           </div>
           <div className='flex gap-4'>
             <dt className='w-32 font-medium text-slate-500'>Plano</dt>
-            <dd className='text-slate-900'>{user?.plan ?? '—'}</dd>
+            <dd className='text-slate-900'>—</dd>
           </div>
         </dl>
       </div>

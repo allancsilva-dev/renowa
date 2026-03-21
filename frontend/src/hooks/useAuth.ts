@@ -1,15 +1,16 @@
-import { useAuthStore } from '@/store/authStore';
+import { useAuth as useAuthContext } from '@/context/AuthContext';
 
 export function useAuth() {
-  const { user, isAuthenticated, logout } = useAuthStore();
+  const { user, logout } = useAuthContext();
 
   function hasRole(role: string): boolean {
-    return user?.roles?.includes(role) ?? false;
+    if (!user?.role) return false;
+    return user.role.toLowerCase() === role.toLowerCase();
   }
 
   function hasAnyRole(roles: string[]): boolean {
     return roles.some((r) => hasRole(r));
   }
 
-  return { user, isAuthenticated, logout, hasRole, hasAnyRole };
+  return { user, isAuthenticated: !!user, logout, hasRole, hasAnyRole };
 }
