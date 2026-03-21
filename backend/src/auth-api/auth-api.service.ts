@@ -1,7 +1,6 @@
 import {
   BadGatewayException,
   Injectable,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -10,9 +9,11 @@ type UnknownRecord = Record<string, unknown>;
 @Injectable()
 export class AuthApiService {
   private readonly authUrl: string;
+  private readonly internalSecret: string;
 
   constructor(private readonly config: ConfigService) {
     this.authUrl = this.config.getOrThrow<string>('AUTH_URL');
+    this.internalSecret = this.config.getOrThrow<string>('AUTH_INTERNAL_SECRET');
   }
 
   private extractUserId(user: UnknownRecord): string | null {
@@ -54,19 +55,15 @@ export class AuthApiService {
     return [];
   }
 
-  async resolveAuthUserIdByEmail(
-    email: string,
-    authorization?: string,
-  ): Promise<string | null> {
-    if (!authorization?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Authorization Bearer é obrigatório para consultar o ZonaDev Auth');
-    }
+  // Dívida técnica: evoluir para Service Token (JWT de serviço) quando múltiplos
+  // backends precisarem consumir o Auth de forma padronizada.
+  async resolveAuthUserIdByEmail(email: string): Promise<string | null> {
 
     const url = `${this.authUrl}/users?email=${encodeURIComponent(email)}`;
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        Authorization: authorization,
+        'X-Internal-Secret': this.internalSecret,
         Accept: 'application/json',
       },
       signal: AbortSignal.timeout(5000),

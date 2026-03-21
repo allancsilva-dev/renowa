@@ -52,14 +52,14 @@ export class PermissionGuard implements CanActivate {
       return false;
     }
 
-    const rolePermission = await this.rolePermissionRepo.findOne({
-      where: {
-        roleId: localUser.roleId,
-        permission: { slug: required },
-      },
-      relations: ['permission'],
-    });
+    const rows = await this.rolePermissionRepo
+      .createQueryBuilder('trp')
+      .innerJoin('permissions', 'p', 'p.slug = trp.permission_slug')
+      .select('p.slug', 'slug')
+      .where('trp.role_id = :roleId', { roleId: localUser.roleId })
+      .getRawMany<{ slug: string }>();
 
-    return !!rolePermission;
+    const slugs = new Set(rows.map((row) => row.slug));
+    return slugs.has(required);
   }
 }

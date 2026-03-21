@@ -1,7 +1,9 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
@@ -31,13 +33,59 @@ export class AutoProvisionGuard implements CanActivate {
     if (isPublic) return true;
 
     const req = context.switchToHttp().getRequest<RequestWithAuth>();
-    const user = req.user;
+    const jwt = req.user;
+    const isSuperAdmin = !!jwt?.roles?.includes('SUPERADMIN');
 
-    if (!user?.sub || !user.tenantId) {
+    if (!jwt?.sub) {
       return true;
     }
 
-    const localUser = await this.usersService.findOrProvisionLocalUserFromJwt(user);
+    if (!jwt.tenantId && !isSuperAdmin) {
+      throw new UnauthorizedException('tenantId ausente no JWT');
+    }
+
+    if (isSuperAdmin && !jwt.tenantId) {
+      return true;
+    }
+
+    const tenantId = jwt.tenantId as string;
+
+    const anyLocalUser = await this.usersService.findAnyLocalUserByAuthUserId(jwt.sub);
+    if (anyLocalUser && anyLocalUser.tenantId !== tenantId) {
+      console.error({
+        event: 'TENANT_MISMATCH',
+        userId: jwt.sub,
+        jwtTenant: tenantId,
+        localTenant: anyLocalUser.tenantId,
+      });
+      throw new ForbiddenException('Tenant mismatch para local_user');
+    }
+
+    let localUser = await this.usersService.findLocalUserByAuthUserIdAndTenant(
+      jwt.sub,
+      tenantId,
+    );
+
+    if (!localUser) {
+      const viewerRole = await this.usersService.findTenantRoleByName(tenantId, 'viewer');
+      if (!viewerRole) {
+        console.error({
+          event: 'TENANT_NOT_PROVISIONED',
+          userId: jwt.sub,
+          jwtTenant: tenantId,
+        });
+        throw new ForbiddenException('Tenant não provisionado com role viewer');
+      }
+
+      localUser = await this.usersService.createLocalUser({
+        tenantId,
+        authUserId: jwt.sub,
+        email: jwt.email ?? `${jwt.sub}@placeholder.local`,
+        roleId: viewerRole.id,
+      });
+    }
+
+    await this.usersService.touchLocalUserLastLogin(localUser.id);
 
     req.localUser = localUser;
     return true;

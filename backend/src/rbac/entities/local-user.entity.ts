@@ -41,6 +41,9 @@ export class LocalUser {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
+  @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
+  lastLoginAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

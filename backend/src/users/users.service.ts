@@ -13,7 +13,6 @@ import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.en
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuthApiService } from '../auth-api/auth-api.service';
-import { RequestUser } from '../common/types/jwt-payload.type';
 
 @Injectable()
 export class UsersService {
@@ -162,40 +161,61 @@ export class UsersService {
     };
   }
 
-  async findOrProvisionLocalUserFromJwt(user: RequestUser): Promise<LocalUser> {
-    const roleName = this.normalizeRoleName(user.defaultRole);
-    const tenantRole = await this.ensureTenantRole(user.tenantId, roleName);
+  async findAnyLocalUserByAuthUserId(authUserId: string): Promise<LocalUser | null> {
+    return this.localUserRepo.findOne({
+      where: { authUserId },
+      relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
+      order: { id: 'ASC' },
+    });
+  }
 
-    let localUser = await this.localUserRepo.findOne({
+  async findLocalUserByAuthUserIdAndTenant(
+    authUserId: string,
+    tenantId: string,
+  ): Promise<LocalUser | null> {
+    return this.localUserRepo.findOne({
       where: {
-        authUserId: user.sub,
-        tenantId: user.tenantId,
+        authUserId,
+        tenantId,
       },
       relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
     });
+  }
 
-    if (!localUser) {
-      localUser = await this.localUserRepo.save(
-        this.localUserRepo.create({
-          tenantId: user.tenantId,
-          authUserId: user.sub,
-          email: user.email ?? `${user.sub}@placeholder.local`,
-          roleId: tenantRole.id,
-          active: true,
-        }),
-      );
-    }
-
-    if (user.email && localUser.email !== user.email) {
-      await this.localUserRepo.update(localUser.id, { email: user.email });
-    }
-
-    return this.localUserRepo.findOneOrFail({
+  async findTenantRoleByName(
+    tenantId: string,
+    roleName: string,
+  ): Promise<TenantRole | null> {
+    return this.tenantRoleRepo.findOne({
       where: {
-        authUserId: user.sub,
-        tenantId: user.tenantId,
+        tenantId,
+        name: this.normalizeRoleName(roleName),
+        active: true,
       },
-      relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
+    });
+  }
+
+  async createLocalUser(params: {
+    tenantId: string;
+    authUserId: string;
+    email: string;
+    roleId: number;
+  }): Promise<LocalUser> {
+    const created = this.localUserRepo.create({
+      tenantId: params.tenantId,
+      authUserId: params.authUserId,
+      email: params.email,
+      roleId: params.roleId,
+      active: true,
+      lastLoginAt: null,
+    });
+
+    return this.localUserRepo.save(created);
+  }
+
+  async touchLocalUserLastLogin(localUserId: number): Promise<void> {
+    await this.localUserRepo.update(localUserId, {
+      lastLoginAt: new Date(),
     });
   }
 
@@ -225,7 +245,6 @@ export class UsersService {
 
   async createTenantUser(
     tenantId: string,
-    authorization: string | undefined,
     dto: CreateUserDto,
   ): Promise<{
     id: string;
@@ -236,10 +255,7 @@ export class UsersService {
     active: boolean;
   }> {
     const roleName = this.normalizeRoleName(dto.role);
-    const authUserId = await this.authApiService.resolveAuthUserIdByEmail(
-      dto.email,
-      authorization,
-    );
+    const authUserId = await this.authApiService.resolveAuthUserIdByEmail(dto.email);
 
     if (!authUserId) {
       throw new UnprocessableEntityException(
