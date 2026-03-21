@@ -23,7 +23,7 @@ export async function getAccessToken(): Promise<string> {
 async function doTokenExchange(): Promise<string> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const res = await fetch(`${AUTH_URL}/oauth/token?aud=${APP_AUD}`, {
+      const res = await fetch(`${AUTH_URL}/api/oauth/token?aud=${APP_AUD}`, {
         credentials: 'include',
         signal: AbortSignal.timeout(3000),
       });
