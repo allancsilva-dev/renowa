@@ -1,21 +1,28 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
-import { RolePermission } from '../entities/role-permission.entity';
+import { Repository } from 'typeorm';
 import { REQUIRED_PERMISSION_KEY } from '../decorators/require-permission.decorator';
-import { User } from '../../users/entities/user.entity';
+import { LocalUser } from '../../rbac/entities/local-user.entity';
+import { TenantRolePermission } from '../../rbac/entities/tenant-role-permission.entity';
+import { RequestUser } from '../types/jwt-payload.type';
 
 type RequestWithLocalUser = {
-  localUser?: User;
+  user?: RequestUser;
+  localUser?: LocalUser;
 };
 
 @Injectable()
 export class PermissionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    @InjectRepository(RolePermission)
-    private readonly rolePermissionRepo: Repository<RolePermission>,
+    @InjectRepository(TenantRolePermission)
+    private readonly rolePermissionRepo: Repository<TenantRolePermission>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -27,19 +34,32 @@ export class PermissionGuard implements CanActivate {
     if (!required) return true;
 
     const req = context.switchToHttp().getRequest<RequestWithLocalUser>();
+
+    if (req.user?.roles?.includes('SUPERADMIN')) {
+      return true;
+    }
+
     const localUser = req.localUser;
-    if (!localUser?.roles?.length) return false;
+    if (!localUser) {
+      throw new ForbiddenException('Local user context not found');
+    }
 
-    if (localUser.roles.includes('ADMIN')) return true;
+    if (localUser.role?.name === 'admin') {
+      return true;
+    }
 
-    const rolePermissions = await this.rolePermissionRepo.find({
+    if (!localUser.roleId) {
+      return false;
+    }
+
+    const rolePermission = await this.rolePermissionRepo.findOne({
       where: {
-        role: In(localUser.roles),
+        roleId: localUser.roleId,
+        permission: { slug: required },
       },
       relations: ['permission'],
     });
 
-    const slugs = new Set(rolePermissions.map((item) => item.permission.slug));
-    return slugs.has(required);
+    return !!rolePermission;
   }
 }

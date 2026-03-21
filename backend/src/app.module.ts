@@ -12,8 +12,8 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import { AutoProvisionGuard } from './common/guards/auto-provision.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
-import { RolePermission } from './common/entities/role-permission.entity';
 import { Permission } from './common/entities/permission.entity';
+import { TenantRolePermission } from './rbac/entities/tenant-role-permission.entity';
 
 import { AuthModule } from './auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
@@ -50,7 +50,7 @@ import { PermissionsModule } from './permissions/permissions.module';
       }),
     }),
 
-    TypeOrmModule.forFeature([RolePermission, Permission]),
+    TypeOrmModule.forFeature([TenantRolePermission, Permission]),
 
     // CHANGELOG #11: Rate limiting global — chave por user.sub via UserThrottlerGuard
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
