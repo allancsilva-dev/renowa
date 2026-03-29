@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
-    window.location.href = `${AUTH_URL}/logout?redirect=${encodeURIComponent(window.location.origin)}`;
+    window.location.href = `${AUTH_URL}/logout?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
