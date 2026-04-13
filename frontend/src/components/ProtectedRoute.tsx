@@ -2,8 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 
-const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
-const APP_AUD = import.meta.env.VITE_APP_AUD ?? 'renowa.zonadev.tech';
+const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -19,7 +18,7 @@ export function ProtectedRoute({ children, permission, adminOnly = false }: Prot
   }
 
   if (!user) {
-    window.location.href = `${AUTH_URL}/login?app=${APP_AUD}&redirect=${encodeURIComponent(window.location.href)}`;
+    window.location.href = `${API_URL}/auth/oidc/start?return_to=${encodeURIComponent(window.location.href)}`;
     return null;
   }
 

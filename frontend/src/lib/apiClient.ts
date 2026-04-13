@@ -8,6 +8,24 @@ interface ApiRequestOptions extends RequestInit {
   params?: Record<string, QueryValue>;
 }
 
+function normalizeHeaders(headers?: HeadersInit): Record<string, string> {
+  if (!headers) return {};
+
+  if (headers instanceof Headers) {
+    const mapped: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      mapped[key] = value;
+    });
+    return mapped;
+  }
+
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+
+  return { ...headers };
+}
+
 function buildUrl(url: string, params?: Record<string, QueryValue>): string {
   const normalizedBase = BASE_URL?.replace(/\/$/, '') ?? '';
   const normalizedPath = url.startsWith('/') ? url : `/${url}`;
@@ -33,10 +51,44 @@ async function request<T>(url: string, options: ApiRequestOptions = {}): Promise
   const { params, ...fetchOptions } = options;
   const finalUrl = buildUrl(url, params);
 
-  const res = await authFetch(finalUrl, fetchOptions);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const externalSignal = fetchOptions.signal;
+  const onAbort = () => controller.abort();
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', onAbort, { once: true });
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await authFetch(finalUrl, {
+      ...fetchOptions,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', onAbort);
+  }
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+
+  if (res.status === 401) {
+    if (!window.location.pathname.includes('/login')) {
+      const API_BASE = BASE_URL ?? '/api';
+      window.location.href = `${API_BASE}/auth/oidc/start?return_to=${encodeURIComponent(window.location.href)}`;
+    }
+  }
 
   if (!res.ok) {
     throw {
@@ -57,9 +109,10 @@ export const apiClient = {
     request<T>(url, {
       ...options,
       method: 'POST',
-      headers: body instanceof FormData
-        ? options.headers
-        : { ...options.headers, 'Content-Type': 'application/json' },
+      headers: {
+        ...normalizeHeaders(options.headers),
+        ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      },
       body: body instanceof FormData ? body : JSON.stringify(body),
     }),
 
@@ -67,9 +120,10 @@ export const apiClient = {
     request<T>(url, {
       ...options,
       method: 'PATCH',
-      headers: body instanceof FormData
-        ? options.headers
-        : { ...options.headers, 'Content-Type': 'application/json' },
+      headers: {
+        ...normalizeHeaders(options.headers),
+        ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      },
       body: body instanceof FormData ? body : JSON.stringify(body),
     }),
 

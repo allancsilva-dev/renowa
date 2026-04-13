@@ -62,7 +62,15 @@ export class JwtAuthGuard implements CanActivate {
   }
 
   private extractToken(req: Request): string | null {
-    // 1. Authorization: Bearer <token>
+    // 1. Cookie (web): AUTH_COOKIE_NAME or renowa_access_token
+    const cookieName = process.env.AUTH_COOKIE_NAME ?? 'renowa_access_token';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const anyReq = req as any;
+    if (anyReq.cookies && anyReq.cookies[cookieName]) {
+      return String(anyReq.cookies[cookieName]);
+    }
+
+    // 2. Authorization: Bearer <token>
     const authHeader = req.headers['authorization'];
     if (authHeader?.startsWith('Bearer ')) {
       return authHeader.slice(7);

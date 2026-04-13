@@ -7,11 +7,8 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
-import { authFetch, clearToken } from '@/lib/auth';
-
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
-const APP_AUD = import.meta.env.VITE_APP_AUD ?? 'renowa.zonadev.tech';
 
 export interface AuthUser {
   id: string;
@@ -39,10 +36,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function redirectToLogin(): never {
-  window.location.href = `${AUTH_URL}/login?app=${APP_AUD}&redirect=${encodeURIComponent(window.location.href)}`;
-  throw new Error('Redirecting to login');
-}
+// Authentication is handled via backend OIDC flow; frontend does not redirect here.
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -50,12 +44,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const loadUser = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+
     try {
-      const res = await authFetch(`${API_URL}/users/me`);
+      const res = await fetch(`${API_URL}/auth/me`, {
+        method: 'GET',
+        credentials: 'include',
+        signal: controller.signal,
+      });
 
       if (res.status === 401) {
-        clearToken();
-        redirectToLogin();
+        setUser(null);
+        setPermissions([]);
+        return;
       }
 
       if (!res.ok) {
@@ -63,17 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = (await res.json()) as MeResponse;
-
-      if (!data?.user || !Array.isArray(data.permissions)) {
-        throw new Error('Invalid /users/me response format');
-      }
-
-      setUser(data.user);
-      setPermissions(data.permissions);
+      setUser(data.user ?? null);
+      setPermissions(data.permissions ?? []);
     } catch {
       setUser(null);
       setPermissions([]);
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, []);
@@ -92,9 +90,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user?.role?.toLowerCase() === 'admin';
   }, [user]);
 
-  const logout = useCallback(() => {
-    clearToken();
-    window.location.href = `${AUTH_URL}/logout?post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+  const logout = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/auth/oidc/logout`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setUser(null);
+        setPermissions([]);
+        window.location.href = data.redirect;
+        return;
+      }
+    } catch {
+      // fallback
+    }
+
+    // fallback: direct to auth
+    window.location.href = `${AUTH_URL}`;
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({

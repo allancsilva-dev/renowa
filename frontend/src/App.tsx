@@ -4,6 +4,7 @@ import AppShell from '@/components/layout/AppShell';
 import { AuthProvider } from '@/context/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import LoadingState from '@/components/feedback/LoadingState';
+import AuthCallback from '@/pages/AuthCallback';
 import Dashboard from '@/pages/Dashboard';
 import Clientes from '@/pages/Clientes';
 import ClienteForm from '@/pages/ClienteForm';
@@ -124,6 +125,8 @@ export default function App() {
               />
             </Route>
           </Route>
+          {/* OIDC callback route (must match provider redirect URI) */}
+          <Route path='/callback' element={<AuthCallback />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

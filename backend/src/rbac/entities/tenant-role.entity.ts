@@ -18,33 +18,33 @@ import { TenantRolePermission } from './tenant-role-permission.entity';
 @Index(['tenantId', 'active'])
 export class TenantRole {
   @PrimaryGeneratedColumn('increment')
-  id: number;
+  id!: number;
 
   @Column({ type: 'uuid' })
   @Generated('uuid')
-  uuid: string;
+  uuid!: string;
 
   @Column({ name: 'tenant_id', type: 'uuid' })
-  tenantId: string;
+  tenantId!: string;
 
   @Column({ type: 'varchar', length: 100 })
-  name: string;
+  name!: string;
 
   @Column({ type: 'text', nullable: true })
-  description: string | null;
+  description!: string | null;
 
   @Column({ type: 'boolean', default: true })
-  active: boolean;
+  active!: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn({ name: 'updated_at' })
-  updatedAt: Date;
+  updatedAt!: Date;
 
   @DeleteDateColumn({ name: 'deleted_at', nullable: true })
-  deletedAt: Date | null;
+  deletedAt!: Date | null;
 
   @OneToMany(() => TenantRolePermission, (trp) => trp.role)
-  rolePermissions: TenantRolePermission[];
+  rolePermissions!: TenantRolePermission[];
 }
