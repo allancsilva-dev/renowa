@@ -6,7 +6,10 @@ import {
   HttpStatus,
   Delete,
   Param,
+  Get,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { JwksStrategy } from './jwks.strategy';
 import { MobileSessionService } from './mobile-session.service';
@@ -53,5 +56,13 @@ export class AuthController {
     @CurrentUser() user: RequestUser,
   ): Promise<void> {
     await this.mobileSessionService.revokeSession(sessionUuid, user.tenantId);
+  }
+
+  @Get('me')
+  me(@Req() req: Request) {
+    const user = (req as any).user;
+    if (!user) return {};
+    const { sub, email, roles, tenantId, plan, defaultRole } = user;
+    return { sub, email, roles, tenantId, plan, defaultRole };
   }
 }

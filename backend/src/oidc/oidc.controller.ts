@@ -114,15 +114,5 @@ export class OidcController {
     return res.json({ redirect: `${authUrl}/logout?redirect=${encodeURIComponent(logoutRedirect)}` });
   }
 
-  @Get('me')
-  // Note: this route is protected by the global JwtAuthGuard in AppModule
-  me(@Req() req: Request) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anyReq = req as any;
-    const user = anyReq.user;
-    if (!user) return {};
-
-    const { sub, email, roles, tenantId, plan, defaultRole } = user;
-    return { sub, email, roles, tenantId, plan, defaultRole };
-  }
+}
 }
