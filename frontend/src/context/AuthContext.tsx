@@ -11,17 +11,12 @@ const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
 
 export interface AuthUser {
-  id: string;
-  authUserId: string;
+  sub: string;
   email: string;
-  role: string;
+  roles: string[];
   tenantId: string;
-  active: boolean;
-}
-
-interface MeResponse {
-  user: AuthUser;
-  permissions: string[];
+  plan: string;
+  defaultRole: string;
 }
 
 interface AuthContextValue {
@@ -64,9 +59,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(`Failed to load user: ${res.status}`);
       }
 
-      const data = (await res.json()) as MeResponse;
-      setUser(data.user ?? null);
-      setPermissions(data.permissions ?? []);
+      const data = await res.json();
+      setUser(data ?? null);
+      setPermissions([]);
     } catch {
       setUser(null);
       setPermissions([]);
@@ -81,13 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadUser]);
 
   const hasPermission = useCallback((slug: string): boolean => {
-    if (!user) return false;
-    if (user.role?.toLowerCase() === 'admin') return true;
+    if (user?.roles?.includes('ADMIN')) return true;
     return permissions.includes(slug);
   }, [permissions, user]);
 
   const isAdmin = useCallback((): boolean => {
-    return user?.role?.toLowerCase() === 'admin';
+    return user?.roles?.includes('ADMIN') ?? false;
   }, [user]);
 
   const logout = useCallback(async () => {
