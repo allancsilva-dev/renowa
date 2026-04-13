@@ -7,18 +7,9 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
+import type { AuthUser } from '@/types';
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
-
-export interface AuthUser {
-  sub: string;
-  email: string;
-  roles: string[];
-  tenantId: string;
-  plan: string;
-  defaultRole: string;
-}
-
 interface AuthContextValue {
   user: AuthUser | null;
   permissions: string[];
@@ -59,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(`Failed to load user: ${res.status}`);
       }
 
-      const data = await res.json();
+      const data = await res.json() as AuthUser;
       setUser(data ?? null);
       setPermissions([]);
     } catch {

@@ -46,7 +46,7 @@ const itemBase: React.CSSProperties = {
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
-  const role = user?.role ?? '';
+  const role = user?.roles?.[0] ?? '';
 
   return (
     <aside

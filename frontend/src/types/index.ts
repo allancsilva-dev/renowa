@@ -7,8 +7,8 @@ export interface AuthUser {
   email: string;
   roles: string[];
   tenantId: string;
-  tenantSubdomain: string;
   plan: string;
+  defaultRole: string;
 }
 
 // ─── Clientes ────────────────────────────────────────────────────────────────

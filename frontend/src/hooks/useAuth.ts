@@ -4,8 +4,7 @@ export function useAuth() {
   const { user, logout } = useAuthContext();
 
   function hasRole(role: string): boolean {
-    if (!user?.role) return false;
-    return user.role.toLowerCase() === role.toLowerCase();
+    return user?.roles?.some(r => r.toLowerCase() === role.toLowerCase()) ?? false;
   }
 
   function hasAnyRole(roles: string[]): boolean {
