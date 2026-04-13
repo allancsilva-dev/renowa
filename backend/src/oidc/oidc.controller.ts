@@ -95,7 +95,7 @@ export class OidcController {
       const returnTo = cookies['oidc_return'] ?? '/dashboard';
       res.clearCookie('oidc_return', { domain: '.zonadev.tech', path: '/' });
 
-      return res.redirect(302, returnTo);
+      return res.status(200).json({ ok: true, redirect: returnTo });
     } catch (err: unknown) {
       const message = (err as Error)?.message ?? 'Erro na troca de token';
       return res.status(400).json({ error: String(message) });
