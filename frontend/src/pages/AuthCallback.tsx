@@ -24,13 +24,18 @@ export default function AuthCallback() {
 
     (async () => {
       try {
-        await fetch(
+        const res = await fetch(
           `${API_URL}/auth/oidc/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
           { method: 'GET', credentials: 'include', signal: controller.signal }
         );
-        // Forçar navegação após 800ms — não depender apenas do 302 do servidor,
-        // pois o Nginx Proxy Manager pode interceptar e responder JSON
-        setTimeout(() => { window.location.href = '/dashboard'; }, 800);
+
+        const data = await res.json();
+
+        // Navega para o redirect retornado pelo backend, ou /dashboard como fallback
+        setTimeout(() => {
+          window.location.href = data?.redirect ?? '/dashboard';
+        }, 300);
+
         setStatus('success');
       } catch (err) {
         // AbortError = timeout ou componente desmontado — não é erro do usuário
