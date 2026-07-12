@@ -55,8 +55,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(`Failed to load user: ${res.status}`);
       }
 
-      const data = await res.json() as AuthUser;
-      setUser(data ?? null);
+      // Backend envolve toda resposta de sucesso em { data: ... } (ResponseInterceptor global).
+      // Desembrulha antes de usar, senão user.roles fica undefined e isAdmin() sempre falso.
+      const body = await res.json() as { data?: AuthUser } | AuthUser | null;
+      const authUser =
+        body && typeof body === 'object' && 'data' in body
+          ? (body as { data?: AuthUser }).data ?? null
+          : (body as AuthUser | null);
+      setUser(authUser && Object.keys(authUser).length > 0 ? authUser : null);
       setPermissions([]);
     } catch {
       setUser(null);
