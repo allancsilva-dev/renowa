@@ -1,16 +1,40 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: Renowa-DB
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - renowa-db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - renowa
+
   api:
     build:
       context: ./backend
-    container_name: renowa-api
+    container_name: Renowa-API
     restart: unless-stopped
     env_file:
       - ./backend/.env
     environment:
       NODE_ENV: production
       PORT: 3000
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
-      - "127.0.0.1:3002:3000"
+      - "127.0.0.1:3083:3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s
@@ -25,7 +49,7 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: /api
-    container_name: renowa-frontend
+    container_name: Renowa-Web
     restart: unless-stopped
     depends_on:
       api:
@@ -34,6 +58,9 @@ services:
       - "127.0.0.1:3080:80"
     networks:
       - renowa
+
+volumes:
+  renowa-db-data:
 
 networks:
   renowa:

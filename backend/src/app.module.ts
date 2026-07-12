@@ -44,7 +44,11 @@ import { PermissionsModule } from './permissions/permissions.module';
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
-        synchronize: config.get<string>('NODE_ENV') !== 'production',
+        // Prod usa synchronize:false. DB_SYNC=true liga só no 1º boot (DB vazio)
+        // para criar o schema; remova a var após as tabelas existirem.
+        synchronize:
+          config.get<string>('DB_SYNC') === 'true' ||
+          config.get<string>('NODE_ENV') !== 'production',
         logging: config.get<string>('NODE_ENV') === 'development',
         timezone: 'UTC',
       }),
