@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { SyncItemDto, SyncEntity, SyncPullDto } from './dto/sync.dto';
+import { SyncItemDto, SyncEntity, SyncPullDto, SyncPullV2Dto } from './dto/sync.dto';
 
 export interface SyncItemResult {
   uuid: string;
@@ -312,5 +312,44 @@ export class SyncService {
         server_time: new Date().toISOString(),
       },
     };
+  }
+
+  async pullEntityV2(entity: SyncEntity, dto: SyncPullV2Dto, tenantId: string): Promise<{
+    data: Array<{ revision: string; operation: 'UPSERT' | 'DELETE'; payload: Record<string, unknown> }>;
+    meta: { hasMore: boolean; nextCursor: string; highWatermark: string };
+  }> {
+    return this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT public.drain_sync_outbox()');
+
+      let highWatermark = dto.highWatermark;
+      if (!highWatermark) {
+        const rows = await manager.query(
+          `SELECT COALESCE(MAX(revision), 0)::text AS value
+             FROM public.sync_changes WHERE tenant_id = $1 AND entity = $2`,
+          [tenantId, entity],
+        );
+        highWatermark = String(rows[0]?.value ?? '0');
+      }
+
+      const rows = await manager.query(
+        `SELECT revision::text, operation, payload
+           FROM public.sync_changes
+          WHERE tenant_id = $1 AND entity = $2
+            AND revision > $3::bigint AND revision <= $4::bigint
+          ORDER BY revision ASC LIMIT $5`,
+        [tenantId, entity, dto.cursor, highWatermark, dto.limit + 1],
+      ) as Array<{ revision: string; operation: 'UPSERT' | 'DELETE'; payload: Record<string, unknown> }>;
+
+      const hasMore = rows.length > dto.limit;
+      const data = hasMore ? rows.slice(0, dto.limit) : rows;
+      return {
+        data,
+        meta: {
+          hasMore,
+          nextCursor: data.at(-1)?.revision ?? dto.cursor,
+          highWatermark,
+        },
+      };
+    });
   }
 }

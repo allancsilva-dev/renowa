@@ -1,4 +1,4 @@
-import axios, { type AxiosInstance } from 'axios';
+import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
 const SESSION_TOKEN_KEY = 'renowa_session_token';
@@ -89,10 +89,21 @@ class ApiService {
 
   // ── HTTP methods ──────────────────────────────────────────
 
-  get = this.client.get.bind(this.client);
-  post = this.client.post.bind(this.client);
-  patch = this.client.patch.bind(this.client);
-  delete = this.client.delete.bind(this.client);
+  get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.client.get<T>(url, config);
+  }
+
+  post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.client.post<T>(url, data, config);
+  }
+
+  patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.client.patch<T>(url, data, config);
+  }
+
+  delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return this.client.delete<T>(url, config);
+  }
 }
 
 export const apiService = new ApiService();

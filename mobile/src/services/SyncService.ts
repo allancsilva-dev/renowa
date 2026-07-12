@@ -9,13 +9,21 @@ import {
 } from '../storage/sync-queue';
 import { getDatabase } from '../storage/database';
 
+function sqliteValue(value: unknown): string | number | null | Uint8Array {
+  if (value == null) return null;
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value instanceof Uint8Array) return value;
+  return JSON.stringify(value);
+}
+
 const SYNC_ENTITIES = [
   'clientes',
   'produtos',
   'transportadoras',
   'fornecedores',
   'pedidos',
-  'itens-pedido',
+  'itens_pedido',
 ] as const;
 
 type SyncEntityName = (typeof SYNC_ENTITIES)[number];
@@ -30,16 +38,26 @@ interface SyncResult {
  * CHANGELOG #12: server_time está dentro de meta — não no topo do response.
  * Mobile usa meta.server_time como âncora, NUNCA new Date() do dispositivo.
  */
-interface PullMeta {
-  total: number;
+interface PullMetaV2 {
   hasMore: boolean;
-  nextCursor: number;
-  server_time: string;
+  nextCursor: string;
+  highWatermark: string;
+}
+
+interface PullChange {
+  revision: string;
+  operation: 'UPSERT' | 'DELETE';
+  payload: Record<string, unknown>;
+}
+
+interface PullResponseV2 {
+  data: PullChange[];
+  meta: PullMetaV2;
 }
 
 interface PullResponse<T> {
   data: T[];
-  meta: PullMeta;
+  meta: { total: number; hasMore: boolean; nextCursor: number; server_time: string };
 }
 
 /** Mapa: nome do endpoint → nome da tabela SQLite */
@@ -49,7 +67,7 @@ const ENTITY_TABLE: Record<SyncEntityName, string> = {
   'transportadoras': 'transportadoras',
   'fornecedores': 'fornecedores',
   'pedidos': 'pedidos',
-  'itens-pedido': 'itens_pedido',
+  'itens_pedido': 'itens_pedido',
 };
 
 /**
@@ -174,6 +192,72 @@ export class SyncService {
     return latestServerTime;
   }
 
+  private async getEntityCursor(entity: SyncEntityName): Promise<string> {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<{ valor: string }>(
+      'SELECT valor FROM sync_meta WHERE chave = ?', [`sync_v2_cursor:${entity}`],
+    );
+    return row?.valor ?? '0';
+  }
+
+  private async fetchDeltasV2(): Promise<string> {
+    if (!(await this.isOnline())) return '';
+    for (const entity of SYNC_ENTITIES) {
+      const table = ENTITY_TABLE[entity];
+      let cursor = await this.getEntityCursor(entity);
+      let highWatermark: string | undefined;
+      let hasMore = true;
+      while (hasMore) {
+        try {
+          const { data } = await apiService.get<PullResponseV2>(`/sync/v2/${entity}`, {
+            params: { cursor, highWatermark, limit: 200 },
+          });
+          highWatermark = data.meta.highWatermark;
+          await this.applyPage(table, entity, data.data, data.meta.nextCursor);
+          cursor = data.meta.nextCursor;
+          hasMore = data.meta.hasMore;
+        } catch {
+          hasMore = false;
+        }
+      }
+    }
+    return new Date().toISOString();
+  }
+
+  private async applyPage(table: string, entity: SyncEntityName, changes: PullChange[], nextCursor: string): Promise<void> {
+    const db = await getDatabase();
+    await db.withTransactionAsync(async () => {
+      const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+      const allowed = new Set(columns.map((column) => column.name));
+      for (const change of changes) {
+        const row = change.payload;
+        const uuid = row['uuid'] as string;
+        if (change.operation === 'DELETE') {
+          await db.runAsync(`UPDATE ${table} SET deleted_at = ? WHERE uuid = ?`, [sqliteValue(row['deleted_at'] ?? '1970-01-01T00:00:00.000Z'), uuid]);
+          continue;
+        }
+        const existing = await db.getFirstAsync<{ id: number }>(`SELECT id FROM ${table} WHERE uuid = ?`, [uuid]);
+        if (existing) {
+          const keys = Object.keys(row).filter((key) => key !== 'uuid' && allowed.has(key));
+          if (keys.length) await db.runAsync(
+            `UPDATE ${table} SET ${keys.map((key) => `${key} = ?`).join(', ')}, synced = 1 WHERE uuid = ?`,
+            [...keys.map((key) => sqliteValue(row[key])), uuid],
+          );
+        } else {
+          const keys = Object.keys(row).filter((key) => key !== 'id' && allowed.has(key));
+          await db.runAsync(
+            `INSERT OR IGNORE INTO ${table} (${keys.join(', ')}, synced) VALUES (${keys.map(() => '?').join(', ')}, 1)`,
+            keys.map((key) => sqliteValue(row[key])),
+          );
+        }
+      }
+      await db.runAsync(
+        `INSERT INTO sync_meta (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor`,
+        [`sync_v2_cursor:${entity}`, nextCursor],
+      );
+    });
+  }
+
   private async applyDeltas(
     table: string,
     rows: Record<string, unknown>[],
@@ -206,7 +290,7 @@ export class SyncService {
         const keys = Object.keys(row).filter((k) => !['id', 'uuid'].includes(k));
         if (keys.length > 0) {
           const setClauses = keys.map((k) => `${k} = ?`).join(', ');
-          const values = keys.map((k) => row[k] ?? null);
+          const values = keys.map((k) => sqliteValue(row[k]));
           await db.runAsync(
             `UPDATE ${table} SET ${setClauses}, synced = 1 WHERE uuid = ?`,
             [...values, uuid],
@@ -216,7 +300,7 @@ export class SyncService {
         // Inserir nova linha vinda do servidor
         const keys = Object.keys(row).filter((k) => k !== 'id');
         const placeholders = keys.map(() => '?').join(', ');
-        const values = keys.map((k) => row[k] ?? null);
+        const values = keys.map((k) => sqliteValue(row[k]));
 
         await db.runAsync(
           `INSERT OR IGNORE INTO ${table} (${keys.join(', ')}, synced) VALUES (${placeholders}, 1)`,
@@ -238,7 +322,7 @@ export class SyncService {
     const lastSync = await apiService.getLastSyncTimestamp();
     // Full sync no primeiro uso — epoch retorna tudo do servidor
     const since = lastSync ?? '1970-01-01T00:00:00.000Z';
-    const newCursor = await this.fetchDeltas(since);
+    const newCursor = await this.fetchDeltasV2();
 
     if (newCursor) {
       await apiService.setLastSyncTimestamp(newCursor);

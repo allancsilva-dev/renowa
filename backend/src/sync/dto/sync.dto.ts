@@ -8,6 +8,10 @@ import {
   IsOptional,
   IsDateString,
   IsEnum,
+  Matches,
+  IsInt,
+  Min,
+  Max,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -76,4 +80,24 @@ export class SyncPullDto {
   @IsOptional()
   @Type(() => Number)
   limit?: number = 200;
+}
+
+/** bigint fica string no contrato HTTP para não perder precisão em JavaScript. */
+export class SyncPullV2Dto {
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/)
+  cursor: string = '0';
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/)
+  highWatermark?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit: number = 200;
 }

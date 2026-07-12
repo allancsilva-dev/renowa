@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { SyncService } from './sync.service';
-import { SyncPushDto, SyncPullDto } from './dto/sync.dto';
+import { SyncPushDto, SyncPullDto, SyncPullV2Dto, SyncEntity } from './dto/sync.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { Client } from '../clients/entities/client.entity';
@@ -49,6 +49,40 @@ export class SyncController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.syncService.pushItems(dto.items, user.tenantId);
+  }
+
+  private pullV2(entity: SyncEntity, dto: SyncPullV2Dto, user: RequestUser) {
+    return this.syncService.pullEntityV2(entity, dto, user.tenantId);
+  }
+
+  @Get('v2/clientes') @RequirePermission('clientes.ver')
+  pullClientesV2(@Query() dto: SyncPullV2Dto, @CurrentUser() user: RequestUser) {
+    return this.pullV2(SyncEntity.CLIENTES, dto, user);
+  }
+
+  @Get('v2/produtos') @RequirePermission('produtos.ver')
+  pullProdutosV2(@Query() dto: SyncPullV2Dto, @CurrentUser() user: RequestUser) {
+    return this.pullV2(SyncEntity.PRODUTOS, dto, user);
+  }
+
+  @Get('v2/fornecedores') @RequirePermission('fornecedores.ver')
+  pullFornecedoresV2(@Query() dto: SyncPullV2Dto, @CurrentUser() user: RequestUser) {
+    return this.pullV2(SyncEntity.FORNECEDORES, dto, user);
+  }
+
+  @Get('v2/transportadoras') @RequirePermission('transportadoras.ver')
+  pullTransportadorasV2(@Query() dto: SyncPullV2Dto, @CurrentUser() user: RequestUser) {
+    return this.pullV2(SyncEntity.TRANSPORTADORAS, dto, user);
+  }
+
+  @Get('v2/pedidos') @RequirePermission('pedidos.ver')
+  pullPedidosV2(@Query() dto: SyncPullV2Dto, @CurrentUser() user: RequestUser) {
+    return this.pullV2(SyncEntity.PEDIDOS, dto, user);
+  }
+
+  @Get('v2/itens_pedido') @RequirePermission('pedidos.ver')
+  pullItensPedidoV2(@Query() dto: SyncPullV2Dto, @CurrentUser() user: RequestUser) {
+    return this.pullV2(SyncEntity.ITENS_PEDIDO, dto, user);
   }
 
   // ── PULL por entidade (CHANGELOG #8) ──────────────────────

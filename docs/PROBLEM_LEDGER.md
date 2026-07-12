@@ -336,17 +336,17 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** backend / mobile
 - **Sintoma:** `server_time` = `new Date().toISOString()` gerado na montagem da resposta, estritamente após o SELECT. Linha alterada entre o snapshot do SELECT e o `server_time` fica de fora desta resposta mas é excluída no ciclo seguinte (`since` já passou).
 - **Causa raiz:** confirmada — âncora tomada depois da leitura, não derivada do `MAX(updated_at)` das linhas retornadas.
 - **Impacto técnico:** perde atualização na janela entre leitura e resposta.
 - **Arquivos/módulos:** `backend/src/sync/sync.service.ts:279`; `mobile/src/services/SyncService.ts:164-165`
-- **Solução proposta:** capturar `server_time` antes da query, ou ancorar em `MAX(updated_at)` das linhas retornadas.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura de `sync.service.ts`.
-- **Riscos residuais:** parte do redesenho de cursor (PROB-0008 / BACKLOG-0001).
-- **Próximo passo:** rever geração de âncora temporal.
+- **Solução proposta:** substituir timestamp/offset por change feed monotônico.
+- **Solução aplicada:** sync v2 com trigger transacional em `sync_outbox`; drain serializado por advisory lock atribui `revision` somente após commit; pull usa keyset `revision`, `highWatermark` estável e `limit + 1`; bigint trafega como string; mobile guarda cursor por entidade e aplica página + cursor na mesma transação SQLite. API v1 mantida durante migração.
+- **Evidências/comandos:** migration `0008_sync_change_feed.sql`; testes backend 28/28; build backend; `tsc --noEmit` mobile.
+- **Riscos residuais:** migration precisa ser aplicada em cada ambiente; retenção/compactação de `sync_changes` ainda requer política operacional.
+- **Próximo passo:** rollout gradual do mobile v2 e monitoramento do tamanho do feed.
 - **Relacionado:** PROB-0008, BACKLOG-0001
 
 ### PROB-0019 — Sync aceita `*_id` cru e sobrescreve colunas server-controlled (mass-assignment)
