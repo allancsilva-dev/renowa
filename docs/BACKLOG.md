@@ -47,7 +47,7 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Dependências:** mapa de colunas graváveis por entidade.
 - **Critério de aceite:** chaves do payload validadas/mapeadas contra whitelist; chave desconhecida rejeitada; teste cobre payload com chave maliciosa (`"`).
 - **Risco se ficar pendente:** injeção de SQL e escrita cross-tenant por usuário autenticado.
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Relacionado:** PROB-0003, PROB-0019
 
 ### BACKLOG-0004 — Reescrever migrations para schema completo e válido

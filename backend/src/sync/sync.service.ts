@@ -1,7 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { SyncItemDto, SyncEntity, SyncPullDto, SyncPullV2Dto } from './dto/sync.dto';
+import { isUUID } from 'class-validator';
+import {
+  SyncItemDto,
+  SyncEntity,
+  SyncOperation,
+  SyncPullDto,
+  SyncPullV2Dto,
+} from './dto/sync.dto';
+import { getSyncEntityPolicy, SyncEntityPolicy } from './sync-entity-policy';
 
 export interface SyncItemResult {
   uuid: string;
@@ -29,28 +37,6 @@ export interface SyncItemResult {
  */
 @Injectable()
 export class SyncService {
-  private static readonly PAYLOAD_FIELDS: Record<SyncEntity, ReadonlySet<string>> = {
-    [SyncEntity.CLIENTES]: new Set([
-      'razao_social', 'cnpj', 'email', 'tel', 'endereco', 'bairro', 'cidade', 'uf',
-      'cep', 'contato', 'inscricao_estadual', 'suframa', 'pgt_padrao', 'prazo',
-      'local_entrega', 'observacao', 'transportadora_uuid',
-    ]),
-    [SyncEntity.PEDIDOS]: new Set([
-      'cliente_uuid', 'vendedor_uuid', 'fornecedor_uuid', 'transportadora_uuid',
-      'data', 'status', 'total_sem_imposto', 'total_com_imposto', 'pgt', 'prazo',
-      'local_entrega', 'observacao',
-    ]),
-    [SyncEntity.PRODUTOS]: new Set(['fornecedor_uuid', 'codigo', 'descricao', 'preco_base']),
-    [SyncEntity.FORNECEDORES]: new Set(['razao_social', 'cnpj']),
-    [SyncEntity.TRANSPORTADORAS]: new Set([
-      'razao_social', 'cnpj', 'telefone', 'endereco_completo',
-    ]),
-    [SyncEntity.ITENS_PEDIDO]: new Set([
-      'pedido_uuid', 'produto_uuid', 'codigo_manual', 'descricao_manual', 'qtd_caixas',
-      'qtd_unitaria', 'preco_unitario', 'desconto_perc', 'total_item',
-    ]),
-  };
-
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
@@ -67,7 +53,7 @@ export class SyncService {
   ): Promise<number | null> {
     if (!uuid) return null;
     const rows = await qr.query(
-      `SELECT id FROM ${table} WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+      `SELECT id FROM ${this.quoteIdentifier(table)} WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
       [uuid, tenantId],
     );
     return (rows[0]?.id as number) ?? null;
@@ -115,14 +101,15 @@ export class SyncService {
     tenantId: string,
   ): Promise<{ id?: number; numero_pedido?: number | null }> {
     const { entity, uuid, operation, payload, client_timestamp } = item;
-    const table = entity as string;
+    const policy = getSyncEntityPolicy(entity);
+    const table = policy.table;
 
-    this.validatePayload(entity, payload);
+    this.validatePayload(entity, operation, payload, policy);
 
     // ── DELETE ──────────────────────────────────────────────
     if (operation === 'DELETE') {
       await qr.query(
-        `UPDATE ${table} SET deleted_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
+        `UPDATE ${this.quoteIdentifier(table)} SET deleted_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
         [uuid, tenantId],
       );
       return {};
@@ -130,7 +117,7 @@ export class SyncService {
 
     // ── Idempotência: verificar se já existe ─────────────────
     const existing = await qr.query(
-      `SELECT id, updated_at${entity === SyncEntity.PEDIDOS ? ', numero_pedido' : ''} FROM ${table} WHERE uuid = $1 AND tenant_id = $2`,
+      `SELECT id, updated_at${entity === SyncEntity.PEDIDOS ? ', numero_pedido' : ''} FROM ${this.quoteIdentifier(table)} WHERE uuid = $1 AND tenant_id = $2`,
       [uuid, tenantId],
     );
 
@@ -150,32 +137,14 @@ export class SyncService {
       }
 
       // Aplicar update com UUID→ID resolution para FKs
-      const resolved = await this.resolvePayloadFKs(qr, entity, payload, tenantId);
-      const fields = Object.keys(resolved)
-        .filter((k) => !['id', 'uuid', 'tenant_id'].includes(k))
-        .map((k, i) => `"${k}" = $${i + 3}`)
-        .join(', ');
-
-      if (fields) {
-        const values = Object.keys(resolved)
-          .filter((k) => !['id', 'uuid', 'tenant_id'].includes(k))
-          .map((k) => resolved[k]);
-
-        await qr.query(
-          `UPDATE ${table} SET ${fields}, updated_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
-          [uuid, tenantId, ...values],
-        );
-      }
+      const resolved = await this.buildWritableRecord(qr, entity, payload, tenantId, policy);
+      await this.updateRecord(qr, table, uuid, tenantId, resolved);
 
       return { id: row.id, numero_pedido: row.numero_pedido ?? null };
     }
 
     // ── CREATE ───────────────────────────────────────────────
-    const resolved = await this.resolvePayloadFKs(qr, entity, payload, tenantId);
-
-    // Remove campos que o servidor controla
-    delete resolved['id'];
-    delete resolved['tenant_id'];
+    const resolved = await this.buildWritableRecord(qr, entity, payload, tenantId, policy);
 
     let numero_pedido: number | null = null;
 
@@ -186,24 +155,72 @@ export class SyncService {
       resolved['numero_pedido'] = numero_pedido;
     }
 
-    const keys = ['uuid', 'tenant_id', ...Object.keys(resolved)];
-    const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
-    const values = [uuid, tenantId, ...Object.values(resolved)];
-
-    const insertResult = await qr.query(
-      `INSERT INTO ${table} (${keys.map((k) => `"${k}"`).join(', ')}) VALUES (${placeholders}) RETURNING id`,
-      values,
-    );
-
-    return { id: insertResult[0]?.id as number, numero_pedido };
+    const id = await this.insertRecord(qr, table, uuid, tenantId, resolved);
+    return { id, numero_pedido };
   }
 
-  private validatePayload(entity: SyncEntity, payload: Record<string, unknown>): void {
-    const allowed = SyncService.PAYLOAD_FIELDS[entity];
-    const invalid = Object.keys(payload).filter((field) => !allowed.has(field));
+  private async updateRecord(
+    qr: QueryRunner,
+    table: string,
+    uuid: string,
+    tenantId: string,
+    record: Record<string, unknown>,
+  ): Promise<void> {
+    const columns = Object.keys(record);
+    if (columns.length === 0) return;
+
+    const assignments = columns
+      .map((column, index) => `${this.quoteIdentifier(column)} = $${index + 3}`)
+      .join(', ');
+    await qr.query(
+      `UPDATE ${this.quoteIdentifier(table)} SET ${assignments}, updated_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
+      [uuid, tenantId, ...columns.map((column) => record[column])],
+    );
+  }
+
+  private async insertRecord(
+    qr: QueryRunner,
+    table: string,
+    uuid: string,
+    tenantId: string,
+    record: Record<string, unknown>,
+  ): Promise<number> {
+    const columns = ['uuid', 'tenant_id', ...Object.keys(record)];
+    const placeholders = columns.map((_, index) => `$${index + 1}`).join(', ');
+    const values = [uuid, tenantId, ...Object.values(record)];
+    const rows = await qr.query(
+      `INSERT INTO ${this.quoteIdentifier(table)} (${columns.map((column) => this.quoteIdentifier(column)).join(', ')}) VALUES (${placeholders}) RETURNING id`,
+      values,
+    );
+    return rows[0]?.id as number;
+  }
+
+  private validatePayload(
+    entity: SyncEntity,
+    operation: SyncOperation,
+    payload: Record<string, unknown>,
+    policy: SyncEntityPolicy,
+  ): void {
+    const invalid = Object.keys(payload).filter(
+      (field) => !policy.writableFields.includes(field)
+        && !Object.prototype.hasOwnProperty.call(policy.foreignKeys, field),
+    );
 
     if (invalid.length > 0) {
       throw new BadRequestException(`Campos não permitidos em ${entity}: ${invalid.join(', ')}`);
+    }
+
+    if (operation === SyncOperation.CREATE) {
+      const missingRequiredFks = Object.entries(policy.foreignKeys)
+        .filter(([, foreignKey]) => !foreignKey.nullable)
+        .map(([field]) => field)
+        .filter((field) => !Object.prototype.hasOwnProperty.call(payload, field));
+
+      if (missingRequiredFks.length > 0) {
+        throw new BadRequestException(
+          `FKs obrigatórias ausentes em ${entity}: ${missingRequiredFks.join(', ')}`,
+        );
+      }
     }
   }
 
@@ -211,59 +228,51 @@ export class SyncService {
    * Resolve UUIDs de FKs no payload para IDs internos (CHANGELOG #3).
    * Ex: cliente_uuid → cliente_id, produto_uuid → produto_id
    */
-  private async resolvePayloadFKs(
+  private async buildWritableRecord(
     qr: QueryRunner,
     entity: SyncEntity,
     payload: Record<string, unknown>,
     tenantId: string,
+    policy: SyncEntityPolicy,
   ): Promise<Record<string, unknown>> {
-    const result: Record<string, unknown> = { ...payload };
+    const result: Record<string, unknown> = {};
 
-    const uuidFkMap: Record<SyncEntity, Record<string, string>> = {
-      [SyncEntity.CLIENTES]: { transportadora_uuid: 'transportadora_id' },
-      [SyncEntity.PEDIDOS]: {
-        cliente_uuid: 'cliente_id',
-        vendedor_uuid: 'vendedor_id',
-        fornecedor_uuid: 'fornecedor_id',
-        transportadora_uuid: 'transportadora_id',
-      },
-      [SyncEntity.PRODUTOS]: { fornecedor_uuid: 'fornecedor_id' },
-      [SyncEntity.ITENS_PEDIDO]: {
-        pedido_uuid: 'pedido_id',
-        produto_uuid: 'produto_id',
-      },
-      [SyncEntity.FORNECEDORES]: {},
-      [SyncEntity.TRANSPORTADORAS]: {},
-    };
-
-    const tableMap: Record<string, string> = {
-      transportadora_uuid: 'transportadoras',
-      cliente_uuid: 'clientes',
-      vendedor_uuid: 'usuarios',
-      fornecedor_uuid: 'fornecedores',
-      pedido_uuid: 'pedidos',
-      produto_uuid: 'produtos',
-    };
-
-    const fkMap = uuidFkMap[entity] ?? {};
-
-    for (const [uuidKey, idKey] of Object.entries(fkMap)) {
-      if (result[uuidKey]) {
-        const table = tableMap[uuidKey];
-        const id = await this.resolveUuid(qr, table, result[uuidKey] as string, tenantId);
-        result[idKey] = id;
-        delete result[uuidKey];
-      }
+    for (const field of policy.writableFields) {
+      if (Object.prototype.hasOwnProperty.call(payload, field)) result[field] = payload[field];
     }
 
-    // Remover campos uuid de FK que sobram no payload (sem mapeamento configurado)
-    for (const key of Object.keys(result)) {
-      if (key.endsWith('_uuid') && key !== 'uuid') {
-        delete result[key];
+    for (const [uuidKey, foreignKey] of Object.entries(policy.foreignKeys)) {
+      if (!Object.prototype.hasOwnProperty.call(payload, uuidKey)) continue;
+
+      const uuid = payload[uuidKey];
+
+      if (uuid === null) {
+        if (!foreignKey.nullable) {
+          throw new BadRequestException(`FK obrigatória não aceita null em ${entity}: ${uuidKey}`);
+        }
+        result[foreignKey.column] = null;
+        continue;
       }
+
+      if (typeof uuid !== 'string' || !isUUID(uuid)) {
+        throw new BadRequestException(`FK inválida em ${entity}: ${uuidKey}`);
+      }
+
+      const id = await this.resolveUuid(qr, foreignKey.targetTable, uuid, tenantId);
+      if (id === null) {
+        throw new BadRequestException(`FK não encontrada em ${entity}: ${uuidKey}`);
+      }
+      result[foreignKey.column] = id;
     }
 
     return result;
+  }
+
+  private quoteIdentifier(identifier: string): string {
+    if (!/^[a-z_]+$/.test(identifier)) {
+      throw new Error(`Identificador SQL inválido na política de sync: ${identifier}`);
+    }
+    return `"${identifier}"`;
   }
 
   // ── PULL ─────────────────────────────────────────────────

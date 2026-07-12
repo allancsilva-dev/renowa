@@ -84,10 +84,10 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Impacto técnico:** usuário autenticado (sessão mobile) injeta SQL arbitrário / escrita cross-tenant. Também permite mass-assignment de colunas arbitrárias.
 - **Arquivos/módulos:** `backend/src/sync/sync.service.ts:130-143`, `:165-172`, `:109`; DTO `backend/src/sync/dto/sync.dto.ts:36`
 - **Solução proposta:** whitelist de colunas permitidas por entidade (mapear payload → colunas conhecidas) antes de montar SQL; rejeitar chaves desconhecidas; validar `^[a-z_]+$`.
-- **Solução aplicada:** whitelist estática por entidade `PAYLOAD_FIELDS` (`sync.service.ts:32`) + método `validatePayload` (`:201`) chamado em `:120` **antes** de qualquer resolução de FK ou montagem de SQL. Chave fora do conjunto permitido → `BadRequestException("Campos não permitidos...")`. Os identificadores interpolados no SQL passam a vir só de um conjunto fixo e conhecido. Aplicado no commit `85f7867`.
-- **Evidências/comandos:** `grep -n validatePayload sync.service.ts` → chamada em `:120`, definição em `:201`; `PAYLOAD_FIELDS` em `:32`. Fluxo verificado: validação precede o build SQL (`:154`, `:189-194`).
-- **Riscos residuais:** o SQL ainda **interpola identificadores por string** (`"${k}"`) — a segurança depende inteiramente da whitelist ser estática e fechada. Não introduzir chaves dinâmicas em `PAYLOAD_FIELDS`. PROB-0019 (mass-assignment de `*_id` / colunas server-controlled) permanece parcialmente relacionado — reavaliar.
-- **Próximo passo:** confirmar cobertura de `PAYLOAD_FIELDS` para todas as entidades de sync; fechar PROB-0019 separadamente.
+- **Solução aplicada:** whitelist inicial do commit `85f7867` foi consolidada na política tipada `SYNC_ENTITY_POLICIES`. Tabelas, colunas graváveis e colunas internas de FK vêm somente dessa política; `quoteIdentifier` rejeita qualquer identificador fora de `^[a-z_]+$`; valores seguem parametrizados. Chaves desconhecidas são rejeitadas antes de qualquer SQL.
+- **Evidências/comandos:** teste de invariantes valida todos os identificadores da política; teste de payload malicioso cobre escape por `"`; suíte sync 32/32 e backend 68/68.
+- **Riscos residuais:** identificadores SQL permanecem dinâmicos, mas agora são derivados exclusivamente da política tipada `SYNC_ENTITY_POLICIES` e validados por `quoteIdentifier`; valores permanecem parametrizados.
+- **Próximo passo:** manter teste de invariantes da política ao adicionar entidades ou campos de sync.
 - **Relacionado:** PROB-0019, BACKLOG-0003, BUG-0003
 
 ### PROB-0004 — Migration 001 não cria nenhuma tabela de negócio
@@ -353,17 +353,18 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** backend / segurança
 - **Sintoma:** `resolvePayloadFKs` só mapeia/remove chaves `*_uuid`; qualquer `*_id` cru (ex.: `cliente_id`, `vendedor_id`) passa direto sem validação de tenant. UPDATE exclui só `id/uuid/tenant_id` — cliente pode sobrescrever `numero_pedido` (sequence server) e outras colunas.
 - **Causa raiz:** confirmada.
 - **Impacto técnico:** referência FK cross-tenant armazenada; cliente reescreve campos gerenciados pelo servidor.
 - **Arquivos/módulos:** `backend/src/sync/sync.service.ts:181-234`, `:217-224`
 - **Solução proposta:** whitelist de colunas graváveis por entidade; validar propriedade da FK por tenant.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura de `sync.service.ts`.
-- **Riscos residuais:** mesmo fix de PROB-0003.
-- **Próximo passo:** whitelist compartilhada com correção de injection.
+- **Solução aplicada:** política única e tipada `SYNC_ENTITY_POLICIES` define tabela, campos graváveis, campos server-controlled, FKs, tabela-alvo e nulabilidade para as seis entidades. Validação, resolução tenant-safe e persistência derivam somente dessa política. Payload nunca fornece nomes de tabela/coluna; `quoteIdentifier` impõe `^[a-z_]+$`. `*_id`, campos server-controlled, UUID malformado, FK fora do tenant, FK obrigatória ausente e `null` proibido são rejeitados. FKs opcionais aceitam `null` explícito.
+- **Evidências/comandos:** `npm test --workspace=backend -- sync --runInBand` — 32/32; suíte backend completa — 68/68; `npm run build --workspace=backend` passou. `sync.service.spec.ts` cobre as seis entidades, todas as FKs, campos server-controlled, SQL injection, chave herdada de objeto, UUID válido/malformado/fora do tenant, nulabilidade e invariantes da política. Lint não executou porque o workspace não possui pacote/configuração ESLint apesar do script existente.
+- **Riscos residuais:** alterações futuras na política devem manter o teste de invariantes e compatibilidade do contrato de sync.
+- **Próximo passo:** nenhum.
 - **Relacionado:** PROB-0003, PROB-0011
 
 ### PROB-0020 — Itens "poison" nunca descartados; `retry_count` é campo morto
