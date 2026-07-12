@@ -1,5 +1,7 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import EmptyState from '@/components/feedback/EmptyState';
+import ErrorState from '@/components/feedback/ErrorState';
 
 interface Column<T> {
   key: string;
@@ -12,7 +14,14 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
   isLoading?: boolean;
-  emptyMessage?: string;
+  /** Mensagem de erro; quando presente, exibe o estado de erro dentro da moldura. */
+  error?: string | null;
+  onRetry?: () => void;
+  errorTitle?: string;
+  errorDescription?: string;
+  emptyTitle?: string;
+  emptyDescription?: string;
+  emptyAction?: React.ReactNode;
   meta?: {
     total: number;
     page: number;
@@ -26,7 +35,13 @@ export default function DataTable<T>({
   columns,
   data,
   isLoading = false,
-  emptyMessage = 'Nenhum registro encontrado.',
+  error = null,
+  onRetry,
+  errorTitle,
+  errorDescription,
+  emptyTitle,
+  emptyDescription,
+  emptyAction,
   meta,
   onPageChange,
 }: DataTableProps<T>) {
@@ -47,7 +62,13 @@ export default function DataTable<T>({
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {error ? (
+              <tr>
+                <td colSpan={columns.length} className='p-0'>
+                  <ErrorState bare title={errorTitle} description={errorDescription} onRetry={onRetry} />
+                </td>
+              </tr>
+            ) : isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className='border-b animate-pulse'>
                   {columns.map((col) => (
@@ -59,8 +80,8 @@ export default function DataTable<T>({
               ))
             ) : data.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className='px-4 py-8 text-center text-slate-500'>
-                  {emptyMessage}
+                <td colSpan={columns.length} className='p-0'>
+                  <EmptyState bare title={emptyTitle} description={emptyDescription} action={emptyAction} />
                 </td>
               </tr>
             ) : (
