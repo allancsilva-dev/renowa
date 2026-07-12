@@ -2,8 +2,6 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
-import EmptyState from '@/components/feedback/EmptyState';
-import ErrorState from '@/components/feedback/ErrorState';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { fetchClients } from '@/services/clients.service';
@@ -78,22 +76,17 @@ export default function Clientes() {
       </div>
 
       {/* Conteúdo */}
-      {error ? (
-        <ErrorState onRetry={reload} />
-      ) : data.length === 0 && !isLoading ? (
-        <EmptyState
-          title='Nenhum cliente cadastrado'
-          description='Clique em "Novo Cliente" para começar.'
-        />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={data}
-          isLoading={isLoading}
-          meta={meta ?? undefined}
-          onPageChange={goToPage}
-        />
-      )}
+      <DataTable
+        columns={columns}
+        data={data}
+        isLoading={isLoading}
+        error={error}
+        onRetry={reload}
+        meta={meta ?? undefined}
+        onPageChange={goToPage}
+        emptyTitle='Nenhum cliente cadastrado'
+        emptyDescription='Clique em "Novo Cliente" para começar.'
+      />
     </div>
   );
 }

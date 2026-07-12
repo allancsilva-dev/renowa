@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
-import EmptyState from '@/components/feedback/EmptyState';
-import ErrorState from '@/components/feedback/ErrorState';
 import apiClient from '@/lib/apiClient';
 import { getApiErrorMessage } from '@/lib/errors';
 import { normalizeListResponse, type PaginationMeta } from '@/lib/pagination';
@@ -229,19 +227,17 @@ export default function UsuariosPage() {
         </div>
       )}
 
-      {error ? (
-        <ErrorState description={error} onRetry={() => fetchUsers(meta.page)} />
-      ) : users.length === 0 && !loading ? (
-        <EmptyState title='Nenhum usuário cadastrado' />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={users}
-          isLoading={loading}
-          meta={meta}
-          onPageChange={(page) => { void fetchUsers(page); }}
-        />
-      )}
+      <DataTable
+        columns={columns}
+        data={users}
+        isLoading={loading}
+        error={error}
+        errorDescription={error ?? undefined}
+        onRetry={() => fetchUsers(meta.page)}
+        meta={meta}
+        onPageChange={(page) => { void fetchUsers(page); }}
+        emptyTitle='Nenhum usuário cadastrado'
+      />
 
       {isCreateOpen && (
         <div className='fixed inset-0 z-40 flex items-center justify-center'>

@@ -2,8 +2,6 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Search } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
-import EmptyState from '@/components/feedback/EmptyState';
-import ErrorState from '@/components/feedback/ErrorState';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import api from '@/lib/apiClient';
@@ -66,13 +64,16 @@ export default function Produtos() {
         </button>
       </div>
 
-      {error ? (
-        <ErrorState onRetry={reload} />
-      ) : data.length === 0 && !isLoading ? (
-        <EmptyState title='Nenhum produto cadastrado' />
-      ) : (
-        <DataTable columns={columns} data={data} isLoading={isLoading} meta={meta ?? undefined} onPageChange={goToPage} />
-      )}
+      <DataTable
+        columns={columns}
+        data={data}
+        isLoading={isLoading}
+        error={error}
+        onRetry={reload}
+        meta={meta ?? undefined}
+        onPageChange={goToPage}
+        emptyTitle='Nenhum produto cadastrado'
+      />
     </div>
   );
 }

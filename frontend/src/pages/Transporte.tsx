@@ -1,8 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
-import EmptyState from '@/components/feedback/EmptyState';
-import ErrorState from '@/components/feedback/ErrorState';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import api from '@/lib/apiClient';
 import type { PaginatedResponse } from '@/types';
@@ -119,13 +117,16 @@ export default function Transporte() {
         </button>
       </div>
 
-      {error ? (
-        <ErrorState onRetry={reload} />
-      ) : data.length === 0 && !isLoading ? (
-        <EmptyState title='Nenhuma transportadora cadastrada' />
-      ) : (
-        <DataTable columns={columns} data={data} isLoading={isLoading} meta={meta ?? undefined} onPageChange={goToPage} />
-      )}
+      <DataTable
+        columns={columns}
+        data={data}
+        isLoading={isLoading}
+        error={error}
+        onRetry={reload}
+        meta={meta ?? undefined}
+        onPageChange={goToPage}
+        emptyTitle='Nenhuma transportadora cadastrada'
+      />
 
       {/* Modal */}
       {isOpen && (

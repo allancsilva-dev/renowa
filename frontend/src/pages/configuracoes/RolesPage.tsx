@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
-import EmptyState from '@/components/feedback/EmptyState';
-import ErrorState from '@/components/feedback/ErrorState';
 import apiClient from '@/lib/apiClient';
 import { getApiErrorMessage } from '@/lib/errors';
 import { normalizeListResponse, type PaginationMeta } from '@/lib/pagination';
@@ -245,19 +243,17 @@ export default function RolesPage() {
         </div>
       )}
 
-      {error ? (
-        <ErrorState description={error} onRetry={() => fetchRoles(meta.page)} />
-      ) : roles.length === 0 && !loading ? (
-        <EmptyState title='Nenhuma role cadastrada' />
-      ) : (
-        <DataTable
-          columns={columns}
-          data={roles}
-          isLoading={loading}
-          meta={meta}
-          onPageChange={(page) => { void fetchRoles(page); }}
-        />
-      )}
+      <DataTable
+        columns={columns}
+        data={roles}
+        isLoading={loading}
+        error={error}
+        errorDescription={error ?? undefined}
+        onRetry={() => fetchRoles(meta.page)}
+        meta={meta}
+        onPageChange={(page) => { void fetchRoles(page); }}
+        emptyTitle='Nenhuma role cadastrada'
+      />
 
       {isCreateOpen && (
         <div className='fixed inset-0 z-40 flex items-center justify-center'>
