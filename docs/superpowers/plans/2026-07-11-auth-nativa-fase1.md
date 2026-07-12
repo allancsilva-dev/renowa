@@ -246,16 +246,15 @@ Expected: FAIL ("Cannot find module './password.service'").
 - [ ] **Step 3: Implement**
 
 Create `backend/src/auth/password.service.ts`:
+> **Correção de segurança vs. rascunho:** um `DUMMY_HASH` constante *malformado* faz `argon2.verify` lançar no parse **antes** do KDF → tempo ~0 → anula a defesa anti-enumeração. O dummy tem de ser um hash argon2id **válido**. Solução: computar um hash real uma vez, sob demanda (lazy), e verificar contra ele. (Confirmado: verify real ~112ms; malformado seria <1ms.)
 ```ts
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
 
-/** Hash fixo de referência para nivelar tempo quando o usuário não existe. */
-const DUMMY_HASH =
-  '$argon2id$v=19$m=65536,t=3,p=4$c29tZS1zYWx0LXZhbHVl$0000000000000000000000000000000000000000000';
-
 @Injectable()
 export class PasswordService {
+  private dummyHashPromise: Promise<string> | null = null;
+
   hash(plain: string): Promise<string> {
     return argon2.hash(plain, { type: argon2.argon2id });
   }
@@ -269,8 +268,15 @@ export class PasswordService {
   }
 
   async dummyVerify(plain: string): Promise<void> {
-    // Executa um verify contra hash inválido só para consumir tempo comparável.
-    await this.verify(DUMMY_HASH, plain);
+    const dummy = await this.getDummyHash();
+    await this.verify(dummy, plain);
+  }
+
+  private getDummyHash(): Promise<string> {
+    if (!this.dummyHashPromise) {
+      this.dummyHashPromise = this.hash('dummy-password-for-timing-leveling');
+    }
+    return this.dummyHashPromise;
   }
 }
 ```
@@ -1694,6 +1700,7 @@ const logout = useCallback(async () => {
 }, []);
 ```
 - Incluir `login` no `AuthContextValue` e no `useMemo`.
+> **Fix crítico (case de role):** `isAdmin`/`hasPermission` checavam `roles.includes('ADMIN')` (maiúsculo). Roles nativas são **minúsculas** (`normalizeRoleName` → `'admin'`), então o admin nativo seria bloqueado na rota `adminOnly` (`configuracoes`). Trocar por comparação case-insensitive (`r.toLowerCase() === 'admin'`). `AuthUser.plan`/`defaultRole` viram opcionais no `types/index.ts` (o novo `/me` não os retorna; nenhum consumo em runtime).
 
 - [ ] **Step 4: `ProtectedRoute` — sem user vai p/ /login**
 
