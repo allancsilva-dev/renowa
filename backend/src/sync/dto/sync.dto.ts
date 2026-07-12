@@ -20,6 +20,12 @@ export enum SyncEntity {
   ITENS_PEDIDO = 'itens_pedido',
 }
 
+export enum SyncOperation {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE',
+}
+
 export class SyncItemDto {
   @IsNotEmpty()
   @IsString()
@@ -30,8 +36,8 @@ export class SyncItemDto {
   entity: SyncEntity;
 
   @IsNotEmpty()
-  @IsString()
-  operation: 'CREATE' | 'UPDATE' | 'DELETE';
+  @IsEnum(SyncOperation)
+  operation: SyncOperation;
 
   @IsObject()
   payload: Record<string, unknown>;

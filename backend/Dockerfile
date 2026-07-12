@@ -22,6 +22,7 @@ COPY package*.json ./
 RUN npm install --omit=dev --ignore-scripts
 
 COPY --from=builder /app/dist ./dist
+COPY src/database/migrations ./dist/database/migrations
 
 EXPOSE 3000
 

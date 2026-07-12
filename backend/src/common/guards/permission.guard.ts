@@ -26,7 +26,7 @@ export class PermissionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<string>(
+    const required = this.reflector.getAllAndOverride<string | string[]>(
       REQUIRED_PERMISSION_KEY,
       [context.getHandler(), context.getClass()],
     );
@@ -60,6 +60,7 @@ export class PermissionGuard implements CanActivate {
       .getRawMany<{ slug: string }>();
 
     const slugs = new Set(rows.map((row) => row.slug));
-    return slugs.has(required);
+    const requiredPermissions = Array.isArray(required) ? required : [required];
+    return requiredPermissions.every((permission) => slugs.has(permission));
   }
 }

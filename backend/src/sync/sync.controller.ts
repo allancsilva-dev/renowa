@@ -18,6 +18,7 @@ import { OrderItem } from '../orders/entities/order-item.entity';
 import { Product } from '../products/entities/product.entity';
 import { Supplier } from '../suppliers/entities/supplier.entity';
 import { Transport } from '../transport/entities/transport.entity';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 
 /**
  * CHANGELOG #8: Endpoints separados por entidade (sync por entidade).
@@ -36,6 +37,13 @@ export class SyncController {
   @Post()
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @RequirePermission([
+    'clientes.editar',
+    'pedidos.editar',
+    'produtos.editar',
+    'fornecedores.editar',
+    'transportadoras.editar',
+  ])
   async push(
     @Body() dto: SyncPushDto,
     @CurrentUser() user: RequestUser,
@@ -51,36 +59,42 @@ export class SyncController {
    * CHANGELOG #13: cursor é offset numérico simples.
    */
   @Get('clientes')
+  @RequirePermission('clientes.ver')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullClientes(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Client, dto, user.tenantId);
   }
 
   @Get('pedidos')
+  @RequirePermission('pedidos.ver')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullPedidos(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Order, dto, user.tenantId);
   }
 
   @Get('produtos')
+  @RequirePermission('produtos.ver')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullProdutos(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Product, dto, user.tenantId);
   }
 
   @Get('fornecedores')
+  @RequirePermission('fornecedores.ver')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullFornecedores(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Supplier, dto, user.tenantId);
   }
 
   @Get('transportadoras')
+  @RequirePermission('transportadoras.ver')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullTransportadoras(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(Transport, dto, user.tenantId);
   }
 
   @Get('itens-pedido')
+  @RequirePermission('pedidos.ver')
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async pullItensPedido(@Query() dto: SyncPullDto, @CurrentUser() user: RequestUser) {
     return this.syncService.pullEntity(OrderItem, dto, user.tenantId);

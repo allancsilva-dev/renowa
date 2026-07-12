@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, QueryRunner } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { SyncItemDto, SyncEntity, SyncPullDto } from './dto/sync.dto';
@@ -29,6 +29,28 @@ export interface SyncItemResult {
  */
 @Injectable()
 export class SyncService {
+  private static readonly PAYLOAD_FIELDS: Record<SyncEntity, ReadonlySet<string>> = {
+    [SyncEntity.CLIENTES]: new Set([
+      'razao_social', 'cnpj', 'email', 'tel', 'endereco', 'bairro', 'cidade', 'uf',
+      'cep', 'contato', 'inscricao_estadual', 'suframa', 'pgt_padrao', 'prazo',
+      'local_entrega', 'observacao', 'transportadora_uuid',
+    ]),
+    [SyncEntity.PEDIDOS]: new Set([
+      'cliente_uuid', 'vendedor_uuid', 'fornecedor_uuid', 'transportadora_uuid',
+      'data', 'status', 'total_sem_imposto', 'total_com_imposto', 'pgt', 'prazo',
+      'local_entrega', 'observacao',
+    ]),
+    [SyncEntity.PRODUTOS]: new Set(['fornecedor_uuid', 'codigo', 'descricao', 'preco_base']),
+    [SyncEntity.FORNECEDORES]: new Set(['razao_social', 'cnpj']),
+    [SyncEntity.TRANSPORTADORAS]: new Set([
+      'razao_social', 'cnpj', 'telefone', 'endereco_completo',
+    ]),
+    [SyncEntity.ITENS_PEDIDO]: new Set([
+      'pedido_uuid', 'produto_uuid', 'codigo_manual', 'descricao_manual', 'qtd_caixas',
+      'qtd_unitaria', 'preco_unitario', 'desconto_perc', 'total_item',
+    ]),
+  };
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
@@ -94,6 +116,8 @@ export class SyncService {
   ): Promise<{ id?: number; numero_pedido?: number | null }> {
     const { entity, uuid, operation, payload, client_timestamp } = item;
     const table = entity as string;
+
+    this.validatePayload(entity, payload);
 
     // ── DELETE ──────────────────────────────────────────────
     if (operation === 'DELETE') {
@@ -172,6 +196,15 @@ export class SyncService {
     );
 
     return { id: insertResult[0]?.id as number, numero_pedido };
+  }
+
+  private validatePayload(entity: SyncEntity, payload: Record<string, unknown>): void {
+    const allowed = SyncService.PAYLOAD_FIELDS[entity];
+    const invalid = Object.keys(payload).filter((field) => !allowed.has(field));
+
+    if (invalid.length > 0) {
+      throw new BadRequestException(`Campos não permitidos em ${entity}: ${invalid.join(', ')}`);
+    }
   }
 
   /**
