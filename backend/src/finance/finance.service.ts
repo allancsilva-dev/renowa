@@ -8,8 +8,9 @@ import { Parceiro } from './entities/parceiro.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { CreateMovementDto } from './dto/create-movement.dto';
 import { UpdateMovementDto } from './dto/update-movement.dto';
+import { optimisticSoftDelete, optimisticUpdate } from '../common/persistence/optimistic-concurrency';
 import { CreateComissaoDto, UpdateComissaoDto } from './dto/create-comissao.dto';
-import { CreateInadimplenciaDto } from './dto/create-inadimplencia.dto';
+import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 
 @Injectable()
@@ -41,12 +42,20 @@ export class FinanceService {
   }
 
   async updateMovimento(uuid: string, dto: UpdateMovementDto, tenantId: string): Promise<FinanceMovement> {
-    const m = await this.findOneMovimento(uuid, tenantId);
-    if (dto.tipo !== undefined) m.tipo = dto.tipo;
-    if (dto.valor !== undefined) m.valor = dto.valor;
-    if (dto.data !== undefined) m.data = dto.data ?? null;
-    if (dto.descricao !== undefined) m.descricao = dto.descricao ?? null;
-    return this.movimentoRepo.save(m);
+    const patch: Partial<FinanceMovement> = {};
+    if (dto.tipo !== undefined) patch.tipo = dto.tipo;
+    if (dto.valor !== undefined) patch.valor = dto.valor;
+    if (dto.data !== undefined) patch.data = dto.data ?? null;
+    if (dto.descricao !== undefined) patch.descricao = dto.descricao ?? null;
+    return optimisticUpdate({
+      repository: this.movimentoRepo,
+      uuid,
+      tenantId,
+      expectedVersion: dto.version,
+      resource: 'finance-movement',
+      notFoundMessage: 'Lançamento ' + uuid + ' não encontrado.',
+      patch,
+    });
   }
 
   async findAllMovimentos(
@@ -86,9 +95,15 @@ export class FinanceService {
     return m;
   }
 
-  async removeMovimento(uuid: string, tenantId: string): Promise<void> {
-    const m = await this.findOneMovimento(uuid, tenantId);
-    await this.movimentoRepo.softDelete(m.id);
+  async removeMovimento(uuid: string, version: number, tenantId: string): Promise<void> {
+    await optimisticSoftDelete({
+      repository: this.movimentoRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'finance-movement',
+      notFoundMessage: 'Lançamento ' + uuid + ' não encontrado.',
+    });
   }
 
   // ── Fluxo de Caixa ────────────────────────────────────────
@@ -162,14 +177,21 @@ export class FinanceService {
   }
 
   async updateComissao(uuid: string, dto: UpdateComissaoDto, tenantId: string): Promise<Commission> {
-    const c = await this.comissaoRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!c) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
-    if (dto.numero_nfe !== undefined) c.numero_nfe = dto.numero_nfe ?? null;
-    if (dto.data_faturamento !== undefined) c.data_faturamento = dto.data_faturamento ?? null;
-    if (dto.valor_faturado !== undefined) c.valor_faturado = dto.valor_faturado ?? null;
-    if (dto.valor_comissao !== undefined) c.valor_comissao = dto.valor_comissao;
-    if (dto.status !== undefined) c.status = dto.status;
-    return this.comissaoRepo.save(c);
+    const patch: Partial<Commission> = {};
+    if (dto.numero_nfe !== undefined) patch.numero_nfe = dto.numero_nfe ?? null;
+    if (dto.data_faturamento !== undefined) patch.data_faturamento = dto.data_faturamento ?? null;
+    if (dto.valor_faturado !== undefined) patch.valor_faturado = dto.valor_faturado ?? null;
+    if (dto.valor_comissao !== undefined) patch.valor_comissao = dto.valor_comissao;
+    if (dto.status !== undefined) patch.status = dto.status;
+    return optimisticUpdate({
+      repository: this.comissaoRepo,
+      uuid,
+      tenantId,
+      expectedVersion: dto.version,
+      resource: 'commission',
+      notFoundMessage: 'Comissão ' + uuid + ' não encontrada.',
+      patch,
+    });
   }
 
   async findAllComissoes(
@@ -287,10 +309,15 @@ export class FinanceService {
     return Array.from(mapa.values());
   }
 
-  async removeComissao(uuid: string, tenantId: string): Promise<void> {
-    const c = await this.comissaoRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!c) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
-    await this.comissaoRepo.softDelete(c.id);
+  async removeComissao(uuid: string, version: number, tenantId: string): Promise<void> {
+    await optimisticSoftDelete({
+      repository: this.comissaoRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'commission',
+      notFoundMessage: 'Comissão ' + uuid + ' não encontrada.',
+    });
   }
 
   // ── Parceiros Comerciais ───────────────────────────────────
@@ -326,15 +353,22 @@ export class FinanceService {
   }
 
   async updateParceiro(uuid: string, dto: UpdateParceiroDto, tenantId: string): Promise<Parceiro> {
-    const p = await this.parceiroRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!p) throw new NotFoundException(`Parceiro ${uuid} não encontrado.`);
-    if (dto.numero_nfe !== undefined) p.numero_nfe = dto.numero_nfe ?? null;
-    if (dto.data_faturamento !== undefined) p.data_faturamento = dto.data_faturamento ?? null;
-    if (dto.valor_faturado !== undefined) p.valor_faturado = dto.valor_faturado ?? null;
-    if (dto.percentual_comissao !== undefined) p.percentual_comissao = dto.percentual_comissao;
-    if (dto.valor_comissao !== undefined) p.valor_comissao = dto.valor_comissao;
-    if (dto.status !== undefined) p.status = dto.status;
-    return this.parceiroRepo.save(p);
+    const patch: Partial<Parceiro> = {};
+    if (dto.numero_nfe !== undefined) patch.numero_nfe = dto.numero_nfe ?? null;
+    if (dto.data_faturamento !== undefined) patch.data_faturamento = dto.data_faturamento ?? null;
+    if (dto.valor_faturado !== undefined) patch.valor_faturado = dto.valor_faturado ?? null;
+    if (dto.percentual_comissao !== undefined) patch.percentual_comissao = dto.percentual_comissao;
+    if (dto.valor_comissao !== undefined) patch.valor_comissao = dto.valor_comissao;
+    if (dto.status !== undefined) patch.status = dto.status;
+    return optimisticUpdate({
+      repository: this.parceiroRepo,
+      uuid,
+      tenantId,
+      expectedVersion: dto.version,
+      resource: 'commercial-partner',
+      notFoundMessage: 'Parceiro ' + uuid + ' não encontrado.',
+      patch,
+    });
   }
 
   async findAllParceiros(
@@ -370,10 +404,15 @@ export class FinanceService {
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async removeParceiro(uuid: string, tenantId: string): Promise<void> {
-    const p = await this.parceiroRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!p) throw new NotFoundException(`Parceiro ${uuid} não encontrado.`);
-    await this.parceiroRepo.softDelete(p.id);
+  async removeParceiro(uuid: string, version: number, tenantId: string): Promise<void> {
+    await optimisticSoftDelete({
+      repository: this.parceiroRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'commercial-partner',
+      notFoundMessage: 'Parceiro ' + uuid + ' não encontrado.',
+    });
   }
 
   // ── Inadimplência ─────────────────────────────────────────
@@ -399,13 +438,20 @@ export class FinanceService {
     return this.inadimplenciaRepo.save(i);
   }
 
-  async updateInadimplencia(uuid: string, dto: Partial<CreateInadimplenciaDto>, tenantId: string): Promise<Inadimplencia> {
-    const i = await this.inadimplenciaRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!i) throw new NotFoundException(`Inadimplência ${uuid} não encontrada.`);
-    if (dto.empresa_devedora !== undefined) i.empresa_devedora = dto.empresa_devedora ?? null;
-    if (dto.valor_aberto !== undefined) i.valor_aberto = dto.valor_aberto ?? null;
-    if (dto.observacao !== undefined) i.observacao = dto.observacao ?? null;
-    return this.inadimplenciaRepo.save(i);
+  async updateInadimplencia(uuid: string, dto: UpdateInadimplenciaDto, tenantId: string): Promise<Inadimplencia> {
+    const patch: Partial<Inadimplencia> = {};
+    if (dto.empresa_devedora !== undefined) patch.empresa_devedora = dto.empresa_devedora ?? null;
+    if (dto.valor_aberto !== undefined) patch.valor_aberto = dto.valor_aberto ?? null;
+    if (dto.observacao !== undefined) patch.observacao = dto.observacao ?? null;
+    return optimisticUpdate({
+      repository: this.inadimplenciaRepo,
+      uuid,
+      tenantId,
+      expectedVersion: dto.version,
+      resource: 'delinquency',
+      notFoundMessage: 'Inadimplência ' + uuid + ' não encontrada.',
+      patch,
+    });
   }
 
   async findAllInadimplencia(
@@ -428,10 +474,15 @@ export class FinanceService {
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async removeInadimplencia(uuid: string, tenantId: string): Promise<void> {
-    const i = await this.inadimplenciaRepo.findOne({ where: { uuid, tenant_id: tenantId } });
-    if (!i) throw new NotFoundException(`Inadimplência ${uuid} não encontrada.`);
-    await this.inadimplenciaRepo.softDelete(i.id);
+  async removeInadimplencia(uuid: string, version: number, tenantId: string): Promise<void> {
+    await optimisticSoftDelete({
+      repository: this.inadimplenciaRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'delinquency',
+      notFoundMessage: 'Inadimplência ' + uuid + ' não encontrada.',
+    });
   }
 
   // ── Dashboard ─────────────────────────────────────────────

@@ -32,6 +32,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code = 'INTERNAL_SERVER_ERROR';
     let message = 'Erro interno do servidor.';
+    let details: Record<string, unknown> = {};
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -47,9 +48,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         } else if (typeof resObj['message'] === 'string') {
           message = resObj['message'];
         }
+
+        if (typeof resObj['code'] === 'string') {
+          code = resObj['code'];
+        }
+
+        for (const key of ['resource', 'resourceId', 'expectedVersion', 'currentVersion']) {
+          if (resObj[key] !== undefined) details[key] = resObj[key];
+        }
       }
 
-      code = this.httpStatusToCode(status);
+      if (code === 'INTERNAL_SERVER_ERROR') {
+        code = this.httpStatusToCode(status);
+      }
     } else if (exception instanceof Error) {
       message = exception.message;
       this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
@@ -61,6 +72,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error: {
         code,
         message,
+        ...details,
         timestamp: new Date().toISOString(),
         path: request.url,
       },

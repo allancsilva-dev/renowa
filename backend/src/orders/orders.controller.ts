@@ -10,8 +10,9 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { VersionDto } from '../common/dto/version.dto';
 
-class UpdateStatusDto {
+class UpdateStatusDto extends VersionDto {
   @IsString()
   status: string;
 }
@@ -57,14 +58,18 @@ export class OrdersController {
     @Body() dto: UpdateStatusDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.ordersService.updateStatus(uuid, dto.status, user.tenantId);
+    return this.ordersService.updateStatus(uuid, dto.status, dto.version, user.tenantId);
   }
 
   @Delete(':uuid')
   @Roles('ADMIN', 'GESTAO')
   @RequirePermission('pedidos.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
-    await this.ordersService.remove(uuid, user.tenantId);
+  async remove(
+    @Param('uuid') uuid: string,
+    @Query() versionDto: VersionDto,
+    @CurrentUser() user: RequestUser,
+  ): Promise<void> {
+    await this.ordersService.remove(uuid, versionDto.version, user.tenantId);
   }
 }

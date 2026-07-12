@@ -1,5 +1,5 @@
 import { Column, Entity, Index, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
-import { BaseEntity } from '../../common/entities/base.entity';
+import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Client } from '../../clients/entities/client.entity';
 import { Transport } from '../../transport/entities/transport.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
@@ -16,7 +16,7 @@ import { OrderItem } from './order-item.entity';
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'status'])
 @Index(['tenant_id', 'data'])
-export class Order extends BaseEntity {
+export class Order extends VersionedBaseEntity {
   /**
    * Gerado EXCLUSIVAMENTE pelo servidor via nextval('pedidos_numero_seq').
    * NULL enquanto o pedido não foi sincronizado (criado offline no mobile).

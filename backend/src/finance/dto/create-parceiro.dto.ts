@@ -1,4 +1,5 @@
 import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { VersionDto } from '../../common/dto/version.dto';
 
 export class CreateParceiroDto {
   @IsUUID('4')
@@ -58,7 +59,7 @@ export class CreateParceiroDto {
   status?: string;
 }
 
-export class UpdateParceiroDto {
+export class UpdateParceiroDto extends VersionDto {
   @IsOptional()
   @IsString()
   numero_nfe?: string;

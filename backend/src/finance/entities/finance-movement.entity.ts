@@ -1,5 +1,5 @@
 import { Column, Entity, Index } from 'typeorm';
-import { BaseEntity } from '../../common/entities/base.entity';
+import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 
 /**
  * Spec: tipo VARCHAR 'Custo Fixo' | 'Custo Rotativo' | 'Venda'
@@ -9,7 +9,7 @@ import { BaseEntity } from '../../common/entities/base.entity';
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])
-export class FinanceMovement extends BaseEntity {
+export class FinanceMovement extends VersionedBaseEntity {
   /** 'Custo Fixo' | 'Custo Rotativo' | 'Venda' */
   @Column({ name: 'tipo', type: 'varchar' })
   tipo: string;

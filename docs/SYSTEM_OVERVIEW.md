@@ -57,6 +57,15 @@ Representação comercial: usuários registram clientes e pedidos. `pedidos` usa
 - Validação de JWT via `jose`/JWKS em vez de passport-jwt.
 - Soft delete (`deleted_at`) em todas as entidades via `base.entity`.
 
+## Concorrência nas edições web
+
+- Pedidos e registros financeiros editáveis carregam `version` inteiro, iniciado em `1`.
+- PATCH e DELETE devem enviar a versão recebida na leitura. Escrita usa condição atômica `uuid + tenant_id + version`; sucesso incrementa versão.
+- Versão divergente retorna HTTP `409` com código `CONCURRENT_MODIFICATION`; frontend recarrega dados e informa conflito sem repetir escrita automaticamente.
+- Registro inexistente ou pertencente a outro tenant retorna `404`, sem revelar existência cross-tenant.
+- Migration obrigatória: `backend/src/database/migrations/0007_optimistic_concurrency.sql`, aplicada antes da nova API.
+- Escopo atual: frontend web. Mobile/sync offline permanece sob política LWW e será tratado separadamente em PROB-0022/BACKLOG-0005.
+
 ## Limitações conhecidas
 
 - Cursor de sync por **offset** (CHANGELOG #13) — sujeito a pular/repetir item sob escrita concorrente. Migração planejada para cursor por `updated_at` na v2.0. Ver [BACKLOG-0001](BACKLOG.md).

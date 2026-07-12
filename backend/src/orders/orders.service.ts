@@ -6,6 +6,7 @@ import { OrderItem } from './entities/order-item.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { optimisticSoftDelete, optimisticUpdate } from '../common/persistence/optimistic-concurrency';
 
 @Injectable()
 export class OrdersService {
@@ -149,14 +150,26 @@ export class OrdersService {
     return order;
   }
 
-  async updateStatus(uuid: string, status: string, tenantId: string): Promise<Order> {
-    const order = await this.findOne(uuid, tenantId);
-    order.status = status;
-    return this.orderRepo.save(order);
+  async updateStatus(uuid: string, status: string, version: number, tenantId: string): Promise<Order> {
+    return optimisticUpdate({
+      repository: this.orderRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'order',
+      notFoundMessage: 'Pedido ' + uuid + ' não encontrado.',
+      patch: { status },
+    });
   }
 
-  async remove(uuid: string, tenantId: string): Promise<void> {
-    const order = await this.findOne(uuid, tenantId);
-    await this.orderRepo.softDelete(order.id);
+  async remove(uuid: string, version: number, tenantId: string): Promise<void> {
+    await optimisticSoftDelete({
+      repository: this.orderRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'order',
+      notFoundMessage: 'Pedido ' + uuid + ' não encontrado.',
+    });
   }
 }

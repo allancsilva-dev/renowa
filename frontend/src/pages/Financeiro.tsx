@@ -13,6 +13,7 @@ const fmtDate = (d: string | null) =>
 
 interface Lancamento {
   uuid: string;
+  version: number;
   tipo: string;
   descricao: string | null;
   valor: number;
@@ -21,6 +22,7 @@ interface Lancamento {
 
 interface Comissao {
   uuid: string;
+  version: number;
   fornecedor_id: number | null;
   fornecedor?: { razao_social: string } | null;
   cliente?: { razao_social: string } | null;
@@ -37,6 +39,7 @@ interface Comissao {
 
 interface Parceiro {
   uuid: string;
+  version: number;
   nome_parceiro: string;
   empresa_parceiro: string | null;
   fornecedor?: { razao_social: string } | null;
@@ -51,6 +54,7 @@ interface Parceiro {
 
 interface Inadimplencia {
   uuid: string;
+  version: number;
   cliente?: { razao_social: string } | null;
   empresa_devedora: string | null;
   valor_aberto: number | null;
@@ -70,6 +74,21 @@ const now = new Date();
 const inputCls =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2A9D8F] focus:ring-1 focus:ring-[#2A9D8F]/40 w-full';
 const labelCls = 'text-xs font-semibold uppercase tracking-wide text-slate-500';
+
+function writeErrorMessage(error: unknown): string {
+  const apiError = error as {
+    response?: { status?: number; data?: { error?: { code?: string; message?: string } } };
+  };
+  if (apiError.response?.data?.error?.code === 'CONCURRENT_MODIFICATION') {
+    return 'Registro alterado por outro usuário. Lista atualizada; revise antes de tentar novamente.';
+  }
+  return apiError.response?.data?.error?.message ?? 'Não foi possível concluir a operação.';
+}
+
+function WriteError({ message }: { message: string | null }) {
+  if (!message) return null;
+  return <div role='alert' className='border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>{message}</div>;
+}
 
 function FiltroMesAno({
   mes, setMes, ano, setAno,
@@ -768,6 +787,7 @@ function Custos() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<{ tipo: string; descricao: string; valor: number | null; data: string }>({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
   const [saving, setSaving] = useState(false);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -803,10 +823,16 @@ function Custos() {
     }
   }
 
-  async function handleDelete(uuid: string) {
+  async function handleDelete(uuid: string, version: number) {
     if (!confirm('Remover este custo?')) return;
-    await api.delete(`/financeiro/lancamentos/${uuid}`).catch(() => {});
-    load();
+    setWriteError(null);
+    try {
+      await api.delete(`/financeiro/lancamentos/${uuid}`, { params: { version } });
+    } catch (error) {
+      setWriteError(writeErrorMessage(error));
+    } finally {
+      load();
+    }
   }
 
   const totalFixo = fixos.reduce((acc, l) => acc + Number(l.valor), 0);
@@ -830,7 +856,7 @@ function Custos() {
               <td className='px-5 py-3 text-slate-500'>{fmtDate(l.data)}</td>
               <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(l.valor)}</td>
               <td className='px-5 py-3 text-right'>
-                <button onClick={() => handleDelete(l.uuid)} className='text-slate-300 hover:text-red-500 transition-colors'>
+                <button onClick={() => handleDelete(l.uuid, l.version)} className='text-slate-300 hover:text-red-500 transition-colors'>
                   <Trash2 className='h-4 w-4' />
                 </button>
               </td>
@@ -847,6 +873,8 @@ function Custos() {
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
         <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Custo</BtnPrimary>
       </div>
+
+      <WriteError message={writeError} />
 
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
@@ -913,6 +941,7 @@ function InadimplenciaTab() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<{ empresa_devedora: string; valor_aberto: number | null; observacao: string }>({ empresa_devedora: '', valor_aberto: null, observacao: '' });
   const [saving, setSaving] = useState(false);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -942,10 +971,16 @@ function InadimplenciaTab() {
     }
   }
 
-  async function handleDelete(uuid: string) {
+  async function handleDelete(uuid: string, version: number) {
     if (!confirm('Remover este registro?')) return;
-    await api.delete(`/financeiro/inadimplencia/${uuid}`).catch(() => {});
-    load();
+    setWriteError(null);
+    try {
+      await api.delete(`/financeiro/inadimplencia/${uuid}`, { params: { version } });
+    } catch (error) {
+      setWriteError(writeErrorMessage(error));
+    } finally {
+      load();
+    }
   }
 
   const total = items.reduce((acc, i) => acc + Number(i.valor_aberto ?? 0), 0);
@@ -962,6 +997,8 @@ function InadimplenciaTab() {
           <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Registrar</BtnPrimary>
         </div>
       </div>
+
+      <WriteError message={writeError} />
 
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
@@ -990,7 +1027,7 @@ function InadimplenciaTab() {
                   <td className='px-5 py-3 text-right font-semibold text-red-600'>{BRL.format(i.valor_aberto ?? 0)}</td>
                   <td className='px-5 py-3 text-slate-500 max-w-xs truncate'>{i.observacao ?? '—'}</td>
                   <td className='px-5 py-3 text-right'>
-                    <button onClick={() => handleDelete(i.uuid)} className='text-slate-300 hover:text-red-500 transition-colors'>
+                    <button onClick={() => handleDelete(i.uuid, i.version)} className='text-slate-300 hover:text-red-500 transition-colors'>
                       <Trash2 className='h-4 w-4' />
                     </button>
                   </td>

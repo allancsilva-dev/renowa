@@ -1,6 +1,7 @@
 import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { VersionDto } from '../../common/dto/version.dto';
 
-export class UpdateMovementDto {
+export class UpdateMovementDto extends VersionDto {
   @IsOptional()
   @IsString()
   tipo?: string;

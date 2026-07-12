@@ -15,7 +15,7 @@ export async function fetchOrder(uuid: string): Promise<Order> {
   return data.data;
 }
 
-export async function updateOrderStatus(uuid: string, status: OrderStatus): Promise<Order> {
-  const { data } = await api.patch<ApiResponse<Order>>(`/pedidos/${uuid}/status`, { status });
+export async function updateOrderStatus(uuid: string, status: OrderStatus, version: number): Promise<Order> {
+  const { data } = await api.patch<ApiResponse<Order>>(`/pedidos/${uuid}/status`, { status, version });
   return data.data;
 }

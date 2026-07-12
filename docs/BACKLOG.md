@@ -108,4 +108,5 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Critério de aceite:** cada item ou implementado na fase correspondente da migração, ou registrado como decisão consciente no `doc.md` da migração; testes e2e de auth cobrindo rotação/reuse/logout/403 passam.
 - **Risco se ficar pendente:** logout falso sob concorrência, janela de token válido após logout/desativação, CSRF, senhas fracas, produção racy ao escalar — as defesas do prompt não funcionam de fato.
 - **Status:** ABERTO
-- **Relacionado:** PROB-0037, PROB-0038, PROB-0039, PROB-0040, PROB-0041, PROB-0032
+- **Resolvido fora deste backlog:** PROB-0040 fechado em 2026-07-12; optimistic concurrency aplicada às edições web. Mobile/sync permanece em PROB-0022/BACKLOG-0005.
+- **Relacionado:** PROB-0037, PROB-0038, PROB-0039, PROB-0041, PROB-0032

@@ -58,6 +58,7 @@ export interface OrderItem {
 
 export interface Order {
   uuid: string;
+  version: number;
   numero_pedido: number | null;
   cliente_id: number | null;
   vendedor_id: number | null;
@@ -92,6 +93,7 @@ export type MovimentacaoTipo = 'Custo Fixo' | 'Custo Rotativo' | 'Venda';
 
 export interface FinanceMovement {
   uuid: string;
+  version: number;
   tipo: MovimentacaoTipo;
   valor: number;
   data: string;

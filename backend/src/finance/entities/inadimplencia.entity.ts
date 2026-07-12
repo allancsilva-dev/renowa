@@ -1,5 +1,5 @@
 import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
-import { BaseEntity } from '../../common/entities/base.entity';
+import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Client } from '../../clients/entities/client.entity';
 
 @Entity('inadimplencia')
@@ -7,7 +7,7 @@ import { Client } from '../../clients/entities/client.entity';
 @Index(['tenant_id', 'cliente_id'])
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])
-export class Inadimplencia extends BaseEntity {
+export class Inadimplencia extends VersionedBaseEntity {
   @Column({ name: 'cliente_id', type: 'int', nullable: true })
   cliente_id: number | null;
 

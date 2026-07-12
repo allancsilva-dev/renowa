@@ -52,90 +52,97 @@ Registro central de problemas. Mantido pelo `docs-reporter`. IDs sequenciais (`P
 
 Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco, segurança/LGPD) via 5 subagentes especialistas. Relatório consolidado: [REVIEW_REPORTS/2026-07-08_full_system_audit.md](REVIEW_REPORTS/2026-07-08_full_system_audit.md). Nenhum código alterado.
 
+> **Verificação 2026-07-12** — os 5 BLOCKERs (PROB-0002 a PROB-0006) foram reverificados contra o código atual e **fechados**. Todos resolvidos pelo commit `85f7867` (`feat(deploy): harden production rollout`, 2026-07-12). Mecanismo comum das migrations: o runner `backend/src/database/migrate.ts:6` só aplica arquivos que casam `^\d{4}_[a-z0-9_-]+\.sql$` (**exatamente 4 dígitos**). Só `0000_baseline.sql` (pg_dump completo, 17 tabelas) casa; as migrations legadas `001`–`006` (3 dígitos) são **ignoradas** pelo runner — por isso os bugs que estavam no `001` deixaram de rodar. Referência cruzada: BUG-0002 a BUG-0006.
+
 ### PROB-0002 — Segredos de produção reais versionados no git (`env_renowa.txt`)
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** BLOCKER
-- **Status:** ABERTO
+- **Status:** FECHADO_COM_RESSALVA
+- **Verificado em:** 2026-07-12 (commit `85f7867`)
 - **Área:** segurança
 - **Sintoma:** `backend/env_renowa.txt` está rastreado no git (`git ls-files` confirma) contendo `DATABASE_URL` (host/porta/usuário/senha do Postgres de produção), `RENOWA_JWT_SECRET` (chave HS256 real de 256 bits) e `AUTH_INTERNAL_SECRET`.
 - **Causa raiz:** confirmada — `.gitignore` cobre apenas `.env*` (linhas 13-17); o nome `env_renowa.txt` não casa com o padrão.
 - **Impacto técnico:** takeover total do DB; qualquer um com acesso ao repo forja JWT mobile de 30 dias para **qualquer tenant/roles** — colapsa toda a fronteira multi-tenant.
 - **Arquivos/módulos:** `backend/env_renowa.txt`, `.gitignore:13`
 - **Solução proposta:** `git rm --cached backend/env_renowa.txt`, adicionar ao `.gitignore`, **rotacionar todos os segredos** (senha DB, RENOWA_JWT_SECRET, AUTH_INTERNAL_SECRET) e purgar histórico do git.
-- **Solução aplicada:** nenhuma ainda (exige ação de código/infra — fora do escopo read-only). Delegado a `security-auditor` + `backend-engineer`.
-- **Evidências/comandos:** `git ls-files | grep env_renowa` → `env_renowa.txt`; `grep -n env .gitignore` → só `.env*`.
-- **Riscos residuais:** segredo já pode estar comprometido — rotação é obrigatória mesmo após remover do índice.
-- **Próximo passo:** rotação de segredos antes de qualquer deploy.
-- **Relacionado:** BACKLOG-0002
+- **Solução aplicada:** arquivo removido do índice e `.gitignore` estendido — agora cobre `env_*.txt` (linha 24) e `backend/env_renowa.txt` (linha 25). `git ls-files | grep env_renowa` → vazio (não rastreado). Aplicado no commit `85f7867`.
+- **Evidências/comandos:** `git ls-files | grep -i env_renowa` → sem saída; `grep -n env .gitignore` → linhas 24-25 cobrem o padrão.
+- **Riscos residuais:** **rotação de segredos NÃO verificada e provavelmente pendente.** Se o arquivo esteve no histórico do git (commits anteriores), os segredos seguem comprometidos mesmo removidos do índice — remover do HEAD não purga o histórico. Purge do histórico não confirmado.
+- **Próximo passo:** verificar `git log --all -- backend/env_renowa.txt`; se houve versionamento prévio, **rotacionar senha DB + RENOWA_JWT_SECRET + AUTH_INTERNAL_SECRET** e purgar histórico antes de qualquer deploy. Enquanto não feito, o risco de takeover permanece — por isso FECHADO_COM_RESSALVA, não FECHADO.
+- **Relacionado:** BACKLOG-0002, BUG-0002
 
 ### PROB-0003 — SQL injection de identificador no push de sync
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** BLOCKER
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12 (commit `85f7867`)
 - **Área:** backend / segurança
 - **Sintoma:** UPDATE monta `"${k}" = $n` e INSERT monta a lista de colunas a partir das **chaves do payload do cliente** (`Object.keys(resolved)`). Valores são parametrizados (`$n`), mas identificadores não. Chave contendo `"` escapa da citação e injeta SQL.
 - **Causa raiz:** confirmada — `payload` é `@IsObject()` sem validação de chaves (`sync.dto.ts:36`); o `whitelist/forbidNonWhitelisted` do ValidationPipe não remove chaves de um record livre.
 - **Impacto técnico:** usuário autenticado (sessão mobile) injeta SQL arbitrário / escrita cross-tenant. Também permite mass-assignment de colunas arbitrárias.
 - **Arquivos/módulos:** `backend/src/sync/sync.service.ts:130-143`, `:165-172`, `:109`; DTO `backend/src/sync/dto/sync.dto.ts:36`
 - **Solução proposta:** whitelist de colunas permitidas por entidade (mapear payload → colunas conhecidas) antes de montar SQL; rejeitar chaves desconhecidas; validar `^[a-z_]+$`.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura de `sync.service.ts` (2 agentes independentes confirmaram).
-- **Riscos residuais:** relacionado a PROB-0019 (mass-assignment de `*_id` / colunas server-controlled).
-- **Próximo passo:** whitelist de colunas por entidade no serviço de sync.
-- **Relacionado:** PROB-0019, BACKLOG-0003
+- **Solução aplicada:** whitelist estática por entidade `PAYLOAD_FIELDS` (`sync.service.ts:32`) + método `validatePayload` (`:201`) chamado em `:120` **antes** de qualquer resolução de FK ou montagem de SQL. Chave fora do conjunto permitido → `BadRequestException("Campos não permitidos...")`. Os identificadores interpolados no SQL passam a vir só de um conjunto fixo e conhecido. Aplicado no commit `85f7867`.
+- **Evidências/comandos:** `grep -n validatePayload sync.service.ts` → chamada em `:120`, definição em `:201`; `PAYLOAD_FIELDS` em `:32`. Fluxo verificado: validação precede o build SQL (`:154`, `:189-194`).
+- **Riscos residuais:** o SQL ainda **interpola identificadores por string** (`"${k}"`) — a segurança depende inteiramente da whitelist ser estática e fechada. Não introduzir chaves dinâmicas em `PAYLOAD_FIELDS`. PROB-0019 (mass-assignment de `*_id` / colunas server-controlled) permanece parcialmente relacionado — reavaliar.
+- **Próximo passo:** confirmar cobertura de `PAYLOAD_FIELDS` para todas as entidades de sync; fechar PROB-0019 separadamente.
+- **Relacionado:** PROB-0019, BACKLOG-0003, BUG-0003
 
 ### PROB-0004 — Migration 001 não cria nenhuma tabela de negócio
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** BLOCKER
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12 (commit `85f7867`)
 - **Área:** banco
 - **Sintoma:** `001_initial_schema.sql` só cria triggers, sequence, índices e constraints — assume que as 10 tabelas core já existem. Deploy limpo em produção (`synchronize:false`) falha imediatamente (`relation does not exist`).
 - **Causa raiz:** confirmada — tabelas eram criadas por `synchronize` em dev e nunca portadas para DDL. Prod (schema por migration) diverge de dev.
 - **Impacto técnico:** produção não sobe do zero. `mobile_sessions` e `parceiros_comerciais` também ausentes de toda migration (ver PROB-0013).
 - **Arquivos/módulos:** `backend/src/database/migrations/001_initial_schema.sql`; `app.module.ts:48` (`synchronize` off só em prod)
 - **Solução proposta:** adicionar `CREATE TABLE` de todas as tabelas core + `mobile_sessions` + `parceiros_comerciais` + RBAC antes de triggers/índices.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer`.
-- **Evidências/comandos:** leitura das 4 migrations `.sql` e das 18 entidades.
-- **Riscos residuais:** divergência dev↔prod mascara outros bugs de DDL (PROB-0005, PROB-0006).
-- **Próximo passo:** reescrever a migration inicial completa.
-- **Relacionado:** PROB-0005, PROB-0006, PROB-0013, BACKLOG-0004
+- **Solução aplicada:** nova baseline `0000_baseline.sql` (pg_dump completo) com **17 `CREATE TABLE`** cobrindo todas as tabelas core + `mobile_sessions` + `parceiros_comerciais` + RBAC + `refresh_tokens` (auth nativa). O runner `migrate.ts` só aplica arquivos `^\d{4}_` (4 dígitos), então a baseline é a única migration efetiva e o `001` quebrado deixou de rodar. Aplicado no commit `85f7867`. Fecha também PROB-0013.
+- **Evidências/comandos:** `grep -c "CREATE TABLE" 0000_baseline.sql` → 17; teste do regex do runner contra os nomes de arquivo → só `0000_baseline.sql` casa, `001`–`006` ignorados.
+- **Riscos residuais:** os arquivos legados `001`–`006` (sintaxe quebrada e migrations de auth nativa) seguem versionados mas **nunca rodam** — fonte de confusão; ver débito de limpeza em BACKLOG-0004. Baseline por pg_dump precisa ser regenerada quando o schema mudar.
+- **Próximo passo:** remover/arquivar as migrations legadas `001`–`006` para não induzir a erro.
+- **Relacionado:** PROB-0005, PROB-0006, PROB-0013, BACKLOG-0004, BUG-0004
 
 ### PROB-0005 — `ADD CONSTRAINT IF NOT EXISTS` é sintaxe inválida no PostgreSQL
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** BLOCKER
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12 (commit `85f7867`)
 - **Área:** banco
 - **Sintoma:** `ALTER TABLE ... ADD CONSTRAINT IF NOT EXISTS ...` aborta com erro de sintaxe — PostgreSQL não suporta `IF NOT EXISTS` em `ADD CONSTRAINT`.
 - **Causa raiz:** confirmada — sintaxe inválida.
 - **Impacto técnico:** migration 001 aborta.
 - **Arquivos/módulos:** `backend/src/database/migrations/001_initial_schema.sql:134-139`
 - **Solução proposta:** remover a cláusula ou envolver em bloco `DO $$ ... IF NOT EXISTS (SELECT FROM pg_constraint ...) $$`.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer`.
-- **Evidências/comandos:** leitura da migration.
-- **Riscos residuais:** nenhum além do bloqueio.
-- **Próximo passo:** corrigir junto com PROB-0004.
-- **Relacionado:** PROB-0004
+- **Solução aplicada:** a sintaxe inválida remanesce **apenas** no `001_initial_schema.sql:135,139`, que o runner ignora (arquivo de 3 dígitos, ver PROB-0004). A baseline `0000_baseline.sql` declara constraints com sintaxe válida (`ADD CONSTRAINT "nome" UNIQUE/FOREIGN KEY`), sem `IF NOT EXISTS`. Como o `001` nunca roda, o abort deixou de ocorrer. Commit `85f7867`.
+- **Evidências/comandos:** `grep -rn "ADD CONSTRAINT IF NOT EXISTS" migrations/` → 2 hits, ambos em `001` (arquivo ignorado pelo runner).
+- **Riscos residuais:** o `001` com sintaxe inválida segue no repo — se um dia for renomeado para 4 dígitos ou aplicado manualmente, volta a abortar. Remover na limpeza de legado (BACKLOG-0004).
+- **Próximo passo:** arquivar `001`–`006` junto de PROB-0004.
+- **Relacionado:** PROB-0004, BUG-0005
 
 ### PROB-0006 — Índice em coluna inexistente `comissoes.pedido_id`
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** BLOCKER
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12 (commit `85f7867`)
 - **Área:** banco
 - **Sintoma:** `CREATE INDEX idx_comissoes_pedido ON comissoes(pedido_id)` mas a entidade `Commission` não tem `pedido_id` (só `cliente_id`, `fornecedor_id`, `numero_pedido varchar`).
 - **Causa raiz:** confirmada — índice referencia coluna inexistente.
 - **Impacto técnico:** migration 001 erra mesmo após as tabelas existirem.
 - **Arquivos/módulos:** `backend/src/database/migrations/001_initial_schema.sql:121`; `backend/src/**/commission.entity.ts`
 - **Solução proposta:** remover o índice ou adicionar FK real `pedido_id`.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer`.
-- **Evidências/comandos:** cruzamento migration × entidade.
-- **Riscos residuais:** ver também drift de índices em `comissoes` (PROB-0033).
-- **Próximo passo:** decidir modelo de `comissoes` (tem ou não FK para pedido).
-- **Relacionado:** PROB-0004, PROB-0033
+- **Solução aplicada:** o índice quebrado `comissoes(pedido_id)` remanesce **apenas** no `001:121` (arquivo ignorado pelo runner, ver PROB-0004). A baseline `0000_baseline.sql` cria `comissoes` sem `pedido_id` e com índices válidos, incluindo `(tenant_id, data_pedido)` — nenhum índice sobre coluna inexistente. Como o `001` nunca roda, o erro deixou de ocorrer. Commit `85f7867`.
+- **Evidências/comandos:** `grep -rn "comissoes(pedido_id)" migrations/` → 1 hit, só em `001` (ignorado); baseline: `grep "comiss.*pedido"` → só índice `(tenant_id, data_pedido)`, válido.
+- **Riscos residuais:** definição de índice inválida permanece no `001` legado — remover na limpeza (BACKLOG-0004). Drift de índices de `comissoes` (PROB-0033) deve ser reavaliado contra a baseline.
+- **Próximo passo:** reavaliar PROB-0033 contra `0000_baseline.sql`.
+- **Relacionado:** PROB-0004, PROB-0033, BUG-0006
 
 ### PROB-0007 — Endpoints de sync não aplicam RBAC
 - **Data:** 2026-07-08
@@ -243,18 +250,19 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12 (commit `85f7867`)
 - **Área:** banco
 - **Sintoma:** nenhuma migration `.sql` cria essas tabelas, seus índices ou trigger de `updated_at`. Só existem via `synchronize` (dev).
 - **Causa raiz:** confirmada — mesma origem de PROB-0004.
 - **Impacto técnico:** em produção, revogação de sessão mobile e feature de parceiros quebram (tabelas inexistentes).
 - **Arquivos/módulos:** `mobile-session.entity.ts`, `parceiro.entity.ts`; migrations `001`
 - **Solução proposta:** adicionar DDL de ambas (colunas, índices, trigger).
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer`.
-- **Evidências/comandos:** inventário de entidades × migrations.
-- **Riscos residuais:** parte da reescrita de PROB-0004.
-- **Próximo passo:** incluir na migration inicial.
-- **Relacionado:** PROB-0004
+- **Solução aplicada:** ambas presentes na baseline `0000_baseline.sql` — `CREATE TABLE public.mobile_sessions` e `CREATE TABLE public.parceiros_comerciais` entre as 17 tabelas do pg_dump. Fechada junto de PROB-0004. Commit `85f7867`.
+- **Evidências/comandos:** `grep -oiE "CREATE TABLE public\.[a-z_]+" 0000_baseline.sql` → lista inclui `mobile_sessions` e `parceiros_comerciais`.
+- **Riscos residuais:** trigger de `updated_at` dessas tabelas deve ser conferido na baseline (não reverificado neste passo).
+- **Próximo passo:** confirmar triggers `set_updated_at` na baseline para ambas.
+- **Relacionado:** PROB-0004, BUG-0004
 
 ### PROB-0014 — Casing de role divergente trava admin real (`ADMIN` vs `admin`)
 - **Data:** 2026-07-08
@@ -718,18 +726,20 @@ Origem: análise do usuário (`docs/PossiveisErros.md`) sobre `Prompt_Auth_Nativ
 - **Data:** 2026-07-08
 - **Origem:** revisão
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
-- **Área:** backend
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
+- **Área:** backend / frontend / banco
 - **Sintoma:** nenhuma entidade usa `@VersionColumn`. Dois usuários editando o mesmo pedido/lançamento no web ao mesmo tempo: o último a salvar sobrescreve o trabalho do outro sem aviso (LWW aplicado à edição interativa, não só ao sync offline).
 - **Causa raiz:** confirmada — `grep VersionColumn|@Version|optimistic backend/src` retorna 0.
 - **Impacto técnico:** perda silenciosa de edição concorrente em pedidos, itens e financeiro (dados comerciais/financeiros).
-- **Arquivos/módulos:** entidades de edição interativa (`order.entity.ts`, `order-item.entity.ts`, `financeiro`/`commission.entity.ts`); base sem `@VersionColumn` (`base.entity.ts`)
+- **Arquivos/módulos:** `common/entities/versioned-base.entity.ts`, `common/persistence/optimistic-concurrency.ts`, `common/errors/concurrent-modification.exception.ts`, `orders/*`, `finance/*`, `common/filters/global-exception.filter.ts`, `frontend/src/services/orders.service.ts`, `frontend/src/pages/Financeiro.tsx`, migration `0007_optimistic_concurrency.sql`.
 - **Solução proposta:** `@VersionColumn` nas entidades de edição interativa; retornar 409 quando a versão divergir, avisando "registro alterado por outro usuário". Convive com o LWW do sync (que continua para o mobile).
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** `grep -c VersionColumn|@Version|optimistic backend/src` → 0.
-- **Riscos residuais:** frontend precisa tratar o 409 (recarregar/mesclar), senão vira erro cru pro usuário.
-- **Próximo passo:** decidir escopo (quais entidades) na Fase 2.
-- **Relacionado:** PROB-0022, BACKLOG-0009
+- **Solução aplicada:** entidades web editáveis (`Order`, `FinanceMovement`, `Commission`, `Parceiro`, `Inadimplencia`) usam `VersionedBaseEntity` com `@VersionColumn`. Migration `0007_optimistic_concurrency.sql` adiciona `version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0)` às cinco tabelas. PATCH/DELETE exigem versão lida pelo cliente e executam update atômico por `uuid + tenant_id + version + deleted_at IS NULL`; sucesso incrementa `version` e `updated_at` no mesmo SQL. Zero linhas afetadas gera `404` quando registro não existe no tenant ou `409 CONCURRENT_MODIFICATION` quando versão diverge. Filtro global preserva `resource`, `resourceId`, `expectedVersion` e `currentVersion`. Frontend envia versão, recarrega lista e mostra conflito inline.
+- **Evidências/comandos:** builds backend/frontend PASS; Jest `11 suites / 22 tests` PASS, incluindo sucesso, conflito, 404 tenant-safe, soft delete e contrato do filtro global.
+- **Riscos residuais:** mobile/sync offline excluído deste escopo por decisão do produto. `OrderItem` não possui endpoint de edição web independente; versão do pedido protege operações web existentes.
+- **Operação/deploy:** executar runner de migrations antes de subir nova API; backend novo não deve atender tráfego antes da aplicação de `0007`. Migration usa nome de quatro dígitos exigido por `MIGRATION_FILE`.
+- **Próximo passo:** aplicar migration `0007` antes do deploy e validar coluna `version` nas cinco tabelas.
+- **Relacionado:** PROB-0022, BACKLOG-0009, BUG-0007
 
 ### PROB-0041 — DTOs sem validador de CNPJ/CEP (só `@IsString`)
 - **Data:** 2026-07-08

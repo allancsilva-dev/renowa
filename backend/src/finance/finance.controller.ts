@@ -6,7 +6,7 @@ import { FinanceService } from './finance.service';
 import { CreateMovementDto } from './dto/create-movement.dto';
 import { UpdateMovementDto } from './dto/update-movement.dto';
 import { CreateComissaoDto, UpdateComissaoDto } from './dto/create-comissao.dto';
-import { CreateInadimplenciaDto } from './dto/create-inadimplencia.dto';
+import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -14,6 +14,7 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { VersionDto } from '../common/dto/version.dto';
 
 @Controller('financeiro')
 @UseGuards(RolesGuard)
@@ -91,8 +92,8 @@ export class FinanceController {
   @Delete('lancamentos/:uuid')
   @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
-    await this.financeService.removeMovimento(uuid, user.tenantId);
+  async remove(@Param('uuid') uuid: string, @Query() dto: VersionDto, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeMovimento(uuid, dto.version, user.tenantId);
   }
 
   // Rotas legadas (alias para movimentacoes)
@@ -121,8 +122,8 @@ export class FinanceController {
   @Delete('movimentacoes/:uuid')
   @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async removeMovimentacao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
-    await this.financeService.removeMovimento(uuid, user.tenantId);
+  async removeMovimentacao(@Param('uuid') uuid: string, @Query() dto: VersionDto, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeMovimento(uuid, dto.version, user.tenantId);
   }
 
   // ── Comissões ─────────────────────────────────────────────
@@ -194,8 +195,8 @@ export class FinanceController {
   @Delete('comissoes/:uuid')
   @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async removeComissao(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
-    await this.financeService.removeComissao(uuid, user.tenantId);
+  async removeComissao(@Param('uuid') uuid: string, @Query() dto: VersionDto, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeComissao(uuid, dto.version, user.tenantId);
   }
 
   // ── Parceiros Comerciais ───────────────────────────────────
@@ -235,8 +236,8 @@ export class FinanceController {
   @Delete('parceiros/:uuid')
   @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async removeParceiro(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
-    await this.financeService.removeParceiro(uuid, user.tenantId);
+  async removeParceiro(@Param('uuid') uuid: string, @Query() dto: VersionDto, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeParceiro(uuid, dto.version, user.tenantId);
   }
 
   // ── Inadimplência ─────────────────────────────────────────
@@ -257,7 +258,7 @@ export class FinanceController {
   @RequirePermission('financeiro.editar')
   async updateInadimplencia(
     @Param('uuid') uuid: string,
-    @Body() dto: Partial<CreateInadimplenciaDto>,
+    @Body() dto: UpdateInadimplenciaDto,
     @CurrentUser() user: RequestUser,
   ) {
     return this.financeService.updateInadimplencia(uuid, dto, user.tenantId);
@@ -266,7 +267,7 @@ export class FinanceController {
   @Delete('inadimplencia/:uuid')
   @RequirePermission('financeiro.editar')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async removeInadimplencia(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
-    await this.financeService.removeInadimplencia(uuid, user.tenantId);
+  async removeInadimplencia(@Param('uuid') uuid: string, @Query() dto: VersionDto, @CurrentUser() user: RequestUser): Promise<void> {
+    await this.financeService.removeInadimplencia(uuid, dto.version, user.tenantId);
   }
 }

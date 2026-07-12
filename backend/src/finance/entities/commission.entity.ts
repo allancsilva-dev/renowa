@@ -1,5 +1,5 @@
 import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
-import { BaseEntity } from '../../common/entities/base.entity';
+import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Client } from '../../clients/entities/client.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
 
@@ -14,7 +14,7 @@ import { Supplier } from '../../suppliers/entities/supplier.entity';
 @Index(['tenant_id', 'data_pedido'])
 @Index(['tenant_id', 'status'])
 @Index(['tenant_id', 'fornecedor_id'])
-export class Commission extends BaseEntity {
+export class Commission extends VersionedBaseEntity {
   // Relacionamentos opcionais
   @Column({ name: 'cliente_id', type: 'int', nullable: true })
   cliente_id: number | null;
