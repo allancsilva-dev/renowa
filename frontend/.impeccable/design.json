@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-11T00:00:00.000Z",
+  "title": "Design System: Renowa",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Teal Renowa",
+        "canonical": "#2A9D8F",
+        "tonalRamp": ["#0a4840", "#135e53", "#1b7468", "#238a7d", "#2A9D8F", "#4dbfb0", "#9adbd2", "#e6f5f3"]
+      },
+      "sidebar-deep": {
+        "role": "primary",
+        "displayName": "Teal Profundo (Sidebar)",
+        "canonical": "#0D2B2B",
+        "tonalRamp": ["#0D2B2B", "#0F4F54", "#16595F", "#1A6A70", "#238a7d", "#2A9D8F", "#4dbfb0", "#9adbd2"]
+      },
+      "background": {
+        "role": "neutral",
+        "displayName": "Off-white Renowa",
+        "canonical": "#F4F7F6",
+        "tonalRamp": ["#111111", "#334155", "#475569", "#64748B", "#94a3b8", "#cbd5e1", "#E2E8F0", "#F4F7F6"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Tinta",
+        "canonical": "#111111",
+        "tonalRamp": ["#111111", "#1f2937", "#374151", "#4B5563", "#6B7280", "#9CA3AF", "#D1D5DB", "#F3F4F6"]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Sucesso",
+        "canonical": "#10B981",
+        "tonalRamp": ["#064e3b", "#065f46", "#047857", "#059669", "#10B981", "#34d399", "#6ee7b7", "#d1fae5"]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Perigo",
+        "canonical": "#EF4444",
+        "tonalRamp": ["#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#EF4444", "#f87171", "#fca5a5", "#fee2e2"]
+      },
+      "chart-orange": {
+        "role": "tertiary",
+        "displayName": "Laranja Gráfico (Recharts-only)",
+        "canonical": "#F4A261",
+        "tonalRamp": ["#7c3d10", "#9a541c", "#b86a28", "#d68034", "#F4A261", "#f7b989", "#fad0b1", "#fde8d9"]
+      },
+      "chart-coral": {
+        "role": "tertiary",
+        "displayName": "Coral Gráfico (Recharts-only)",
+        "canonical": "#E76F51",
+        "tonalRamp": ["#742416", "#8f2f1d", "#aa3b25", "#c5472e", "#E76F51", "#ee9179", "#f4b4a4", "#fad8cf"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Título de página / cabeçalho de módulo." },
+      "headline": { "displayName": "Headline", "purpose": "Seção dentro da página, título de dialog." },
+      "title": { "displayName": "Title", "purpose": "Título de card, subtítulo de seção." },
+      "body": { "displayName": "Body", "purpose": "Texto base: tabelas, formulários, descrições. 65–75ch em prosa." },
+      "label": { "displayName": "Label", "purpose": "Rótulos, metadados, texto de botão, badges." }
+    },
+    "shadows": [
+      { "name": "surface-rest", "value": "0 1px 2px 0 rgba(0,0,0,0.05)", "purpose": "shadow-sm padrão: card, tabela, header sobre o off-white." },
+      { "name": "sidebar", "value": "4px 0 10px rgba(0,0,0,0.1)", "purpose": "Sombra lateral que separa a barra teal do conteúdo." }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "colors 0.2s ease", "purpose": "Hover/focus de botão, link e linha de tabela. Estado, não coreografia." },
+      { "name": "nav-item", "value": "all 0.2s ease", "purpose": "Transição de item da sidebar (cor + fundo)." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ação principal: novo cliente, novo pedido, salvar.",
+      "html": "<button class=\"ds-btn-primary\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg>Novo pedido</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; background: #2A9D8F; color: #fff; padding: 8px 16px; border: none; border-radius: 8px; font-family: Inter, system-ui, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; transition: background-color 0.2s ease; } .ds-btn-primary:hover { background: #238a7d; } .ds-btn-primary:focus-visible { outline: 2px solid #2A9D8F; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Busca rápida do header, pill arredondada com ícone.",
+      "html": "<div class=\"ds-search\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg><input type=\"text\" placeholder=\"Busca rápida...\"/></div>",
+      "css": ".ds-search { position: relative; display: flex; align-items: center; max-width: 360px; } .ds-search svg { position: absolute; left: 12px; color: #94a3b8; pointer-events: none; } .ds-search input { width: 100%; background: #f8fafc; border: 1px solid #E2E8F0; border-radius: 9999px; padding: 8px 16px 8px 36px; font-family: Inter, system-ui, sans-serif; font-size: 14px; color: #334155; transition: border-color 0.2s ease, box-shadow 0.2s ease; } .ds-search input::placeholder { color: #94a3b8; } .ds-search input:focus { outline: none; border-color: #2A9D8F; box-shadow: 0 0 0 1px #2A9D8F; }"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Item da barra lateral teal. Ativo acende claro contra o fundo escuro.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-active\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/></svg>Dashboard</a><a class=\"ds-nav-item\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2\"/><circle cx=\"9\" cy=\"7\" r=\"4\"/></svg>Clientes</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; width: 260px; padding: 12px; background: linear-gradient(180deg, #0F4F54 0%, #16595F 50%, #1A6A70 100%); border-radius: 8px; } .ds-nav-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 10px; font-family: Inter, system-ui, sans-serif; font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.7); text-decoration: none; cursor: pointer; transition: all 0.2s ease; } .ds-nav-item:hover { color: #fff; background: #E8ECEB; } .ds-nav-active { color: #2A9D8F; background: #F4F7F6; } .ds-nav-active:hover { color: #2A9D8F; background: #F4F7F6; }"
+    },
+    {
+      "name": "Data Table",
+      "kind": "custom",
+      "refersTo": "table-header",
+      "description": "Tabela operacional: header teal, linhas com hover, borda fina.",
+      "html": "<div class=\"ds-table-wrap\"><table class=\"ds-table\"><thead><tr><th>Cliente</th><th>Pedido</th><th>Valor</th></tr></thead><tbody><tr><td>Comercial Silva</td><td>#1042</td><td>R$ 3.480,00</td></tr><tr><td>Distribuidora Norte</td><td>#1043</td><td>R$ 1.920,00</td></tr></tbody></table></div>",
+      "css": ".ds-table-wrap { overflow: hidden; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); } .ds-table { width: 100%; border-collapse: collapse; font-family: Inter, system-ui, sans-serif; font-size: 14px; color: #111111; } .ds-table thead tr { background: #2A9D8F; color: #fff; } .ds-table th { padding: 12px 16px; text-align: left; font-weight: 600; } .ds-table td { padding: 12px 16px; border-bottom: 1px solid #E2E8F0; } .ds-table tbody tr:last-child td { border-bottom: none; } .ds-table tbody tr { transition: background-color 0.2s ease; } .ds-table tbody tr:hover { background: #f8fafc; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Superfície elevada branca sobre o off-white.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Faturamento do mês</h3><p class=\"ds-card-value\">R$ 48.720,00</p><p class=\"ds-card-meta\">12 pedidos · 8 clientes</p></div>",
+      "css": ".ds-card { background: #fff; border: 1px solid #E2E8F0; border-radius: 8px; box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05); padding: 16px; font-family: Inter, system-ui, sans-serif; max-width: 320px; } .ds-card-title { margin: 0 0 8px; font-size: 18px; font-weight: 600; color: #111111; } .ds-card-value { margin: 0 0 4px; font-size: 24px; font-weight: 700; color: #111111; } .ds-card-meta { margin: 0; font-size: 12px; font-weight: 500; color: #6B7280; }"
+    },
+    {
+      "name": "Empty State",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Vazio que orienta em vez de bloquear.",
+      "html": "<div class=\"ds-empty\"><svg width=\"48\" height=\"48\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 12h-6l-2 3h-4l-2-3H2\"/><path d=\"M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z\"/></svg><h3>Nenhum resultado</h3><p>Não encontramos registros para os filtros aplicados.</p></div>",
+      "css": ".ds-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 64px 24px; background: #fff; border: 1px dashed #E2E8F0; border-radius: 8px; font-family: Inter, system-ui, sans-serif; } .ds-empty svg { color: #cbd5e1; margin-bottom: 16px; } .ds-empty h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; color: #334155; } .ds-empty p { margin: 0; max-width: 24rem; font-size: 14px; color: #64748B; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Calm Operator",
+    "overview": "Renowa é uma sala de controle silenciosa. O painel é claro e arejado; a barra lateral em teal profundo ancora a marca sem competir com o conteúdo; as tabelas são nítidas e o dado está sempre em foco. A confiança vem da ordem — espaço, alinhamento e consistência — não de brilho, gradiente decorativo ou sombra dramática. O teal Renowa é o único acento com voz; todo o resto é neutro disciplinado. A calidez vem da cor teal e do tom da copy, nunca de um fundo bege nem de enfeite. Rejeita o ERP dos anos 2000 e o SaaS-slop genérico.",
+    "keyCharacteristics": [
+      "Painel claro (#F4F7F6) + sidebar teal profunda: contraste de âncora, não de decoração.",
+      "Um único acento (teal) com uso disciplinado; neutros carregam o resto.",
+      "Superfícies planas por padrão; profundidade só por borda fina + sombra sutil.",
+      "Densidade honesta nas tabelas, respiro generoso no chrome.",
+      "Inter em pesos variados como toda a hierarquia — sem segunda família."
+    ],
+    "rules": [
+      { "name": "The One Teal Rule", "body": "O teal é o único acento com voz na tela. Aparece em ação, estado ativo e cabeçalho de tabela — em ≤10% de qualquer superfície. A raridade é o ponto.", "section": "colors" },
+      { "name": "The Chart-Only Warm Rule", "body": "Laranja e coral existem só dentro de gráficos Recharts. Fora de um gráfico, são proibidos.", "section": "colors" },
+      { "name": "The One Family Rule", "body": "Inter carrega tudo. Nenhuma segunda fonte sem decisão explícita. Hierarquia = peso + tamanho.", "section": "typography" },
+      { "name": "The No-Gray-Body Rule", "body": "Texto de leitura nunca cai abaixo de 4.5:1. Cinza-claro elegante para corpo é proibido — o usuário lê sob sol.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Superfícies são planas em repouso. Sombra é resposta a estado, não decoração permanente.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do usar o teal (#2A9D8F) só em ação, estado ativo e cabeçalho de tabela — ≤10% da tela.",
+      "Do manter o body em #F4F7F6 e reservar o branco para superfícies elevadas.",
+      "Do comunicar profundidade com borda 1px #E2E8F0 + shadow-sm, nunca blur ou sombra colorida.",
+      "Do usar Inter em pesos variados para toda hierarquia; contraste por peso e tamanho.",
+      "Do garantir ≥4.5:1 em todo texto de leitura, inclusive placeholders.",
+      "Do dar a todo campo e botão foco visível (anel teal) e operação por teclado.",
+      "Do deixar laranja/coral apenas dentro de gráficos Recharts."
+    ],
+    "donts": [
+      "Don't parecer ERP dos anos 2000: tabelas cinza densas, botões 3D, menus infinitos.",
+      "Don't cair no SaaS-slop: gradiente roxo, hero-metric, cards idênticos ícone+título, eyebrow tracked, marcadores 01/02/03.",
+      "Don't usar border-left/right >1px como faixa colorida em card, alerta ou lista.",
+      "Don't aplicar gradiente em texto nem glassmorphism decorativo.",
+      "Don't pintar um segundo acento além do teal na UI; laranja e coral são só de gráfico.",
+      "Don't usar cinza-claro para texto de corpo por elegância — reprova o contraste.",
+      "Don't introduzir uma segunda família de fonte sem decisão explícita."
+    ]
+  }
+}

@@ -13,7 +13,50 @@
       "Bash(node -e \"var fs=require\\(''fs''\\);var content=fs.readFileSync\\(''C:/Users/Zero/.claude/projects/d--Projetos-renowa/a62dcc72-2587-4743-9c0d-eef1473b267c.jsonl'',''utf8''\\);var lines=content.trim\\(\\).split\\(''\\\\n''\\).filter\\(function\\(l\\){return l.trim\\(\\)}\\);for\\(var i=lines.length-1;i>=0;i--\\){try{var obj=JSON.parse\\(lines[i]\\);var msg=obj.message;if\\(msg&&msg.role===''assistant''\\){var c=msg.content;if\\(Array.isArray\\(c\\)\\){for\\(var j=0;j<c.length;j++\\){var item=c[j];if\\(item.type===''text''&&item.text.length>100\\){console.log\\(item.text.slice\\(0,2000\\)\\);process.exit\\(0\\);}}}}}catch\\(e\\){}}\")",
       "Bash(node -e \"var fs=require\\(''fs''\\);var content=fs.readFileSync\\(''C:/Users/Zero/.claude/projects/d--Projetos-renowa/a62dcc72-2587-4743-9c0d-eef1473b267c.jsonl'',''utf8''\\);var lines=content.trim\\(\\).split\\(''\\\\n''\\).filter\\(function\\(l\\){return l.trim\\(\\)}\\);var msgs=[];for\\(var i=0;i<lines.length;i++\\){try{var obj=JSON.parse\\(lines[i]\\);var msg=obj.message;if\\(msg&&msg.role===''assistant''\\){var c=msg.content;if\\(Array.isArray\\(c\\)\\){for\\(var j=0;j<c.length;j++\\){var item=c[j];if\\(item.type===''text''&&item.text.length>200\\){msgs.push\\({idx:i,text:item.text}\\);}}}}}catch\\(e\\){}}var last=msgs.slice\\(-3\\);for\\(var k=0;k<last.length;k++\\){console.log\\(''--- Line'',last[k].idx,''---''\\);console.log\\(last[k].text.slice\\(0,1500\\)\\);}\")",
       "Bash(npm run build)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Read(//c/Users/Zero/.claude/**)",
+      "WebFetch(domain:impeccable.style)",
+      "WebFetch(domain:github.com)",
+      "Bash(npx --yes impeccable install --providers=claude --scope=project)",
+      "Bash(npx *)",
+      "Bash(git -C d:/Projetos/renowa status --short .claude/)",
+      "Bash(git -C d:/Projetos/renowa diff .claude/settings.local.json)",
+      "Bash(npm root *)",
+      "Bash(command -v nvm)",
+      "Bash(command -v fnm)",
+      "Bash(command -v volta)",
+      "Bash(winget --version)",
+      "Bash(winget list *)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" -v)",
+      "Read(//c/Program Files/nodejs//**)",
+      "Bash(node ../.claude/skills/impeccable/scripts/context.mjs --target frontend)",
+      "Bash(node *)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'docs\\(auth\\): spec de autenticação nativa FASE 1 *)",
+      "Bash(git commit -q -m 'docs\\(auth\\): ampliar spec com modelo de identidade real \\(LocalUser/RBAC\\) *)",
+      "Bash(npm install *)",
+      "Bash(git commit -q -m 'chore\\(backend\\): add argon2 + jest test infra *)",
+      "Bash(git -C /d/Projetos/renowa add backend/package.json backend/package-lock.json backend/jest.config.js backend/src/health/health.smoke.spec.ts docs/superpowers/plans/2026-07-11-auth-nativa-fase1.md)",
+      "Bash(git -C /d/Projetos/renowa commit -q -m 'chore\\(backend\\): add argon2 + jest test infra *)",
+      "Bash(git -C /d/Projetos/renowa log --oneline -1)",
+      "Bash(git -C /d/Projetos/renowa status --short)",
+      "Bash(git *)"
     ]
-  }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking UI changes"
+          }
+        ]
+      }
+    ]
+  },
+  "description": "Impeccable design detector: runs after Edit/Write/MultiEdit on UI files and surfaces findings as system reminders."
 }
