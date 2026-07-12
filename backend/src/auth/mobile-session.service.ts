@@ -1,15 +1,15 @@
 import {
   Injectable,
   UnauthorizedException,
-  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
 import { MobileSession } from './entities/mobile-session.entity';
-import { RequestUser, JwtPayload } from '../common/types/jwt-payload.type';
-import { UsersService } from '../users/users.service';
+import { RequestUser } from '../common/types/jwt-payload.type';
+import { User } from '../users/entities/user.entity';
+import { PasswordService } from './password.service';
 
 interface MobileTokenPayload {
   sub: string;
@@ -28,51 +28,57 @@ export class MobileSessionService {
   constructor(
     @InjectRepository(MobileSession)
     private readonly sessionRepo: Repository<MobileSession>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
     private readonly config: ConfigService,
-    private readonly usersService: UsersService,
+    private readonly passwords: PasswordService,
   ) {
     this.secret = this.config.getOrThrow<string>('RENOWA_JWT_SECRET');
   }
 
   /**
-   * Cria sessão mobile após validação RS256 do ZonaDevAuth.
-   * Retorna JWT HS256 de 30 dias.
+   * Auth nativa: valida credenciais (email+senha) e emite JWT HS256 de 30 dias
+   * para uso mobile offline.
    */
-  async createSession(
-    jwsPayload: JwtPayload,
+  async createSessionFromCredentials(
+    email: string,
+    senha: string,
     deviceInfo?: string,
   ): Promise<{ token: string; user: { uuid: string; nome: string; roles: string[]; tenantId: string } }> {
-    // Verifica se subscription está ativa (plan não é FREE/SUSPENDED)
-    if (!jwsPayload.plan || jwsPayload.plan === 'SUSPENDED') {
-      throw new ForbiddenException('Assinatura inativa ou suspensa');
-    }
+    const user = await this.userRepo.findOne({
+      where: { email, is_active: true, deleted_at: IsNull() },
+    });
 
-    const user = await this.usersService.findByUuidAndTenant(
-      jwsPayload.sub,
-      jwsPayload.tenantId,
-    );
+    // Anti-enumeração: mesmo tempo aproximado quando o usuário não existe.
+    if (!user || !user.senha_hash) {
+      await this.passwords.dummyVerify(senha);
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+    if (!(await this.passwords.verify(user.senha_hash, senha))) {
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
 
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dias
 
-    const session = this.sessionRepo.create({
-      tenant_id: jwsPayload.tenantId,
-      user_uuid: jwsPayload.sub,
-      token_version: 1,
-      device_info: deviceInfo ?? null,
-      expires_at: expiresAt,
-      last_seen_at: new Date(),
-      is_active: true,
-    });
-
-    const saved = await this.sessionRepo.save(session);
+    const session = await this.sessionRepo.save(
+      this.sessionRepo.create({
+        tenant_id: user.tenant_id,
+        user_uuid: user.uuid,
+        token_version: 1,
+        device_info: deviceInfo ?? null,
+        expires_at: expiresAt,
+        last_seen_at: new Date(),
+        is_active: true,
+      }),
+    );
 
     const tokenPayload: MobileTokenPayload = {
-      sub: jwsPayload.sub,
-      tenantId: jwsPayload.tenantId,
-      roles: jwsPayload.roles,
-      plan: jwsPayload.plan,
-      tokenVersion: saved.token_version,
-      sessionUuid: saved.uuid,
+      sub: user.uuid,
+      tenantId: user.tenant_id,
+      roles: user.roles,
+      plan: '',
+      tokenVersion: session.token_version,
+      sessionUuid: session.uuid,
       type: 'mobile',
     };
 
@@ -83,8 +89,8 @@ export class MobileSessionService {
       user: {
         uuid: user.uuid,
         nome: user.nome,
-        roles: jwsPayload.roles,
-        tenantId: jwsPayload.tenantId,
+        roles: user.roles,
+        tenantId: user.tenant_id,
       },
     };
   }

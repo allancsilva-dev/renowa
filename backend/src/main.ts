@@ -8,14 +8,16 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.getHttpAdapter().getInstance().set('trust proxy', 2);
+
   app.setGlobalPrefix('api');
 
   app.use(cookieParser());
 
-  // CHANGELOG #15: Compressão gzip — reduz payload de sync no mobile
+  // Gzip compression for larger sync payloads.
   app.use(compression());
 
-  // CHANGELOG #5: ValidationPipe global obrigatório com class-validator + class-transformer
+  // Global DTO validation.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -25,7 +27,7 @@ async function bootstrap() {
     }),
   );
 
-  // Padrão de erro global — { error: { code, message, timestamp } }
+  // Global error shape: { error: { code, message, timestamp } }
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   app.enableCors({

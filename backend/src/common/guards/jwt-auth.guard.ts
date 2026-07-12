@@ -1,21 +1,20 @@
 import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
+  CanActivate, ExecutionContext, Injectable, UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { JwksStrategy } from '../../auth/jwks.strategy';
+import { AccessTokenService } from '../../auth/access-token.service';
 import { MobileSessionService } from '../../auth/mobile-session.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { RequestUser } from '../types/jwt-payload.type';
+
+const AT_COOKIE = 'renowa_at';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly jwksStrategy: JwksStrategy,
+    private readonly accessTokens: AccessTokenService,
     private readonly mobileSessionService: MobileSessionService,
   ) {}
 
@@ -24,58 +23,32 @@ export class JwtAuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-
     if (isPublic) return true;
 
     const req = context.switchToHttp().getRequest<Request & { user?: RequestUser }>();
-    const token = this.extractToken(req);
+    const cookieToken = (req as any).cookies?.[AT_COOKIE] as string | undefined;
 
-    if (!token) throw new UnauthorizedException('Token não fornecido');
-
-    // Tenta validar como token RS256 do ZonaDevAuth (web)
-    try {
-      const payload = await this.jwksStrategy.verify(token);
-      req.user = {
-        sub: payload.sub,
-        tenantId: payload.tenantId,
-        tenantSubdomain: payload.tenantSubdomain,
-        roles: payload.roles,
-        plan: payload.plan,
-        tokenVersion: payload.tokenVersion,
-        jti: payload.jti,
-        email: payload.email,
-        defaultRole: payload.defaultRole,
-      };
-      return true;
-    } catch {
-      // Não é RS256 — tenta como sessão mobile HS256
+    // Web: access token nativo HS256 no cookie renowa_at
+    if (cookieToken) {
+      try {
+        req.user = this.accessTokens.verify(cookieToken);
+        return true;
+      } catch {
+        throw new UnauthorizedException('Token inválido ou expirado');
+      }
     }
 
-    // Valida como token de sessão mobile HS256 (Renowa)
-    try {
-      const user = await this.mobileSessionService.validateSessionToken(token);
-      req.user = user;
-      return true;
-    } catch {
-      throw new UnauthorizedException('Token inválido ou expirado');
-    }
-  }
-
-  private extractToken(req: Request): string | null {
-    // 1. Cookie (web): AUTH_COOKIE_NAME or renowa_access_token
-    const cookieName = process.env.AUTH_COOKIE_NAME ?? 'renowa_access_token';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const anyReq = req as any;
-    if (anyReq.cookies && anyReq.cookies[cookieName]) {
-      return String(anyReq.cookies[cookieName]);
-    }
-
-    // 2. Authorization: Bearer <token>
+    // Mobile: HS256 de 30 dias no header Authorization
     const authHeader = req.headers['authorization'];
     if (authHeader?.startsWith('Bearer ')) {
-      return authHeader.slice(7);
+      try {
+        req.user = await this.mobileSessionService.validateSessionToken(authHeader.slice(7));
+        return true;
+      } catch {
+        throw new UnauthorizedException('Token inválido ou expirado');
+      }
     }
 
-    return null;
+    throw new UnauthorizedException('Token não fornecido');
   }
 }

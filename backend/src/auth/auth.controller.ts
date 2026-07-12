@@ -1,68 +1,74 @@
 import {
-  Controller,
-  Post,
-  Body,
-  HttpCode,
-  HttpStatus,
-  Delete,
-  Param,
-  Get,
-  Req,
+  Controller, Post, Get, Delete, Param, Body, Req, Res, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import { JwksStrategy } from './jwks.strategy';
-import { MobileSessionService } from './mobile-session.service';
-import { CreateMobileSessionDto } from './dto/mobile-session.dto';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { NativeAuthService } from './native-auth.service';
+import { MobileSessionService } from './mobile-session.service';
+import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { setAuthCookies, clearAuthCookies, RT_COOKIE } from './cookie.util';
+
+function reqMeta(req: Request) {
+  return { userAgent: req.headers['user-agent'], ip: req.ip };
+}
 
 @Controller('auth')
 export class AuthController {
   constructor(
-    private readonly jwksStrategy: JwksStrategy,
-    private readonly mobileSessionService: MobileSessionService,
+    private readonly auth: NativeAuthService,
+    private readonly mobileSessions: MobileSessionService,
   ) {}
 
-  /**
-   * POST /api/auth/mobile-session
-   *
-   * Estágio 1 do fluxo mobile: troca JWT RS256 do ZonaDevAuth
-   * por token HS256 de 30 dias para uso offline.
-   */
-  @Public()   // Guard não valida — controller valida manualmente via JWKS
-  @Post('mobile-session')
-  @HttpCode(HttpStatus.CREATED)
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
-  async createMobileSession(
-    @Body() dto: CreateMobileSessionDto,
-    // Extrai token do header manualmente (rota é @Public)
-  ) {
-    // O token Bearer é extraído pelo guard mesmo em rotas públicas
-    // Aqui delegamos para o service que recebe o payload do header
-    // O controller recebe o token via header Authorization injetado pelo guard
-    throw new Error('Use o AuthService.createMobileSessionFromRequest');
+  @Public()
+  @Post('login')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const tokens = await this.auth.login(dto.email, dto.senha, reqMeta(req));
+    setAuthCookies(res, tokens);
   }
 
-  /**
-   * DELETE /api/auth/mobile-session/:uuid
-   * Revoga uma sessão mobile específica.
-   */
+  @Public()
+  @Post('refresh')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const raw = (req as any).cookies?.[RT_COOKIE] as string | undefined;
+    const tokens = await this.auth.refresh(raw ?? '', reqMeta(req));
+    setAuthCookies(res, tokens);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const raw = (req as any).cookies?.[RT_COOKIE] as string | undefined;
+    if (raw) await this.auth.logout(raw);
+    clearAuthCookies(res);
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {
+    await this.auth.changePassword(user.sub, user.tenantId, dto.current_password, dto.new_password);
+  }
+
+  @Get('me')
+  me(@CurrentUser() user: RequestUser) {
+    if (!user) return {};
+    const { sub, email, roles, tenantId } = user;
+    return { sub, email, roles, tenantId };
+  }
+
+  // Preservar endpoint existente de revogar sessão mobile (regressão se removido).
   @Delete('mobile-session/:uuid')
   @HttpCode(HttpStatus.NO_CONTENT)
   async revokeSession(
     @Param('uuid') sessionUuid: string,
     @CurrentUser() user: RequestUser,
   ): Promise<void> {
-    await this.mobileSessionService.revokeSession(sessionUuid, user.tenantId);
-  }
-
-  @Get('me')
-  me(@Req() req: Request) {
-    const user = (req as any).user;
-    if (!user) return {};
-    const { sub, email, roles, tenantId, plan, defaultRole } = user;
-    return { sub, email, roles, tenantId, plan, defaultRole };
+    await this.mobileSessions.revokeSession(sessionUuid, user.tenantId);
   }
 }

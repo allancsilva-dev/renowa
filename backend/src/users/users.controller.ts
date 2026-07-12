@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -20,11 +21,13 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @RequirePermission('users.manage')
   async list(@CurrentUser() user: RequestUser) {
     return this.usersService.listTenantUsers(user.tenantId);
   }
 
   @Post()
+  @RequirePermission('users.manage')
   async create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateUserDto,
@@ -33,6 +36,7 @@ export class UsersController {
   }
 
   @Patch(':id')
+  @RequirePermission('users.manage')
   async update(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,

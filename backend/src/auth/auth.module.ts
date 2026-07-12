@@ -1,19 +1,28 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { JwksStrategy } from './jwks.strategy';
-import { MobileSessionService } from './mobile-session.service';
-import { AuthService, AuthControllerImpl } from './auth.service';
-import { AuthController } from './auth.controller';
 import { MobileSession } from './entities/mobile-session.entity';
-import { UsersModule } from '../users/users.module';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { MobileSessionService } from './mobile-session.service';
+import { AuthControllerImpl } from './auth.service';
+import { AuthController } from './auth.controller';
+import { NativeAuthService } from './native-auth.service';
+import { PasswordService } from './password.service';
+import { AccessTokenService } from './access-token.service';
+import { RefreshTokenService } from './refresh-token.service';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([MobileSession]),
-    forwardRef(() => UsersModule),
+    TypeOrmModule.forFeature([MobileSession, RefreshToken, User]),
   ],
   controllers: [AuthControllerImpl, AuthController],
-  providers: [JwksStrategy, MobileSessionService, AuthService],
-  exports: [JwksStrategy, MobileSessionService],
+  providers: [
+    MobileSessionService,
+    NativeAuthService,
+    PasswordService,
+    AccessTokenService,
+    RefreshTokenService,
+  ],
+  exports: [MobileSessionService, AccessTokenService, PasswordService],
 })
 export class AuthModule {}

@@ -1,6 +1,14 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateMobileSessionDto {
+  @IsEmail()
+  @MaxLength(255)
+  email: string;
+
+  @IsString()
+  @MaxLength(200)
+  senha: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(255)

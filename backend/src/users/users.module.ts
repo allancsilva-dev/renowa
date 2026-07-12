@@ -6,11 +6,10 @@ import { UsersController } from './users.controller';
 import { LocalUser } from '../rbac/entities/local-user.entity';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
-import { AuthApiModule } from '../auth-api/auth-api.module';
+import { PasswordService } from '../auth/password.service';
 
 @Module({
   imports: [
-    AuthApiModule,
     TypeOrmModule.forFeature([
       User,
       LocalUser,
@@ -19,7 +18,8 @@ import { AuthApiModule } from '../auth-api/auth-api.module';
     ]),
   ],
   controllers: [UsersController],
-  providers: [UsersService],
+  // PasswordService não tem dependências — provido localmente para evitar ciclo com AuthModule.
+  providers: [UsersService, PasswordService],
   exports: [UsersService],
 })
 export class UsersModule {}

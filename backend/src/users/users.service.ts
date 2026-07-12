@@ -2,17 +2,17 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { User } from './entities/user.entity';
 import { LocalUser } from '../rbac/entities/local-user.entity';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { AuthApiService } from '../auth-api/auth-api.service';
+import { PasswordService } from '../auth/password.service';
 
 @Injectable()
 export class UsersService {
@@ -25,7 +25,8 @@ export class UsersService {
     private readonly tenantRoleRepo: Repository<TenantRole>,
     @InjectRepository(TenantRolePermission)
     private readonly tenantRolePermissionRepo: Repository<TenantRolePermission>,
-    private readonly authApiService: AuthApiService,
+    private readonly passwords: PasswordService,
+    private readonly dataSource: DataSource,
   ) {}
 
   private normalizeRoleName(defaultRole?: string): string {
@@ -243,6 +244,10 @@ export class UsersService {
     }));
   }
 
+  /**
+   * Auth nativa: cria o usuário em `usuarios` (com senha_hash) e o espelho
+   * `local_users` numa única transação. Email é global único.
+   */
   async createTenantUser(
     tenantId: string,
     dto: CreateUserDto,
@@ -255,43 +260,73 @@ export class UsersService {
     active: boolean;
   }> {
     const roleName = this.normalizeRoleName(dto.role);
-    const authUserId = await this.authApiService.resolveAuthUserIdByEmail(dto.email);
+    const senha_hash = await this.passwords.hash(dto.senha);
 
-    if (!authUserId) {
-      throw new UnprocessableEntityException(
-        'Usuário não encontrado no ZonaDev Auth. O usuário precisa estar cadastrado no Auth antes de ser adicionado ao Renowa.',
+    return this.dataSource.transaction(async (manager) => {
+      const emailTaken = await manager.getRepository(User).findOne({
+        where: { email: dto.email, deleted_at: IsNull() },
+      });
+      if (emailTaken) {
+        throw new BadRequestException('Email já cadastrado');
+      }
+
+      const userUuid = randomUUID();
+      const savedUser = await manager.getRepository(User).save(
+        manager.getRepository(User).create({
+          uuid: userUuid,
+          tenant_id: tenantId,
+          email: dto.email,
+          nome: dto.nome,
+          senha_hash,
+          roles: [roleName],
+          is_active: true,
+        }),
       );
-    }
 
-    const role = await this.ensureTenantRole(tenantId, roleName);
+      const role = await this.ensureTenantRoleWith(manager, tenantId, roleName);
+      const localUser = await manager.getRepository(LocalUser).save(
+        manager.getRepository(LocalUser).create({
+          tenantId,
+          authUserId: savedUser.uuid,
+          email: dto.email,
+          roleId: role.id,
+          active: true,
+        }),
+      );
 
-    const existing = await this.localUserRepo.findOne({
-      where: { tenantId, authUserId },
-      relations: ['role'],
+      return {
+        id: localUser.uuid,
+        authUserId: localUser.authUserId,
+        email: localUser.email,
+        role: role.name,
+        tenantId,
+        active: localUser.active,
+      };
     });
+  }
 
-    if (existing) {
-      throw new BadRequestException('Usuário já existe neste tenant');
-    }
-
-    const created = this.localUserRepo.create({
-      tenantId,
-      authUserId,
-      email: dto.email,
-      roleId: role.id,
-      active: true,
+  /** Versão transacional de ensureTenantRole (usa o EntityManager da transação). */
+  private async ensureTenantRoleWith(
+    manager: EntityManager,
+    tenantId: string,
+    roleName: string,
+  ): Promise<TenantRole> {
+    const repo = manager.getRepository(TenantRole);
+    const existing = await repo.findOne({
+      where: { tenantId, name: roleName, active: true },
     });
+    if (existing) return existing;
 
-    const saved = await this.localUserRepo.save(created);
-
-    return {
-      id: saved.uuid,
-      authUserId: saved.authUserId,
-      email: saved.email,
-      role: role.name,
-      tenantId: saved.tenantId,
-      active: saved.active,
-    };
+    return repo.save(
+      repo.create({
+        tenantId,
+        name: roleName,
+        description: roleName === 'admin'
+          ? 'Role administrativa padrão'
+          : 'Role provisionada automaticamente',
+        active: true,
+      }),
+    );
   }
 
   async updateTenantUser(
@@ -329,6 +364,15 @@ export class UsersService {
       roleId: nextRoleId,
       active: dto.active ?? existing.active,
     });
+
+    // Reset de senha (opcional): grava novo hash em usuarios.
+    if (dto.new_password) {
+      const senha_hash = await this.passwords.hash(dto.new_password);
+      await this.userRepo.update(
+        { email: existing.email, tenant_id: tenantId },
+        { senha_hash },
+      );
+    }
 
     const updated = await this.localUserRepo.findOneOrFail({
       where: { tenantId, uuid: userUuid },
