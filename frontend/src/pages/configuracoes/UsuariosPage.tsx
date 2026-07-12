@@ -18,12 +18,16 @@ interface TenantUser {
 
 interface UserUpsertForm {
   email: string;
+  nome: string;
+  senha: string;
   role: string;
 }
 
 const PAGE_LIMIT = 10;
 const DEFAULT_FORM: UserUpsertForm = {
   email: '',
+  nome: '',
+  senha: '',
   role: 'viewer',
 };
 
@@ -43,6 +47,7 @@ export default function UsuariosPage() {
   const [editingUser, setEditingUser] = useState<TenantUser | null>(null);
   const [editRole, setEditRole] = useState('viewer');
   const [editActive, setEditActive] = useState(true);
+  const [editNewPassword, setEditNewPassword] = useState('');
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
@@ -119,6 +124,7 @@ export default function UsuariosPage() {
               setEditingUser(row);
               setEditRole(row.role || 'viewer');
               setEditActive(row.active);
+              setEditNewPassword('');
               setUpdateError(null);
             }}
             className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
@@ -159,6 +165,8 @@ export default function UsuariosPage() {
     try {
       await apiClient.post('/users', {
         email: createForm.email.trim(),
+        nome: createForm.nome.trim(),
+        senha: createForm.senha,
         role: createForm.role,
       });
       setCreateForm(DEFAULT_FORM);
@@ -183,6 +191,7 @@ export default function UsuariosPage() {
       await apiClient.patch(`/users/${editingUser.id}`, {
         role: editRole,
         active: editActive,
+        ...(editNewPassword ? { new_password: editNewPassword } : {}),
       });
       setEditingUser(null);
       await fetchUsers();
@@ -261,6 +270,29 @@ export default function UsuariosPage() {
               />
             </div>
             <div className='space-y-1'>
+              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nome</label>
+              <input
+                type='text'
+                required
+                value={createForm.nome}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, nome: e.target.value }))}
+                className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+              />
+            </div>
+            <div className='space-y-1'>
+              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Senha</label>
+              <input
+                type='password'
+                required
+                minLength={8}
+                autoComplete='new-password'
+                value={createForm.senha}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, senha: e.target.value }))}
+                className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+              />
+              <p className='text-xs text-slate-400'>Mínimo 8 caracteres.</p>
+            </div>
+            <div className='space-y-1'>
               <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Role</label>
               <select
                 value={createForm.role}
@@ -332,6 +364,19 @@ export default function UsuariosPage() {
               />
               Usuário ativo
             </label>
+
+            <div className='space-y-1'>
+              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nova senha</label>
+              <input
+                type='password'
+                minLength={8}
+                autoComplete='new-password'
+                placeholder='Deixe em branco para manter'
+                value={editNewPassword}
+                onChange={(e) => setEditNewPassword(e.target.value)}
+                className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+              />
+            </div>
 
             <div className='flex justify-end gap-3'>
               <button

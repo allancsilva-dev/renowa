@@ -4,7 +4,7 @@ import AppShell from '@/components/layout/AppShell';
 import { AuthProvider } from '@/context/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import LoadingState from '@/components/feedback/LoadingState';
-import AuthCallback from '@/pages/AuthCallback';
+import Login from '@/pages/Login';
 import Dashboard from '@/pages/Dashboard';
 import Clientes from '@/pages/Clientes';
 import ClienteForm from '@/pages/ClienteForm';
@@ -24,6 +24,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path='/login' element={<Login />} />
           <Route path='/' element={<Navigate to='/dashboard' replace />} />
 
           <Route
@@ -125,8 +126,6 @@ export default function App() {
               />
             </Route>
           </Route>
-          {/* OIDC callback route (must match provider redirect URI) */}
-          <Route path='/callback' element={<AuthCallback />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

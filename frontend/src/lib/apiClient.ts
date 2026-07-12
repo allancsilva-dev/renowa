@@ -1,6 +1,6 @@
 import { authFetch } from '@/lib/auth';
 
-const BASE_URL = import.meta.env.VITE_API_URL;
+const BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
 
 type QueryValue = string | number | boolean | null | undefined;
 
@@ -83,11 +83,8 @@ async function request<T>(url: string, options: ApiRequestOptions = {}): Promise
     data = text;
   }
 
-  if (res.status === 401) {
-    if (!window.location.pathname.includes('/login')) {
-      const API_BASE = BASE_URL ?? '/api';
-      window.location.href = `${API_BASE}/auth/oidc/start?return_to=${encodeURIComponent(window.location.href)}`;
-    }
+  if (res.status === 401 && !window.location.pathname.includes('/login')) {
+    window.location.href = '/login';
   }
 
   if (!res.ok) {

@@ -2,8 +2,6 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 
-const API_URL = import.meta.env.VITE_API_URL ?? '/api';
-
 interface ProtectedRouteProps {
   children: ReactNode;
   permission?: string;
@@ -18,8 +16,7 @@ export function ProtectedRoute({ children, permission, adminOnly = false }: Prot
   }
 
   if (!user) {
-    window.location.href = `${API_URL}/auth/oidc/start?return_to=${encodeURIComponent(window.location.href)}`;
-    return null;
+    return <Navigate to='/login' replace />;
   }
 
   if (adminOnly && !isAdmin()) {

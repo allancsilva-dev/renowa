@@ -8,21 +8,26 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '@/types';
+
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
-const AUTH_URL = import.meta.env.VITE_AUTH_URL ?? 'https://auth.zonadev.tech';
+
+function rolesInclude(roles: string[] | undefined, target: string): boolean {
+  // Roles nativas são minúsculas ('admin'); comparação case-insensitive.
+  return roles?.some((r) => r.toLowerCase() === target.toLowerCase()) ?? false;
+}
+
 interface AuthContextValue {
   user: AuthUser | null;
   permissions: string[];
   loading: boolean;
   hasPermission: (slug: string) => boolean;
   isAdmin: () => boolean;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   reload: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-// Authentication is handled via backend OIDC flow; frontend does not redirect here.
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -67,30 +72,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadUser]);
 
   const hasPermission = useCallback((slug: string): boolean => {
-    if (user?.roles?.includes('ADMIN')) return true;
+    if (rolesInclude(user?.roles, 'admin')) return true;
     return permissions.includes(slug);
   }, [permissions, user]);
 
   const isAdmin = useCallback((): boolean => {
-    return user?.roles?.includes('ADMIN') ?? false;
+    return rolesInclude(user?.roles, 'admin');
   }, [user]);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const res = await fetch(`${API_URL}/auth/login`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, senha: password }),
+    });
+    if (!res.ok) throw new Error('credenciais inválidas');
+    await loadUser();
+  }, [loadUser]);
 
   const logout = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/auth/oidc/logout`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(null);
-        setPermissions([]);
-        window.location.href = data.redirect;
-        return;
-      }
-    } catch {
-      // fallback
+      await fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' });
+    } finally {
+      setUser(null);
+      setPermissions([]);
+      window.location.href = '/login';
     }
-
-    // fallback: direct to auth
-    window.location.href = `${AUTH_URL}`;
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
@@ -99,9 +107,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     hasPermission,
     isAdmin,
+    login,
     logout,
     reload: loadUser,
-  }), [hasPermission, isAdmin, loadUser, loading, logout, permissions, user]);
+  }), [hasPermission, isAdmin, login, loadUser, loading, logout, permissions, user]);
 
   return (
     <AuthContext.Provider value={value}>

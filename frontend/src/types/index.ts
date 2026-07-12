@@ -7,8 +7,9 @@ export interface AuthUser {
   email: string;
   roles: string[];
   tenantId: string;
-  plan: string;
-  defaultRole: string;
+  // Auth nativa: /auth/me não retorna mais plan/defaultRole.
+  plan?: string;
+  defaultRole?: string;
 }
 
 // ─── Clientes ────────────────────────────────────────────────────────────────

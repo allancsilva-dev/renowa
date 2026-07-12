@@ -21,20 +21,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   logout: async () => {
     const apiUrl = import.meta.env.VITE_API_URL ?? '/api';
     try {
-      const res = await fetch(`${apiUrl}/auth/oidc/logout`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        set({ user: null, isAuthenticated: false });
-        window.location.href = data.redirect;
-        return;
-      }
-    } catch {
-      // ignore
+      await fetch(`${apiUrl}/auth/logout`, { method: 'POST', credentials: 'include' });
+    } finally {
+      set({ user: null, isAuthenticated: false });
+      window.location.href = '/login';
     }
-
-    // fallback
-    set({ user: null, isAuthenticated: false });
-    window.location.href = '/';
   },
 
   // CHANGELOG #7: roles é string[] — sempre iterar o array
