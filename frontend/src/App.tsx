@@ -16,6 +16,7 @@ import Transporte from '@/pages/Transporte';
 import Financeiro from '@/pages/Financeiro';
 import Configuracoes from '@/pages/Configuracoes';
 
+const ConfiguracoesHome = lazy(() => import('@/pages/configuracoes/ConfiguracoesHome'));
 const UsuariosPage = lazy(() => import('@/pages/configuracoes/UsuariosPage'));
 const RolesPage = lazy(() => import('@/pages/configuracoes/RolesPage'));
 
@@ -107,7 +108,14 @@ export default function App() {
             )}
           >
             <Route element={<Configuracoes />}>
-              <Route index element={<Navigate to='usuarios' replace />} />
+              <Route
+                index
+                element={(
+                  <Suspense fallback={<LoadingState />}>
+                    <ConfiguracoesHome />
+                  </Suspense>
+                )}
+              />
               <Route
                 path='usuarios'
                 element={(
