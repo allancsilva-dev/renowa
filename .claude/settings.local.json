@@ -40,7 +40,16 @@
       "Bash(git -C /d/Projetos/renowa commit -q -m 'chore\\(backend\\): add argon2 + jest test infra *)",
       "Bash(git -C /d/Projetos/renowa log --oneline -1)",
       "Bash(git -C /d/Projetos/renowa status --short)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(grep -oE \"[A-Z_]{3,}\")",
+      "Bash(grep -E \"\\\\.env$\")",
+      "Bash(nslookup nexostech.com.br)",
+      "Bash(nslookup -type=A nexostech.com.br 8.8.8.8)",
+      "Bash(nslookup -type=A www.nexostech.com.br 8.8.8.8)",
+      "Bash(nslookup -type=A renowa.nexostech.com.br 8.8.8.8)",
+      "Bash(openssl rand *)",
+      "Bash(echo \"RENOWA_AT_SECRET=$\\(openssl rand -base64 32\\)\")",
+      "Bash(echo \"RENOWA_JWT_SECRET=$\\(openssl rand -base64 32\\)\")"
     ]
   },
   "hooks": {
