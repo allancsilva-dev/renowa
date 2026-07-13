@@ -83,10 +83,6 @@ async function request<T>(url: string, options: ApiRequestOptions = {}): Promise
     data = text;
   }
 
-  if (res.status === 401 && !window.location.pathname.includes('/login')) {
-    window.location.href = '/login';
-  }
-
   if (!res.ok) {
     throw {
       response: {

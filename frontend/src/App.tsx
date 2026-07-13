@@ -116,6 +116,7 @@ export default function App() {
               <Route path='privacidade' element={<PrivacidadePage />} />
             </Route>
           </Route>
+          <Route path='*' element={<Navigate to='/dashboard' replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

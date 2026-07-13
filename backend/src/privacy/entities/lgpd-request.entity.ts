@@ -9,7 +9,7 @@ export class LgpdRequest {
   @PrimaryGeneratedColumn('increment', { type: 'bigint' }) id: string;
   @Column({ type: 'uuid', generated: 'uuid', unique: true }) request_uuid: string;
   @Column({ type: 'uuid' }) tenant_id: string;
-  @Column({ type: 'varchar', length: 32 }) subject_type: 'CLIENT';
+  @Column({ type: 'varchar', length: 32 }) subject_type: 'CLIENT' | 'USER';
   @Column({ type: 'uuid' }) subject_uuid: string;
   @Column({ type: 'varchar', length: 32 }) request_type: LgpdRequestType;
   @Column({ type: 'varchar', length: 32, default: 'RECEIVED' }) status: LgpdRequestStatus;

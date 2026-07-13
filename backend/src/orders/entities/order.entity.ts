@@ -4,6 +4,7 @@ import { Client } from '../../clients/entities/client.entity';
 import { Transport } from '../../transport/entities/transport.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
 import { OrderItem } from './order-item.entity';
+import { User } from '../../users/entities/user.entity';
 
 /**
  * Spec: status VARCHAR 'em_aberto' | 'concluido' | 'cancelado'
@@ -38,6 +39,13 @@ export class Order extends VersionedBaseEntity {
 
   @Column({ name: 'vendedor_id', type: 'int', nullable: true })
   vendedor_id: number | null;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'vendedor_id', referencedColumnName: 'id' },
+  ])
+  vendedor: User | null;
 
   @Column({ name: 'fornecedor_id', type: 'int', nullable: true })
   fornecedor_id: number | null;

@@ -11,6 +11,18 @@ export class AppController {
   }
 
   @Public()
+  @Get('health/live')
+  liveness(): { status: string } {
+    return { status: 'ok' };
+  }
+
+  @Public()
+  @Get('health/ready')
+  readiness(): { status: string } {
+    return { status: 'ready' };
+  }
+
+  @Public()
   @Post('auth/local-logout')
   @HttpCode(HttpStatus.OK)
   localLogout(): { success: boolean } {

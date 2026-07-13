@@ -36,7 +36,7 @@ export class AccessTokenService {
   }
 
   verify(token: string): RequestUser {
-    const claims = jwt.verify(token, this.secret) as AccessTokenClaims;
+    const claims = jwt.verify(token, this.secret, { algorithms: ['HS256'] }) as AccessTokenClaims;
     if (claims.type !== 'access') {
       throw new Error('invalid token type');
     }

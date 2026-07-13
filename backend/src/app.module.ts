@@ -43,7 +43,12 @@ import { PrivacyModule } from './privacy/privacy.module';
           config.get<string>('NODE_ENV') !== 'production',
         logging: config.get<string>('NODE_ENV') === 'development',
         // PostgreSQL: define timezone da sessão; `timezone` do TypeORM é opção MySQL-only.
-        extra: { options: '-c timezone=UTC' },
+        extra: {
+          options: '-c timezone=UTC',
+          max: Number(config.get<string>('DB_POOL_MAX') ?? 10),
+          connectionTimeoutMillis: Number(config.get<string>('DB_CONNECTION_TIMEOUT_MS') ?? 5_000),
+          idleTimeoutMillis: Number(config.get<string>('DB_IDLE_TIMEOUT_MS') ?? 30_000),
+        },
       }),
     }),
 

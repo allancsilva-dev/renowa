@@ -5,6 +5,7 @@ import {
   IsUUID,
   Length,
 } from 'class-validator';
+import { IsCep, IsCnpj } from '../../common/validators/brazilian-document.validators';
 
 export class CreateClientDto {
   @IsUUID('4')
@@ -14,14 +15,14 @@ export class CreateClientDto {
   @IsString()
   razao_social: string;
 
-  @IsOptional() @IsString() cnpj?: string;
+  @IsOptional() @IsString() @IsCnpj() cnpj?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() tel?: string;
   @IsOptional() @IsString() endereco?: string;
   @IsOptional() @IsString() bairro?: string;
   @IsOptional() @IsString() cidade?: string;
   @IsOptional() @IsString() @Length(2, 2) uf?: string;
-  @IsOptional() @IsString() cep?: string;
+  @IsOptional() @IsString() @IsCep() cep?: string;
   @IsOptional() @IsString() contato?: string;
   @IsOptional() @IsString() inscricao_estadual?: string;
   @IsOptional() @IsString() suframa?: string;

@@ -4,6 +4,13 @@ Registro central de problemas. Mantido pelo `docs-reporter`. IDs sequenciais (`P
 
 **Não registrar suposição como fato.** O que não foi verificado é marcado como suposição.
 
+## Estado atual — revisão 2026-07-12
+
+- **10 problemas não fechados:** 9 ligados ao mobile/sync offline e PROB-0036 parcialmente resolvido no escopo backend/frontend.
+- **Revisão backend/frontend em execução:** PROB-0034, PROB-0035 e PROB-0041 fechados; PROB-0031/0032/0036 parcialmente resolvidos.
+- **9 ligados ao mobile/sync offline:** PROB-0008, PROB-0009, PROB-0010, PROB-0020, PROB-0021, PROB-0022, PROB-0023, PROB-0024 e PROB-0030. Não reverificados nesta revisão por restrição vigente de escopo; status preservado.
+- Relatórios em `REVIEW_REPORTS/`, planos e prompts são snapshots históricos; lista operacional vigente é esta ledger.
+
 ## Formato de entrada
 
 ```
@@ -11,7 +18,7 @@ Registro central de problemas. Mantido pelo `docs-reporter`. IDs sequenciais (`P
 - **Data:** YYYY-MM-DD
 - **Origem:** revisão | auditoria | bug report | teste | implementação | usuário
 - **Severidade:** BLOCKER | HIGH | MEDIUM | LOW
-- **Status:** ABERTO | EM_ANDAMENTO | FECHADO | FECHADO_COM_RESSALVA | NÃO_REPRODUZIDO
+- **Status:** ABERTO | EM_ANDAMENTO | PARCIALMENTE_RESOLVIDO | FECHADO | FECHADO_COM_RESSALVA | NÃO_REPRODUZIDO
 - **Área:** backend | frontend | banco | segurança | LGPD | mobile | documentação | infra
 - **Sintoma:** o que se observa
 - **Causa raiz:** confirmada, ou "provável: ..." / "desconhecida"
@@ -216,7 +223,8 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO_COM_RESSALVA
+- **Verificado em:** 2026-07-12 (commit `be74446`)
 - **Área:** banco / segurança
 - **Sintoma:** todo `@ManyToOne` referencia apenas a coluna `id`; não há constraint composta `(tenant_id, <fk>_id)`. Uma linha do tenant A pode referenciar pai do tenant B — nada no DB impede.
 - **Causa raiz:** confirmada — FKs não incluem `tenant_id`.
@@ -225,15 +233,16 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Solução proposta:** FKs compostas `(tenant_id, cliente_id) REFERENCES clientes(tenant_id, id)` etc.; exige unique composto nos pais.
 - **Solução aplicada:** migration incremental `0021_cross_tenant_foreign_keys.sql` audita e aborta diante de referências cross-tenant, recupera o escopo tenant de `tenant_role_permissions` ignorado pela migration antiga `007_*`, cria chaves/índices compostos, adiciona 16 FKs `(tenant_id, <fk>_id)` como `NOT VALID`, valida e só então remove FKs simples legadas. Entidades TypeORM usam `@JoinColumn` composto; `permissions` permanece catálogo global.
 - **Evidências/comandos:** teste dedicado valida 16 relações, metadata TypeORM, cobertura da auditoria e ordem `NOT VALID`/`VALIDATE`; `npm test --workspace=backend -- cross-tenant-foreign-keys --runInBand` — 21/21; suíte backend completa — 116/116; `npm run build --workspace=backend` passou. Lint não executou porque `eslint` não está instalado no workspace. PostgreSQL local exige credencial não disponível e Docker está parado, então migration ainda não foi aplicada contra banco real.
-- **Riscos residuais:** índices são criados dentro da transação do runner atual e exigem janela operacional compatível com volume; auditoria e constraints ainda precisam ser executadas em staging/produção. Status permanece aberto até evidência do catálogo PostgreSQL e tentativa cross-tenant retornando `23503`.
-- **Próximo passo:** aplicar em clone/staging com volume representativo, confirmar auditoria zerada, medir locks, testar escrita cross-tenant real e então promover para produção.
+- **Riscos residuais:** implementação e testes de contrato estão concluídos, mas índices são criados dentro da transação do runner e exigem janela operacional compatível com volume. Auditoria e constraints ainda precisam ser executadas em staging/produção; falta evidência do catálogo PostgreSQL e tentativa cross-tenant retornando `23503`.
+- **Próximo passo:** problema de código fechado; rollout e validação operacional permanecem em BACKLOG-0006.
 - **Relacionado:** PROB-0026, BACKLOG-0006
 
 ### PROB-0012 — Invariante "tenant_id em TODA tabela" violado em `tenant_role_permissions`
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** EM_ANDAMENTO
+- **Status:** FECHADO_COM_RESSALVA
+- **Verificado em:** 2026-07-12 (commit `be74446`)
 - **Área:** banco / segurança
 - **Sintoma:** originalmente, `tenant_role_permissions` não carregava `tenant_id` e dependia do join transitivo `role_id → tenant_roles.tenant_id`. `permissions` e `role_permissions` permanecem catálogos globais intencionais.
 - **Causa raiz:** confirmada — associação tenant-específica foi criada sem modelar seu escopo explicitamente; além disso, a migration antiga `007_*` não era executada pelo runner de migrations com prefixo de quatro dígitos.
@@ -242,8 +251,8 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Solução proposta:** adicionar `tenant_id NOT NULL`, unicidade `(tenant_id, role_id, permission_slug)`, FK composta `(tenant_id, role_id)`, metadata TypeORM composta e filtro explícito de tenant nas consultas de permissões.
 - **Solução aplicada:** migration efetiva `0021_cross_tenant_foreign_keys.sql` recupera o modelo ignorado da `007_*`: adiciona e preenche `tenant_id`, exige `NOT NULL`, cria unicidade e índice tenant-escopados e FK composta para `tenant_roles(tenant_id, id)`. Entidade usa `@JoinColumn` composto. `PermissionsService.listEffectiveForRole` filtra `{ tenantId, roleId }`; `PermissionGuard` fornece ambos a partir do usuário autenticado.
 - **Evidências/comandos:** teste dedicado cobre metadata TypeORM e migration composta; teste de `PermissionsService` confirma filtro por tenant. `npm test --workspace=backend -- cross-tenant-foreign-keys --runInBand` — 21/21; suíte backend completa — 116/116; `npm run build --workspace=backend` passou durante PROB-0011. Lint não executou naquela validação porque `eslint` não estava instalado no workspace.
-- **Riscos residuais:** migration ainda não aplicada contra PostgreSQL real por falta de credencial e Docker parado; faltam evidência do catálogo, medição de locks e tentativa cross-tenant retornando `23503`. Coexistência do modelo global `role_permissions` segue separada em PROB-0034.
-- **Próximo passo:** aplicar migration em clone/staging, confirmar constraints validadas, testar escrita cross-tenant real e então marcar `FECHADO`.
+- **Riscos residuais:** implementação e testes estão concluídos, mas migration ainda não foi aplicada contra PostgreSQL real; faltam evidência do catálogo, medição de locks e tentativa cross-tenant retornando `23503`. Coexistência do modelo global `role_permissions` segue separada em PROB-0034.
+- **Próximo passo:** problema de código fechado; rollout e validação operacional permanecem em BACKLOG-0006.
 - **Relacionado:** PROB-0034
 
 ### PROB-0013 — `mobile_sessions` e `parceiros_comerciais` ausentes de todas as migrations
@@ -268,7 +277,7 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** RESOLVIDO
+- **Status:** FECHADO
 - **Área:** frontend
 - **Sintoma:** `isAdmin()`/`hasPermission()` comparam com literal `'ADMIN'` (maiúsculo). `ROLE_OPTIONS` usa `['admin','manager','viewer']` (minúsculo) e `useAuth.ts` compara case-insensitive — dois verificadores discordam.
 - **Causa raiz:** confirmada (inconsistência interna); casing real do backend = suposição.
@@ -507,34 +516,36 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** frontend
 - **Sintoma:** `const BASE_URL = import.meta.env.VITE_API_URL;` sem `?? '/api'`, enquanto todos os outros módulos usam default `/api`. Se `VITE_API_URL` não setada, chamadas de dados viram `/clientes` (404) mas auth ainda funciona — falha parcial difícil de diagnosticar.
 - **Causa raiz:** confirmada — tratamento de env inconsistente.
 - **Impacto técnico:** 404 em todas as chamadas de dados quando env ausente.
 - **Arquivos/módulos:** `frontend/src/lib/apiClient.ts:3`, `:30`
 - **Solução proposta:** default `BASE_URL` para `/api`.
-- **Solução aplicada:** nenhuma ainda. Delegado a `frontend-engineer`.
-- **Evidências/comandos:** leitura de `apiClient.ts`.
+- **Solução aplicada:** `BASE_URL` usa `import.meta.env.VITE_API_URL ?? '/api'`, alinhado a `AuthContext` e `lib/auth.ts`.
+- **Evidências/comandos:** busca no código atual confirma fallback em `frontend/src/lib/apiClient.ts:3`.
 - **Riscos residuais:** nenhum.
-- **Próximo passo:** adicionar fallback.
+- **Próximo passo:** nenhum.
 - **Relacionado:** —
 
 ### PROB-0029 — `ProtectedRoute` faz redirect como efeito de render
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** frontend
 - **Sintoma:** `window.location.href = ...` no corpo de render do componente. Pode disparar a cada re-render / duas vezes sob StrictMode.
 - **Causa raiz:** confirmada — navegação como efeito de render.
 - **Impacto técnico:** redirect churn; monta URL de start OIDC a cada render.
 - **Arquivos/módulos:** `frontend/src/components/ProtectedRoute.tsx:20-23`
 - **Solução proposta:** mover para `useEffect`.
-- **Solução aplicada:** nenhuma ainda. Delegado a `frontend-engineer`.
-- **Evidências/comandos:** leitura de `ProtectedRoute.tsx`.
-- **Riscos residuais:** interage com 401 duplicado (PROB-0035).
-- **Próximo passo:** refatorar para efeito.
+- **Solução aplicada:** fluxo OIDC removido; componente atual retorna `<Navigate to='/login' replace />` quando não há usuário, sem atribuição a `window.location` durante render.
+- **Evidências/comandos:** leitura de `frontend/src/components/ProtectedRoute.tsx`; busca sem redirect OIDC ou `return_to` no componente.
+- **Riscos residuais:** redirect 401 duplicado permanece separado em PROB-0035.
+- **Próximo passo:** nenhum.
 - **Relacionado:** PROB-0035
 
 ### PROB-0030 — PII de clientes sem criptografia em repouso no SQLite mobile
@@ -558,110 +569,106 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** PARCIALMENTE RESOLVIDO
+- **Status:** FECHADO_COM_RESSALVA
+- **Verificado em:** 2026-07-12
 - **Área:** LGPD
 - **Sintoma:** `base.entity.ts:16` afirma "dados nunca são apagados fisicamente"; só existe soft delete. PII de cliente (`cnpj`, `email`, `tel`, `endereco`, `contato`) e de usuário (`email`, `nome`) retida indefinidamente, sem caminho de erasure/anonimização.
 - **Causa raiz:** confirmada — só `softDelete`.
 - **Impacto técnico:** não há como honrar pedido de titular (Art. 18).
 - **Arquivos/módulos:** `backend/src/common/entities/base.entity.ts:16`; `clients.service.ts:82-85`; `sync.service.ts:100-103`
 - **Solução proposta:** fluxo de anonimização/hard-delete para requisição de titular.
-- **Solução aplicada:** state machine Admin e anonimização idempotente de clientes em `privacy/`; referências legais/contábeis preservadas. Usuários e campos livres em pedidos ainda dependem de matriz jurídica.
-- **Evidências/comandos:** leitura de entidades e services.
-- **Riscos residuais:** parte de programa LGPD maior.
-- **Próximo passo:** desenhar fluxo de erasure.
+- **Solução aplicada:** state machine Admin e anonimização idempotente para clientes e usuários. Clientes têm PII removida e textos livres dos pedidos associados limpos; usuários têm identidade/credenciais anonimizadas, acesso desativado e sessões web/mobile revogadas. Referências legais/contábeis permanecem.
+- **Evidências/comandos:** suíte backend completa `26 suites / 155 testes` e build backend passaram em 2026-07-12; fluxo exige smoke test PostgreSQL no rollout.
+- **Riscos residuais:** matriz jurídica de retenção ainda deve ser homologada; execução técnica preserva relações por padrão seguro.
+- **Próximo passo:** homologação jurídica e smoke test em PostgreSQL real.
 - **Relacionado:** PROB-0032, BACKLOG-0007
 
 ### PROB-0032 — Sem trilha de auditoria de acesso/alteração de PII (LGPD Art. 37)
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** PARCIALMENTE RESOLVIDO
+- **Status:** FECHADO_COM_RESSALVA
+- **Verificado em:** 2026-07-12
 - **Área:** LGPD
 - **Sintoma:** grep por audit/log de acesso não encontrou nada. Nenhum registro de quem leu ou alterou PII. Só `console.error` ad-hoc em tenant mismatch.
 - **Causa raiz:** confirmada.
 - **Impacto técnico:** gap de accountability (Art. 37).
 - **Arquivos/módulos:** projeto todo; `auto-provision.guard.ts:55`, `:72`
 - **Solução proposta:** trilha de auditoria de acesso/modificação de PII.
-- **Solução aplicada:** audit log append-only, isolado por tenant, com eventos transacionais para clientes e eventos de administração de usuários; consulta exclusiva para Admin. Campos livres em pedidos e demais módulos ainda exigem inventário jurídico final.
-- **Evidências/comandos:** grep sem resultados de auditoria.
-- **Riscos residuais:** parte de programa LGPD.
-- **Próximo passo:** definir modelo de audit log.
+- **Solução aplicada:** audit log append-only, isolado por tenant, cobre leitura/alteração de clientes, administração de usuários, exportação e apagamento LGPD; eventos de apagamento incluem campos livres dos pedidos sem registrar seus valores.
+- **Evidências/comandos:** suíte backend completa `26 suites / 155 testes` e build backend passaram em 2026-07-12; testes de audit/privacy confirmam autorização e persistência sem valores PII.
+- **Riscos residuais:** inventário jurídico deve ser revisto quando novos campos PII forem adicionados.
+- **Próximo passo:** manter inventário e cobertura de auditoria nos reviews de domínio.
 - **Relacionado:** PROB-0031, BACKLOG-0007
 
 ### PROB-0033 — Drift de índices em `comissoes` (migration ⊂ entidade)
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** LOW
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** banco
 - **Sintoma:** migration só cria `tenant_uuid`, `tenant_updated` e o índice quebrado de `pedido`. A entidade declara índices adicionais (`tenant_id,deleted_at`; `tenant_id,data_pedido`; `tenant_id,status`; `tenant_id,fornecedor_id`) omitidos na migration.
 - **Causa raiz:** confirmada — drift dev↔prod.
 - **Impacto técnico:** prod sem índices de soft-delete e de relatório.
 - **Arquivos/módulos:** `001:118-121`; `commission.entity.ts:11-16`
 - **Solução proposta:** sincronizar migration com o conjunto de índices da entidade.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer`.
-- **Evidências/comandos:** cruzamento migration × entidade.
+- **Solução aplicada:** baseline efetiva `0000_baseline.sql` contém os índices compostos de `comissoes` para `(tenant_id, deleted_at)`, `(tenant_id, data_pedido)`, `(tenant_id, status)`, `(tenant_id, fornecedor_id)` e `(tenant_id, updated_at)`. Migration legada `001_*`, citada no sintoma, não é executada pelo runner de quatro dígitos.
+- **Evidências/comandos:** cruzamento de `commission.entity.ts:11-16` com `0000_baseline.sql`; todos os índices antes ausentes foram encontrados.
 - **Riscos residuais:** nenhum além de performance.
-- **Próximo passo:** junto de PROB-0004.
+- **Próximo passo:** nenhum.
 - **Relacionado:** PROB-0004, PROB-0006
 
 ### PROB-0034 — Dois modelos de permissão coexistem (`role_permissions` vs `tenant_role_permissions`)
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** LOW
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** banco
 - **Sintoma:** modelo por role-string (`role_permissions`, migration 002) e modelo tenant-escopado (`tenant_role_permissions`, 003) coexistem; ambos referenciam `permissions.slug`. Provável legado vs atual — não reconciliado, possível schema morto (suposição).
 - **Causa raiz:** suposição — evolução de modelo não limpa.
 - **Impacto técnico:** confusão de modelagem; risco de decisão de permissão inconsistente.
 - **Arquivos/módulos:** migrations `002`, `003`; entidades RBAC
 - **Solução proposta:** decidir modelo único e remover o morto.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer` + `software-architect`.
-- **Evidências/comandos:** inventário de migrations/entidades.
+- **Solução aplicada:** `tenant_role_permissions` confirmado como único modelo consumido. Entidade global legada removida e migration `0022_remove_legacy_rbac_and_order_vendor_fk.sql` elimina `role_permissions` de instalações existentes.
+- **Evidências/comandos:** busca confirma consumo exclusivo de `TenantRolePermission`; build e suíte backend completa passaram; migration real pendente de rollout PostgreSQL.
 - **Riscos residuais:** interage com PROB-0012.
-- **Próximo passo:** decisão arquitetural.
+- **Próximo passo:** aplicar migration no rollout.
 - **Relacionado:** PROB-0012
 
 ### PROB-0035 — Código morto/duplicado de auth no frontend
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** LOW
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** frontend
-- **Sintoma:** (a) Zustand `authStore.ts` nunca importado (segunda fonte de verdade divergente); `main.tsx:12-15` ainda limpa a chave legada `auth-storage`. (b) Bloco de 401 em `apiClient.ts:86-90` inalcançável (checa rota `/login` inexistente; `authFetch` já redireciona/lança em 401 antes). (c) `AUTH_URL` com fallback hardcoded `https://auth.zonadev.tech` (`AuthContext.tsx:12`).
-- **Causa raiz:** confirmada — superfície de auth substituída por `AuthContext`+`useAuth` sem limpeza.
-- **Impacto técnico:** dois caminhos de redirect 401 concorrentes; fonte de verdade divergente; risco de drift.
-- **Arquivos/módulos:** `frontend/src/store/authStore.ts`; `main.tsx:12-15`; `lib/apiClient.ts:86-90`; `context/AuthContext.tsx:12`
-- **Solução proposta:** remover store/shim/bloco morto; env-driven no host de auth.
-- **Solução aplicada:** nenhuma ainda. Delegado a `frontend-engineer`.
-- **Evidências/comandos:** leitura + verificação de imports (store não importado).
+- **Sintoma atual:** fluxo OIDC, `AUTH_URL` hardcoded e Zustand `authStore.ts` já não existem. Restam dois resíduos: `main.tsx` remove `auth-storage` legado em todo bootstrap; `apiClient.ts` ainda repete redirect de 401 que `authFetch` já executa.
+- **Causa raiz:** limpeza incompleta após migração para auth nativa.
+- **Impacto técnico:** baixo; redirect 401 duplicado e shim legado sem função.
+- **Arquivos/módulos:** `frontend/src/main.tsx:13`; `frontend/src/lib/auth.ts:23-29`; `frontend/src/lib/apiClient.ts:86-88`
+- **Solução proposta:** remover limpeza de `auth-storage` e manter tratamento de 401 em uma única camada.
+- **Solução aplicada:** store Zustand, callback/rotas OIDC, fallback ZonaDev, shim `auth-storage` e redirect 401 duplicado removidos; `authFetch` concentra refresh/redirect.
+- **Evidências/comandos:** busca atual sem `authStore.ts`, `AuthCallback`, `AUTH_URL`, ZonaDev, OIDC, shim `auth-storage` ou redirect 401 duplicado; build frontend passou.
 - **Riscos residuais:** nenhum.
-- **Próximo passo:** limpeza de código morto.
+- **Próximo passo:** nenhum.
 - **Relacionado:** PROB-0027, PROB-0029
 
 ### PROB-0036 — Robustez menor (frontend + backend): itens LOW agrupados
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** LOW
-- **Status:** ABERTO
+- **Status:** PARCIALMENTE_RESOLVIDO
 - **Área:** frontend / backend / segurança
-- **Sintoma / itens:**
-  - Frontend sem rota catch-all `path='*'` (tela em branco em rota desconhecida) e sem spinner durante `loading` do `ProtectedRoute` (`App.tsx:26-130`, `ProtectedRoute.tsx:17`).
-  - `jwt.verify` sem pinar `algorithms:['HS256']` (`backend/src/auth/mobile-session.service.ts:100`).
-  - `JwtAuthGuard` engole falha RS256 com `catch {}` e cai no path HS256 — mascara motivo real (`jwt-auth.guard.ts:36-52`).
-  - Open-redirect via `return_to` OIDC sem allowlist (`oidc.controller.ts:18-35`, `:95-98`).
-  - CORS com fallback `http://localhost:5173` + `credentials:true` quando `CORS_ORIGIN` ausente (`main.ts:31-34`).
-  - Sessão mobile ignora mudança de `plan` por 30 dias (revalida só `token_version`/expiry) (`mobile-session.service.ts:96-137`).
-  - Backoff de retry mobile: comentário diz 1s/2s/4s, real 1s/2s (`SyncService.ts:120-123`).
-  - Mapeamento de resultado de push por índice `items[i]↔results[i]` (frágil a reorder) (`SyncService.ts:103-105`).
-  - Precisão decimal inconsistente entre colunas de dinheiro (`order` `decimal(10,2)` vs `commission`/`parceiro` `decimal(12,2)`).
-  - `Order.vendedor_id` sem relação/FK (`order.entity.ts:35-36`).
-  - `timezone:'UTC'` em TypeOrmOptions é opção mysql-only, ignorada no Postgres (`app.module.ts:50`).
+- **Item ainda confirmado em backend/frontend (2026-07-12):** precisão decimal precisa de inventário e contrato único.
+- **Itens resolvidos/removidos:** OIDC e seu open redirect removidos; `JwtAuthGuard` não possui mais fallback RS256→HS256; timezone PostgreSQL usa `extra.options = '-c timezone=UTC'`.
+- **Itens mobile não reverificados nesta atualização:** mudança de `plan`, backoff e associação de resultados de push por índice; mantidos como pendentes até auditoria autorizada do workspace mobile.
 - **Causa raiz:** confirmada por leitura em cada caso (exceto onde marcado suposição).
 - **Impacto técnico:** individualmente baixo; hardening/robustez/consistência.
 - **Solução proposta:** tratar por área junto das correções maiores.
-- **Solução aplicada:** nenhuma ainda. Delegado aos engenheiros de domínio correspondentes.
-- **Evidências/comandos:** leituras nos arquivos citados.
+- **Solução aplicada:** rota catch-all e loading visível adicionados; JWT fixa HS256; produção exige `CORS_ORIGIN`; pool DB e shutdown configurados; `Order.vendedor_id` ganhou relação/FK tenant-scoped. Precisão decimal permanece como saldo backend. Itens do workspace mobile seguem intocados por restrição explícita.
+- **Evidências/comandos:** suíte backend completa `26 suites / 155 testes`, builds backend/frontend e `git diff --check` passaram. Lint indisponível porque ESLint não consta nas dependências.
 - **Riscos residuais:** acúmulo de débito técnico se ignorado.
 - **Próximo passo:** endereçar em varredura de robustez.
 - **Relacionado:** BACKLOG-0008
@@ -748,15 +755,16 @@ Origem: análise do usuário (`docs/PossiveisErros.md`) sobre `Prompt_Auth_Nativ
 - **Data:** 2026-07-08
 - **Origem:** revisão
 - **Severidade:** LOW
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** backend
 - **Sintoma:** `cnpj` e `cep` no DTO de cliente são apenas `@IsOptional() @IsString()` — sem checagem de dígito verificador (CNPJ) nem de formato (CEP). CNPJ inválido entra no cadastro e contamina cliente, pedido e o financeiro depois.
 - **Causa raiz:** confirmada — leitura do DTO.
 - **Impacto técnico:** dados inválidos persistidos; relatórios e integrações fiscais futuras herdam o lixo.
 - **Arquivos/módulos:** `backend/src/clients/dto/create-client.dto.ts:17`, `:24` (e DTOs equivalentes de transportadora/fornecedor)
 - **Solução proposta:** custom validators de CNPJ (dígito verificador) e CEP nos DTOs de cliente/transportadora/fornecedor.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura de `create-client.dto.ts`.
+- **Solução aplicada:** decorators reutilizáveis validam dígitos do CNPJ e formato de CEP; cliente, transportadora e fornecedor adotam CNPJ, cliente adota CEP; testes cobrem formatos válidos e inválidos.
+- **Evidências/comandos:** testes dedicados de CNPJ/CEP, suíte backend completa `26 suites / 155 testes` e build backend passaram.
 - **Riscos residuais:** dados legados já gravados continuam inválidos — validar só na entrada não limpa o passado.
-- **Próximo passo:** implementar validators na Fase 1.
+- **Próximo passo:** saneamento separado para dados legados inválidos.
 - **Relacionado:** BACKLOG-0009

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import LoadingState from '@/components/feedback/LoadingState';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -12,7 +13,7 @@ export function ProtectedRoute({ children, permission, adminOnly = false }: Prot
   const { user, loading, hasPermission, isAdmin } = useAuth();
 
   if (loading) {
-    return null;
+    return <LoadingState />;
   }
 
   if (!user) {

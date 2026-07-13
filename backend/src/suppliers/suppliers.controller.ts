@@ -9,11 +9,12 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { IsCnpj } from '../common/validators/brazilian-document.validators';
 
 class CreateSupplierDto {
   @IsUUID('4') uuid: string;
   @IsNotEmpty() @IsString() razao_social: string;
-  @IsOptional() @IsString() cnpj?: string;
+  @IsOptional() @IsString() @IsCnpj() cnpj?: string;
 }
 
 /** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */

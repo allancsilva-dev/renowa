@@ -103,7 +103,7 @@ export class MobileSessionService {
     let payload: MobileTokenPayload;
 
     try {
-      payload = jwt.verify(token, this.secret) as MobileTokenPayload;
+      payload = jwt.verify(token, this.secret, { algorithms: ['HS256'] }) as MobileTokenPayload;
     } catch {
       throw new UnauthorizedException('Token de sessão mobile inválido');
     }

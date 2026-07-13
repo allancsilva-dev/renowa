@@ -2,54 +2,66 @@ import { UnauthorizedException } from '@nestjs/common';
 import { RefreshTokenService } from './refresh-token.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 
-/** Repo TypeORM em memória mínimo para o serviço. */
 function makeRepo() {
   const rows: RefreshToken[] = [];
   let seq = 1;
-  return {
+  const repo: any = {
     rows,
     create: (data: Partial<RefreshToken>) => ({ ...data }) as RefreshToken,
-    save: async (r: RefreshToken) => {
-      if (!r.id) {
-        r.id = seq++;
-        rows.push(r);
-      }
-      return r;
+    save: async (row: RefreshToken) => {
+      if (!row.id) { row.id = seq++; rows.push(row); }
+      return row;
     },
-    findOne: async ({ where }: any) =>
-      rows.find((r) => r.token_hash === where.token_hash) ?? null,
+    findOne: async ({ where }: any) => rows.find((row) => row.token_hash === where.token_hash) ?? null,
     update: async (criteria: any, patch: any) => {
-      rows
-        .filter(
-          (r) =>
-            (criteria.family_id ? r.family_id === criteria.family_id : r.id === criteria.id) &&
-            (criteria.user_id ? r.user_id === criteria.user_id : true),
-        )
-        .forEach((r) => Object.assign(r, patch));
+      rows.filter((row) =>
+        (criteria.family_id ? row.family_id === criteria.family_id : row.id === criteria.id) &&
+        (criteria.user_id ? row.user_id === criteria.user_id : true),
+      ).forEach((row) => Object.assign(row, patch));
+    },
+    createQueryBuilder: () => {
+      let hash = '';
+      const builder: any = {
+        setLock: () => builder,
+        where: (_sql: string, params: { hash: string }) => { hash = params.hash; return builder; },
+        getOne: async () => rows.find((row) => row.token_hash === hash) ?? null,
+      };
+      return builder;
     },
   };
+  repo.manager = { transaction: async (callback: any) => callback({ getRepository: () => repo }) };
+  return repo;
 }
 
 describe('RefreshTokenService', () => {
-  it('issues and rotates a token', async () => {
+  it('issues and rotates a token under transaction lock', async () => {
     const repo = makeRepo();
-    const svc = new RefreshTokenService(repo as any);
-    const { token } = await svc.issue({ userId: 1, tenantId: 't-1' });
-    const rotated = await svc.rotate(token, {});
+    const service = new RefreshTokenService(repo);
+    const { token } = await service.issue({ userId: 1, tenantId: 't-1' });
+    const rotated = await service.rotate(token, {});
     expect(rotated.userId).toBe(1);
     expect(rotated.token).not.toBe(token);
-    // token antigo agora está revogado
-    const old = repo.rows.find((r) => r.token_hash === RefreshTokenService.hashToken(token))!;
-    expect(old.revoked_at).toBeTruthy();
+    expect(repo.rows.find((row: RefreshToken) => row.token_hash === RefreshTokenService.hashToken(token)).revoked_at).toBeTruthy();
   });
 
-  it('detects reuse and revokes the whole family', async () => {
+  it('does not revoke the family for a concurrent retry inside grace window', async () => {
     const repo = makeRepo();
-    const svc = new RefreshTokenService(repo as any);
-    const { token } = await svc.issue({ userId: 1, tenantId: 't-1' });
-    await svc.rotate(token, {}); // primeira rotação: token vira revogado
-    await expect(svc.rotate(token, {})).rejects.toBeInstanceOf(UnauthorizedException); // reuso
-    // toda a família revogada
-    expect(repo.rows.every((r) => r.revoked_at)).toBe(true);
+    const service = new RefreshTokenService(repo);
+    const { token } = await service.issue({ userId: 1, tenantId: 't-1' });
+    const rotated = await service.rotate(token, {});
+    await expect(service.rotate(token, {})).rejects.toBeInstanceOf(UnauthorizedException);
+    const replacement = repo.rows.find((row: RefreshToken) => row.token_hash === RefreshTokenService.hashToken(rotated.token));
+    expect(replacement.revoked_at).toBeNull();
+  });
+
+  it('revokes the family when reuse occurs after grace window', async () => {
+    const repo = makeRepo();
+    const service = new RefreshTokenService(repo);
+    const { token } = await service.issue({ userId: 1, tenantId: 't-1' });
+    await service.rotate(token, {});
+    const original = repo.rows.find((row: RefreshToken) => row.token_hash === RefreshTokenService.hashToken(token));
+    original.revoked_at = new Date(Date.now() - 11_000);
+    await expect(service.rotate(token, {})).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(repo.rows.every((row: RefreshToken) => row.revoked_at)).toBe(true);
   });
 });

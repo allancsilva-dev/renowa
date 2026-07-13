@@ -1,7 +1,7 @@
 import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export class CreateLgpdRequestDto {
-  @IsIn(['CLIENT']) subjectType: 'CLIENT';
+  @IsIn(['CLIENT', 'USER']) subjectType: 'CLIENT' | 'USER';
   @IsUUID() subjectUuid: string;
   @IsIn(['ERASURE', 'EXPORT']) requestType: 'ERASURE' | 'EXPORT';
   @IsOptional() @IsString() @MaxLength(1000) reason?: string;
