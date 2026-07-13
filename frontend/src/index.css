@@ -10,7 +10,7 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 174 57% 40%;      /* #2A9D8F */
+    --primary: 174 62% 28%;      /* #1B7468: contraste AA com branco */
     --primary-foreground: 0 0% 100%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -27,6 +27,28 @@
   }
 }
 
+@layer utilities {
+  /* Slate 400 não atinge contraste AA em superfícies claras. */
+  .text-slate-400 {
+    color: rgb(100 116 139);
+  }
+  .placeholder-slate-400::placeholder {
+    color: rgb(100 116 139);
+  }
+}
+
+@layer components {
+  .overflow-x-auto > table {
+    min-width: 40rem;
+  }
+
+  @media (pointer: coarse) {
+    button, a, select {
+      min-height: 2.75rem;
+    }
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -34,5 +56,14 @@
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 interface HeaderProps {
   onToggle: () => void;
+  sidebarOpen: boolean;
 }
 
 function getInitials(email: string): string {
@@ -13,7 +14,7 @@ function getInitials(email: string): string {
   return email.substring(0, 2).toUpperCase();
 }
 
-export default function Header({ onToggle }: HeaderProps) {
+export default function Header({ onToggle, sidebarOpen }: HeaderProps) {
   const { user } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
 
@@ -22,19 +23,23 @@ export default function Header({ onToggle }: HeaderProps) {
       {/* Esquerda: botão hambúrguer */}
       <button
         onClick={onToggle}
-        className='rounded-md p-2 text-slate-500 hover:bg-slate-100 transition-colors shrink-0'
-        aria-label='Toggle sidebar'
+        className='inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+        aria-label='Alternar menu de navegação'
+        aria-expanded={sidebarOpen}
+        aria-controls='primary-navigation'
       >
         <Menu className='h-5 w-5' />
       </button>
 
       {/* Centro: busca rápida */}
-      <div className='flex-1 max-w-md'>
+      <div className='hidden flex-1 max-w-md sm:block'>
         <div className='relative'>
           <Search className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400' />
           <input
             type='text'
-            placeholder='Busca rápida...'
+            placeholder='Busca indisponível'
+            aria-label='Busca rápida — indisponível'
+            disabled
             className='w-full rounded-full border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-sm text-slate-700 placeholder-slate-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors'
           />
         </div>
@@ -43,23 +48,19 @@ export default function Header({ onToggle }: HeaderProps) {
       {/* Direita: sino + avatar */}
       <div className='flex items-center gap-3 shrink-0'>
         {/* Sino com badge */}
-        <button className='relative rounded-full p-2 text-slate-500 hover:bg-slate-100 transition-colors'>
+        <button type='button' disabled aria-label='Nenhuma notificação' className='relative inline-flex h-11 w-11 items-center justify-center rounded-full text-slate-500 disabled:opacity-60'>
           <Bell className='h-5 w-5' />
-          <span className='absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white leading-none'>
-            3
-          </span>
         </button>
 
         {/* Avatar e nome */}
         <div className='flex items-center gap-2'>
           <div
-            className='flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold text-white'
-            style={{ backgroundColor: '#2A9D8F' }}
+            className='flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white'
           >
             {initials}
           </div>
           <span className='hidden text-sm font-medium text-slate-700 sm:block'>
-            Administrador
+            {user?.email ?? 'Usuário'}
           </span>
         </div>
       </div>

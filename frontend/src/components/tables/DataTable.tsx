@@ -47,8 +47,8 @@ export default function DataTable<T>({
 }: DataTableProps<T>) {
   return (
     <div className='w-full'>
-      <div className='overflow-hidden rounded-lg border bg-white shadow-sm'>
-        <table className='w-full text-sm'>
+      <div className='overflow-x-auto rounded-lg border bg-white shadow-sm'>
+        <table className='min-w-[640px] w-full text-sm'>
           <thead>
             <tr className='border-b bg-primary text-white'>
               {columns.map((col) => (
@@ -114,7 +114,8 @@ export default function DataTable<T>({
             <button
               onClick={() => onPageChange?.(meta.page - 1)}
               disabled={meta.page <= 1}
-              className='rounded p-1 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed'
+              aria-label='Página anterior'
+              className='inline-flex h-11 w-11 items-center justify-center rounded hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40'
             >
               <ChevronLeft className='h-4 w-4' />
             </button>
@@ -126,7 +127,8 @@ export default function DataTable<T>({
             <button
               onClick={() => onPageChange?.(meta.page + 1)}
               disabled={meta.page >= meta.totalPages}
-              className='rounded p-1 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed'
+              aria-label='Próxima página'
+              className='inline-flex h-11 w-11 items-center justify-center rounded hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-40'
             >
               <ChevronRight className='h-4 w-4' />
             </button>

@@ -12,7 +12,7 @@ const config: Config = {
         background: '#F4F7F6',
         foreground: 'hsl(var(--foreground))',
         primary: {
-          DEFAULT: '#2A9D8F',
+          DEFAULT: '#1B7468',
           foreground: 'hsl(var(--primary-foreground))',
           50: '#e6f5f3',
           100: '#c2e8e3',
@@ -20,7 +20,7 @@ const config: Config = {
           300: '#6fcec1',
           400: '#4dbfb0',
           500: '#2A9D8F',
-          600: '#238a7d',
+          600: '#135e53',
           700: '#1b7468',
           800: '#135e53',
           900: '#0a4840',

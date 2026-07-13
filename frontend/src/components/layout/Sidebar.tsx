@@ -35,7 +35,7 @@ const itemBase: React.CSSProperties = {
   fontSize: '14px',
   fontWeight: 500,
   transition: 'all 0.2s ease',
-  color: 'rgba(255,255,255,0.7)',
+  color: 'rgba(255,255,255,0.82)',
   textDecoration: 'none',
   width: '100%',
   cursor: 'pointer',
@@ -44,12 +44,13 @@ const itemBase: React.CSSProperties = {
 };
 
 export default function Sidebar() {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
   const role = user?.roles?.[0] ?? '';
 
   return (
     <aside
+      id='primary-navigation'
       className='flex h-full w-[260px] flex-shrink-0 flex-col'
       style={{
         background: 'linear-gradient(180deg, #0F4F54 0%, #16595F 50%, #1A6A70 100%)',
@@ -74,20 +75,20 @@ export default function Sidebar() {
                 to={to}
                 style={({ isActive }) => ({
                   ...itemBase,
-                  color: isActive ? '#2A9D8F' : 'rgba(255,255,255,0.7)',
+                  color: isActive ? '#1B7468' : 'rgba(255,255,255,0.82)',
                   background: isActive ? '#F4F7F6' : 'transparent',
                 })}
                 onMouseEnter={(e) => {
                   const el = e.currentTarget;
                   if (el.getAttribute('aria-current') !== 'page') {
-                    el.style.color = '#fff';
-                    el.style.background = '#E8ECEB';
+                    el.style.color = '#0D2B2B';
+                    el.style.background = '#D7EEEB';
                   }
                 }}
                 onMouseLeave={(e) => {
                   const el = e.currentTarget;
                   if (el.getAttribute('aria-current') !== 'page') {
-                    el.style.color = 'rgba(255,255,255,0.7)';
+                    el.style.color = 'rgba(255,255,255,0.82)';
                     el.style.background = 'transparent';
                   }
                 }}
@@ -102,31 +103,31 @@ export default function Sidebar() {
         {/* Separador antes de Configurações */}
         <div className='my-3 border-t border-white/10' />
 
-        <NavLink
+        {isAdmin() && <NavLink
           to='/configuracoes'
           style={({ isActive }) => ({
             ...itemBase,
-            color: isActive ? '#2A9D8F' : 'rgba(255,255,255,0.7)',
+            color: isActive ? '#1B7468' : 'rgba(255,255,255,0.82)',
             background: isActive ? '#F4F7F6' : 'transparent',
           })}
           onMouseEnter={(e) => {
             const el = e.currentTarget;
             if (el.getAttribute('aria-current') !== 'page') {
-              el.style.color = '#fff';
-              el.style.background = '#E8ECEB';
+              el.style.color = '#0D2B2B';
+              el.style.background = '#D7EEEB';
             }
           }}
           onMouseLeave={(e) => {
             const el = e.currentTarget;
             if (el.getAttribute('aria-current') !== 'page') {
-              el.style.color = 'rgba(255,255,255,0.7)';
+              el.style.color = 'rgba(255,255,255,0.82)';
               el.style.background = 'transparent';
             }
           }}
         >
           <Settings size={20} />
           Configurações
-        </NavLink>
+        </NavLink>}
       </nav>
 
       {/* Rodapé do usuário */}
@@ -144,7 +145,7 @@ export default function Sidebar() {
               {user?.email ?? 'Usuário'}
             </p>
             {role && (
-              <p className='truncate text-xs' style={{ color: 'rgba(255,255,255,0.5)' }}>
+              <p className='truncate text-xs' style={{ color: 'rgba(255,255,255,0.75)' }}>
                 {role}
               </p>
             )}
@@ -160,7 +161,7 @@ export default function Sidebar() {
             (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)';
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.7)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'rgba(255,255,255,0.82)';
             (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
           }}
         >
