@@ -75,10 +75,10 @@ export class Order extends VersionedBaseEntity {
   status: string;
 
   @Column({ name: 'total_sem_imposto', type: 'decimal', precision: 10, scale: 2, nullable: true })
-  total_sem_imposto: number | null;
+  total_sem_imposto: string | null;
 
   @Column({ name: 'total_com_imposto', type: 'decimal', precision: 10, scale: 2, nullable: true })
-  total_com_imposto: number | null;
+  total_com_imposto: string | null;
 
   @Column({ name: 'pgt', type: 'varchar', nullable: true })
   pgt: string | null;

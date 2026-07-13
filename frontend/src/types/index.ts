@@ -50,11 +50,11 @@ export interface OrderItem {
   produto_id: number | null;
   codigo_manual: string | null;
   descricao_manual: string | null;
-  qtd_caixas: number | null;
-  qtd_unitaria: number | null;
-  preco_unitario: number | null;
-  desconto_perc: number | null;
-  total_item: number | null;
+  qtd_caixas: string | null;
+  qtd_unitaria: string | null;
+  preco_unitario: string | null;
+  desconto_perc: string | null;
+  total_item: string | null;
 }
 
 export interface Order {
@@ -67,8 +67,8 @@ export interface Order {
   transportadora_id: number | null;
   data: string | null;
   status: OrderStatus;
-  total_sem_imposto: number | null;
-  total_com_imposto: number | null;
+  total_sem_imposto: string | null;
+  total_com_imposto: string | null;
   pgt: string | null;
   prazo: string | null;
   local_entrega: string | null;
@@ -85,7 +85,7 @@ export interface Product {
   fornecedor_id: number | null;
   codigo: string | null;
   descricao: string;
-  preco_base: number | null;
+  preco_base: string | null;
 }
 
 // ─── Financeiro ──────────────────────────────────────────────────────────────

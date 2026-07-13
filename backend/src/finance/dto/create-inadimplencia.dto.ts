@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDecimal, IsOptional, IsString, IsUUID } from 'class-validator';
 import { VersionDto } from '../../common/dto/version.dto';
 
 export class CreateInadimplenciaDto {
@@ -14,9 +14,8 @@ export class CreateInadimplenciaDto {
   empresa_devedora?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  valor_aberto?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor_aberto?: string;
 
   @IsOptional()
   @IsString()
@@ -29,9 +28,8 @@ export class UpdateInadimplenciaDto extends VersionDto {
   empresa_devedora?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  valor_aberto?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor_aberto?: string;
 
   @IsOptional()
   @IsString()

@@ -5,6 +5,7 @@ import DataTable from '@/components/tables/DataTable';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { fetchOrders } from '@/services/orders.service';
 import type { Order, OrderStatus } from '@/types';
+import { moneyForDisplay } from '@/lib/decimal';
 
 const STATUS_LABELS: Record<OrderStatus, string> = {
   em_aberto: 'Em Aberto',
@@ -59,7 +60,7 @@ export default function Pedidos() {
       key: 'total',
       header: 'Total s/ Imposto',
       cell: (row: Order) =>
-        row.total_sem_imposto != null ? BRL.format(row.total_sem_imposto) : '—',
+        row.total_sem_imposto != null ? BRL.format(moneyForDisplay(row.total_sem_imposto)) : '—',
     },
     {
       key: 'status',

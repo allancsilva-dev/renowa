@@ -7,6 +7,7 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { optimisticSoftDelete, optimisticUpdate } from '../common/persistence/optimistic-concurrency';
+import { decimal, money } from '../common/decimal/decimal';
 
 @Injectable()
 export class OrdersService {
@@ -57,8 +58,8 @@ export class OrdersService {
         transportadora_id,
         data: dto.data ?? null,
         status: dto.status ?? 'em_aberto',
-        total_sem_imposto: dto.total_sem_imposto ?? null,
-        total_com_imposto: dto.total_com_imposto ?? null,
+        total_sem_imposto: dto.total_sem_imposto === undefined ? null : money(dto.total_sem_imposto),
+        total_com_imposto: dto.total_com_imposto === undefined ? null : money(dto.total_com_imposto),
         pgt: dto.pgt ?? null,
         prazo: dto.prazo ?? null,
         local_entrega: dto.local_entrega ?? null,
@@ -82,11 +83,11 @@ export class OrdersService {
             produto_id,
             codigo_manual: itemDto.codigo_manual ?? null,
             descricao_manual: itemDto.descricao_manual ?? null,
-            qtd_caixas: itemDto.qtd_caixas ?? null,
-            qtd_unitaria: itemDto.qtd_unitaria ?? null,
-            preco_unitario: itemDto.preco_unitario ?? null,
-            desconto_perc: itemDto.desconto_perc ?? null,
-            total_item: itemDto.total_item ?? null,
+            qtd_caixas: itemDto.qtd_caixas === undefined ? null : decimal(itemDto.qtd_caixas).toFixed(3),
+            qtd_unitaria: itemDto.qtd_unitaria === undefined ? null : decimal(itemDto.qtd_unitaria).toFixed(3),
+            preco_unitario: itemDto.preco_unitario === undefined ? null : money(itemDto.preco_unitario),
+            desconto_perc: itemDto.desconto_perc === undefined ? null : decimal(itemDto.desconto_perc).toFixed(2),
+            total_item: itemDto.total_item === undefined ? null : money(itemDto.total_item),
           });
 
           itens.push(item);

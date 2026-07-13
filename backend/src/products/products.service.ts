@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
+import { money } from '../common/decimal/decimal';
 import { CreateProductDto } from './dto/create-product.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 
@@ -25,7 +26,13 @@ export class ProductsService {
     }
 
     const { fornecedor_uuid: _f, uuid, ...rest } = dto;
-    const product = this.productRepo.create({ ...rest, uuid, fornecedor_id, tenant_id: tenantId });
+    const product = this.productRepo.create({
+      ...rest,
+      preco_base: rest.preco_base === undefined ? null : money(rest.preco_base),
+      uuid,
+      fornecedor_id,
+      tenant_id: tenantId,
+    });
     return this.productRepo.save(product);
   }
 
@@ -69,8 +76,9 @@ export class ProductsService {
 
   async update(uuid: string, dto: Partial<CreateProductDto>, tenantId: string): Promise<Product> {
     const product = await this.findOne(uuid, tenantId);
-    const { fornecedor_uuid: _f, uuid: _u, ...rest } = dto;
+    const { fornecedor_uuid: _f, uuid: _u, preco_base, ...rest } = dto;
     Object.assign(product, rest);
+    if (preco_base !== undefined) product.preco_base = money(preco_base);
     return this.productRepo.save(product);
   }
 

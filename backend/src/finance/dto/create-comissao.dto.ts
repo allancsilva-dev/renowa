@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDecimal, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { VersionDto } from '../../common/dto/version.dto';
 
 export class CreateComissaoDto {
@@ -30,24 +30,20 @@ export class CreateComissaoDto {
   data_faturamento?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  valor_pedido?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor_pedido?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  valor_faturado?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor_faturado?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  perc_comissao?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  perc_comissao?: string;
 
   /** Snapshot calculado no lançamento */
-  @IsNumber()
-  @Min(0)
-  valor_comissao: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor_comissao: string;
 
   @IsOptional()
   @IsString()
@@ -64,14 +60,12 @@ export class UpdateComissaoDto extends VersionDto {
   data_faturamento?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  valor_faturado?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor_faturado?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  valor_comissao?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor_comissao?: string;
 
   @IsOptional()
   @IsString()

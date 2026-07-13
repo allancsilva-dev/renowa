@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsDecimal, IsOptional, IsString } from 'class-validator';
 import { VersionDto } from '../../common/dto/version.dto';
 
 export class UpdateMovementDto extends VersionDto {
@@ -7,9 +7,8 @@ export class UpdateMovementDto extends VersionDto {
   tipo?: string;
 
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  valor?: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor?: string;
 
   @IsOptional()
   @IsString()

@@ -22,7 +22,7 @@ export class Inadimplencia extends VersionedBaseEntity {
   empresa_devedora: string | null;
 
   @Column({ name: 'valor_aberto', type: 'decimal', precision: 10, scale: 2, nullable: true })
-  valor_aberto: number | null;
+  valor_aberto: string | null;
 
   @Column({ name: 'observacao', type: 'text', nullable: true })
   observacao: string | null;

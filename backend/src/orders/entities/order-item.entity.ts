@@ -39,17 +39,17 @@ export class OrderItem extends VersionedBaseEntity {
   descricao_manual: string | null;
 
   @Column({ name: 'qtd_caixas', type: 'decimal', precision: 10, scale: 3, nullable: true })
-  qtd_caixas: number | null;
+  qtd_caixas: string | null;
 
   @Column({ name: 'qtd_unitaria', type: 'decimal', precision: 10, scale: 3, nullable: true })
-  qtd_unitaria: number | null;
+  qtd_unitaria: string | null;
 
   @Column({ name: 'preco_unitario', type: 'decimal', precision: 10, scale: 2, nullable: true })
-  preco_unitario: number | null;
+  preco_unitario: string | null;
 
   @Column({ name: 'desconto_perc', type: 'decimal', precision: 5, scale: 2, nullable: true })
-  desconto_perc: number | null;
+  desconto_perc: string | null;
 
   @Column({ name: 'total_item', type: 'decimal', precision: 10, scale: 2, nullable: true })
-  total_item: number | null;
+  total_item: string | null;
 }

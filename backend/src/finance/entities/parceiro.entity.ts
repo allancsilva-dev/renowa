@@ -48,17 +48,17 @@ export class Parceiro extends VersionedBaseEntity {
   data_faturamento: string | null;
 
   @Column({ name: 'valor_pedido', type: 'decimal', precision: 12, scale: 2, default: 0 })
-  valor_pedido: number;
+  valor_pedido: string;
 
   @Column({ name: 'valor_faturado', type: 'decimal', precision: 12, scale: 2, nullable: true })
-  valor_faturado: number | null;
+  valor_faturado: string | null;
 
   /** Default 50% — divisão com o parceiro */
   @Column({ name: 'percentual_comissao', type: 'decimal', precision: 5, scale: 2, default: 50 })
-  percentual_comissao: number;
+  percentual_comissao: string;
 
   @Column({ name: 'valor_comissao', type: 'decimal', precision: 12, scale: 2, default: 0 })
-  valor_comissao: number;
+  valor_comissao: string;
 
   /** 'pendente' | 'faturado' | 'pago' */
   @Column({ name: 'status', type: 'varchar', default: 'pendente' })

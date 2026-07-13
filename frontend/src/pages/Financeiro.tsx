@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Plus, X, Wallet, TrendingDown, BarChart2, Trash2 } from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
+import { moneyForDisplay, moneyString, percentageOf, sumMoney } from '@/lib/decimal';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ interface Lancamento {
   version: number;
   tipo: string;
   descricao: string | null;
-  valor: number;
+  valor: string;
   data: string | null;
 }
 
@@ -30,10 +31,10 @@ interface Comissao {
   numero_nfe: string | null;
   data_pedido: string | null;
   data_faturamento: string | null;
-  valor_pedido: number | null;
-  valor_faturado: number | null;
-  perc_comissao: number | null;
-  valor_comissao: number;
+  valor_pedido: string | null;
+  valor_faturado: string | null;
+  perc_comissao: string | null;
+  valor_comissao: string;
   status: string;
 }
 
@@ -46,9 +47,9 @@ interface Parceiro {
   cliente?: { razao_social: string } | null;
   numero_pedido: string | null;
   data_pedido: string;
-  valor_faturado: number | null;
-  percentual_comissao: number;
-  valor_comissao: number;
+  valor_faturado: string | null;
+  percentual_comissao: string;
+  valor_comissao: string;
   status: string;
 }
 
@@ -57,7 +58,7 @@ interface Inadimplencia {
   version: number;
   cliente?: { razao_social: string } | null;
   empresa_devedora: string | null;
-  valor_aberto: number | null;
+  valor_aberto: string | null;
   observacao: string | null;
 }
 
@@ -178,7 +179,7 @@ function StatusBadge({ status }: { status: string }) {
 function FluxoCaixa() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [ano, setAno] = useState(now.getFullYear());
-  const [data, setData] = useState<{ receitas: number; custos: number; saldo: number; lancamentos: Lancamento[] } | null>(null);
+  const [data, setData] = useState<{ receitas: string; custos: string; saldo: string; lancamentos: Lancamento[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<{ tipo: string; descricao: string; valor: number | null; data: string }>({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
@@ -196,7 +197,7 @@ function FluxoCaixa() {
       .get(`/financeiro/fluxo-caixa?mes=${mes}&ano=${ano}`)
       .then((r) => {
         const d = (r.data as { data: typeof data }).data ?? r.data;
-        setData(d as { receitas: number; custos: number; saldo: number; lancamentos: Lancamento[] });
+        setData(d as { receitas: string; custos: string; saldo: string; lancamentos: Lancamento[] });
       })
       .catch(() => setData(null))
       .finally(() => setLoading(false));
@@ -212,7 +213,7 @@ function FluxoCaixa() {
         uuid: crypto.randomUUID(),
         tipo: form.tipo,
         descricao: form.descricao || null,
-        valor: form.valor ?? 0,
+        valor: moneyString(form.valor),
         data: form.data || null,
       });
       setShowForm(false);
@@ -240,7 +241,7 @@ function FluxoCaixa() {
                 <Wallet className='h-4 w-4 text-teal-500' />
                 <span className='text-xs font-semibold uppercase tracking-wider text-slate-400'>Receitas</span>
               </div>
-              <p className='text-2xl font-bold text-slate-900'>{BRL.format(data.receitas)}</p>
+              <p className='text-2xl font-bold text-slate-900'>{BRL.format(moneyForDisplay(data.receitas))}</p>
               <p className='text-xs text-slate-400 mt-1'>Comissões faturadas no mês</p>
             </div>
             <div className='rounded-xl bg-white border border-slate-100 shadow-sm p-5'>
@@ -248,15 +249,15 @@ function FluxoCaixa() {
                 <TrendingDown className='h-4 w-4 text-red-500' />
                 <span className='text-xs font-semibold uppercase tracking-wider text-slate-400'>Custos</span>
               </div>
-              <p className='text-2xl font-bold text-slate-900'>{BRL.format(data.custos)}</p>
+              <p className='text-2xl font-bold text-slate-900'>{BRL.format(moneyForDisplay(data.custos))}</p>
             </div>
             <div className='rounded-xl bg-white border border-slate-100 shadow-sm p-5'>
               <div className='flex items-center gap-2 mb-2'>
-                <BarChart2 className={`h-4 w-4 ${data.saldo >= 0 ? 'text-teal-500' : 'text-red-500'}`} />
+                <BarChart2 className={`h-4 w-4 ${moneyForDisplay(data.saldo) >= 0 ? 'text-teal-500' : 'text-red-500'}`} />
                 <span className='text-xs font-semibold uppercase tracking-wider text-slate-400'>Saldo</span>
               </div>
-              <p className={`text-2xl font-bold ${data.saldo >= 0 ? 'text-teal-700' : 'text-red-600'}`}>
-                {BRL.format(data.saldo)}
+              <p className={`text-2xl font-bold ${moneyForDisplay(data.saldo) >= 0 ? 'text-teal-700' : 'text-red-600'}`}>
+                {BRL.format(moneyForDisplay(data.saldo))}
               </p>
             </div>
           </div>
@@ -287,7 +288,7 @@ function FluxoCaixa() {
                       </td>
                       <td className='px-5 py-3 text-slate-700'>{l.descricao ?? '—'}</td>
                       <td className='px-5 py-3 text-slate-500'>{fmtDate(l.data)}</td>
-                      <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(l.valor)}</td>
+                      <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(moneyForDisplay(l.valor))}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -330,7 +331,7 @@ function FluxoCaixa() {
 function Empresas() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [ano, setAno] = useState(now.getFullYear());
-  const [grupos, setGrupos] = useState<{ fornecedor_id: number; razao_social: string; total_faturado: number; total_comissao: number; registros: Comissao[] }[]>([]);
+  const [grupos, setGrupos] = useState<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Comissao[] }[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(() => {
@@ -357,7 +358,7 @@ function Empresas() {
             <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
               <h3 className='font-semibold text-slate-900'>📦 {g.razao_social}</h3>
               <div className='text-sm font-medium text-slate-600'>
-                Fat: {BRL.format(g.total_faturado)} · Com: {BRL.format(g.total_comissao)}
+                Fat: {BRL.format(moneyForDisplay(g.total_faturado))} · Com: {BRL.format(moneyForDisplay(g.total_comissao))}
               </div>
             </div>
             <table className='w-full text-sm'>
@@ -376,9 +377,9 @@ function Empresas() {
                   <tr key={r.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
                     <td className='px-5 py-3 text-slate-500'>{fmtDate(r.data_pedido)}</td>
                     <td className='px-5 py-3 text-slate-700'>{r.cliente?.razao_social ?? '—'}</td>
-                    <td className='px-5 py-3 text-right text-slate-900 font-medium'>{BRL.format(r.valor_faturado ?? 0)}</td>
+                    <td className='px-5 py-3 text-right text-slate-900 font-medium'>{BRL.format(moneyForDisplay(r.valor_faturado))}</td>
                     <td className='px-5 py-3 text-right text-slate-500'>{r.perc_comissao ?? '—'}%</td>
-                    <td className='px-5 py-3 text-right font-semibold text-teal-700'>{BRL.format(r.valor_comissao)}</td>
+                    <td className='px-5 py-3 text-right font-semibold text-teal-700'>{BRL.format(moneyForDisplay(r.valor_comissao))}</td>
                     <td className='px-5 py-3'><StatusBadge status={r.status} /></td>
                   </tr>
                 ))}
@@ -399,7 +400,7 @@ function ComissaoAlune() {
   const [status, setStatus] = useState('');
   const [fornecedorId, setFornecedorId] = useState('');
   const [comissoes, setComissoes] = useState<Comissao[]>([]);
-  const [resumo, setResumo] = useState({ total: 0, faturado: 0, pendente: 0, pago: 0 });
+  const [resumo, setResumo] = useState({ total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -433,7 +434,7 @@ function ComissaoAlune() {
     ])
       .then(([r1, r2]) => {
         setComissoes((r1.data as { data: Comissao[] }).data ?? r1.data ?? []);
-        setResumo((r2.data as { data: typeof resumo }).data ?? r2.data ?? { total: 0, faturado: 0, pendente: 0, pago: 0 });
+        setResumo((r2.data as { data: typeof resumo }).data ?? r2.data ?? { total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -442,9 +443,8 @@ function ComissaoAlune() {
   useEffect(() => { load(); }, [load]);
 
   function calcVc(vp: number | null, pc: string): number | null {
-    const pcNum = parseFloat(pc);
-    if (vp === null || isNaN(pcNum)) return null;
-    return Math.round(vp * (pcNum / 100) * 100) / 100;
+    if (vp === null || pc.trim() === '') return null;
+    try { return moneyForDisplay(percentageOf(vp, pc)); } catch { return null; }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -458,10 +458,10 @@ function ComissaoAlune() {
         numero_nfe: form.numero_nfe || null,
         data_pedido: form.data_pedido || null,
         data_faturamento: form.data_faturamento || null,
-        valor_pedido: form.valor_pedido ?? undefined,
-        valor_faturado: form.valor_faturado ?? undefined,
-        perc_comissao: form.perc_comissao ? parseFloat(form.perc_comissao) : undefined,
-        valor_comissao: form.valor_comissao ?? 0,
+        valor_pedido: form.valor_pedido === null ? undefined : moneyString(form.valor_pedido),
+        valor_faturado: form.valor_faturado === null ? undefined : moneyString(form.valor_faturado),
+        perc_comissao: form.perc_comissao || undefined,
+        valor_comissao: moneyString(form.valor_comissao),
         status: form.status,
       });
       setShowForm(false);
@@ -502,7 +502,7 @@ function ComissaoAlune() {
         ].map(({ label, value, color }) => (
           <div key={label} className='rounded-xl bg-white border border-slate-100 shadow-sm p-4'>
             <p className='text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1'>{label}</p>
-            <p className={`text-xl font-bold ${color}`}>{BRL.format(value)}</p>
+            <p className={`text-xl font-bold ${color}`}>{BRL.format(moneyForDisplay(value))}</p>
           </div>
         ))}
       </div>
@@ -534,9 +534,9 @@ function ComissaoAlune() {
                   <td className='px-4 py-3 text-slate-500'>{fmtDate(c.data_faturamento)}</td>
                   <td className='px-4 py-3 text-slate-700'>{c.fornecedor?.razao_social ?? '—'}</td>
                   <td className='px-4 py-3 text-slate-500'>{c.numero_nfe ?? '—'}</td>
-                  <td className='px-4 py-3 text-right text-slate-900'>{BRL.format(c.valor_faturado ?? 0)}</td>
+                  <td className='px-4 py-3 text-right text-slate-900'>{BRL.format(moneyForDisplay(c.valor_faturado))}</td>
                   <td className='px-4 py-3 text-right text-slate-500'>{c.perc_comissao ?? '—'}%</td>
-                  <td className='px-4 py-3 text-right font-semibold text-teal-700'>{BRL.format(c.valor_comissao)}</td>
+                  <td className='px-4 py-3 text-right font-semibold text-teal-700'>{BRL.format(moneyForDisplay(c.valor_comissao))}</td>
                   <td className='px-4 py-3'><StatusBadge status={c.status} /></td>
                 </tr>
               ))}
@@ -649,9 +649,9 @@ function Parceiros() {
         empresa_parceiro: form.empresa_parceiro || null,
         data_pedido: form.data_pedido,
         data_faturamento: form.data_faturamento || null,
-        valor_faturado: form.valor_faturado ?? undefined,
-        percentual_comissao: parseFloat(form.percentual_comissao || '50'),
-        valor_comissao: form.valor_comissao ?? 0,
+        valor_faturado: form.valor_faturado === null ? undefined : moneyString(form.valor_faturado),
+        percentual_comissao: form.percentual_comissao || '50',
+        valor_comissao: moneyString(form.valor_comissao),
         status: form.status,
       });
       setShowForm(false);
@@ -661,10 +661,10 @@ function Parceiros() {
     }
   }
 
-  const grupos = parceiros.reduce<Record<string, { nome: string; empresa: string | null; total: number; items: Parceiro[] }>>((acc, p) => {
+  const grupos = parceiros.reduce<Record<string, { nome: string; empresa: string | null; total: string; items: Parceiro[] }>>((acc, p) => {
     const key = p.nome_parceiro;
-    if (!acc[key]) acc[key] = { nome: p.nome_parceiro, empresa: p.empresa_parceiro, total: 0, items: [] };
-    acc[key].total += Number(p.valor_comissao ?? 0);
+    if (!acc[key]) acc[key] = { nome: p.nome_parceiro, empresa: p.empresa_parceiro, total: '0.00', items: [] };
+    acc[key].total = sumMoney([acc[key].total, p.valor_comissao]);
     acc[key].items.push(p);
     return acc;
   }, {});
@@ -688,7 +688,7 @@ function Parceiros() {
                 <h3 className='font-semibold text-slate-900'>👤 {g.nome}</h3>
                 {g.empresa && <p className='text-xs text-slate-400'>{g.empresa}</p>}
               </div>
-              <div className='text-sm font-medium text-teal-700'>Total: {BRL.format(g.total)}</div>
+              <div className='text-sm font-medium text-teal-700'>Total: {BRL.format(moneyForDisplay(g.total))}</div>
             </div>
             <table className='w-full text-sm'>
               <thead>
@@ -706,9 +706,9 @@ function Parceiros() {
                   <tr key={p.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
                     <td className='px-5 py-3 text-slate-500'>{fmtDate(p.data_pedido)}</td>
                     <td className='px-5 py-3 text-slate-700'>{p.cliente?.razao_social ?? '—'}</td>
-                    <td className='px-5 py-3 text-right text-slate-900'>{BRL.format(p.valor_faturado ?? 0)}</td>
+                    <td className='px-5 py-3 text-right text-slate-900'>{BRL.format(moneyForDisplay(p.valor_faturado))}</td>
                     <td className='px-5 py-3 text-right text-slate-500'>{p.percentual_comissao}%</td>
-                    <td className='px-5 py-3 text-right font-semibold text-teal-700'>{BRL.format(p.valor_comissao)}</td>
+                    <td className='px-5 py-3 text-right font-semibold text-teal-700'>{BRL.format(moneyForDisplay(p.valor_comissao))}</td>
                     <td className='px-5 py-3'><StatusBadge status={p.status} /></td>
                   </tr>
                 ))}
@@ -740,8 +740,9 @@ function Parceiros() {
             <div className='grid grid-cols-2 gap-3'>
               <Field label='Valor Faturado'>
                 <InputMoney value={form.valor_faturado} onChange={(val) => {
-                  const pc = parseFloat(form.percentual_comissao || '50');
-                  const vc = val !== null && !isNaN(pc) ? Math.round(val * (pc / 100) * 100) / 100 : null;
+                  const vc = val !== null
+                    ? moneyForDisplay(percentageOf(val, form.percentual_comissao || '50'))
+                    : null;
                   setForm((p) => ({ ...p, valor_faturado: val, valor_comissao: vc }));
                 }} />
               </Field>
@@ -750,8 +751,9 @@ function Parceiros() {
                   <input type='number' step='0.01' min='0' max='100' value={form.percentual_comissao}
                     onChange={(e) => {
                       const pc = e.target.value;
-                      const pcNum = parseFloat(pc);
-                      const vc = form.valor_faturado !== null && !isNaN(pcNum) ? Math.round(form.valor_faturado * (pcNum / 100) * 100) / 100 : null;
+                      const vc = form.valor_faturado !== null && pc !== ''
+                        ? moneyForDisplay(percentageOf(form.valor_faturado, pc))
+                        : null;
                       setForm((p) => ({ ...p, percentual_comissao: pc, valor_comissao: vc }));
                     }} className={`${inputCls} pr-8`} />
                   <span className='absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none'>%</span>
@@ -813,7 +815,7 @@ function Custos() {
         uuid: crypto.randomUUID(),
         tipo: form.tipo,
         descricao: form.descricao || null,
-        valor: form.valor ?? 0,
+        valor: moneyString(form.valor),
         data: form.data || null,
       });
       setShowForm(false);
@@ -835,8 +837,8 @@ function Custos() {
     }
   }
 
-  const totalFixo = fixos.reduce((acc, l) => acc + Number(l.valor), 0);
-  const totalRotativo = rotativos.reduce((acc, l) => acc + Number(l.valor), 0);
+  const totalFixo = sumMoney(fixos.map((l) => l.valor));
+  const totalRotativo = sumMoney(rotativos.map((l) => l.valor));
 
   function CustoTable({ items }: { items: Lancamento[] }) {
     return (
@@ -854,7 +856,7 @@ function Custos() {
             <tr key={l.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
               <td className='px-5 py-3 text-slate-700'>{l.descricao ?? '—'}</td>
               <td className='px-5 py-3 text-slate-500'>{fmtDate(l.data)}</td>
-              <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(l.valor)}</td>
+              <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(moneyForDisplay(l.valor))}</td>
               <td className='px-5 py-3 text-right'>
                 <button onClick={() => handleDelete(l.uuid, l.version)} className='text-slate-300 hover:text-red-500 transition-colors'>
                   <Trash2 className='h-4 w-4' />
@@ -883,7 +885,7 @@ function Custos() {
           <div className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
             <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
               <h3 className='font-semibold text-slate-900'>📌 Custo Fixo</h3>
-              <span className='text-sm font-medium text-red-600'>Total: {BRL.format(totalFixo)}</span>
+              <span className='text-sm font-medium text-red-600'>Total: {BRL.format(moneyForDisplay(totalFixo))}</span>
             </div>
             {fixos.length === 0
               ? <div className='py-6 text-center text-sm text-slate-400'>Nenhum custo fixo cadastrado</div>
@@ -893,7 +895,7 @@ function Custos() {
           <div className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
             <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
               <h3 className='font-semibold text-slate-900'>🔄 Custo Rotativo</h3>
-              <span className='text-sm font-medium text-orange-600'>Total: {BRL.format(totalRotativo)}</span>
+              <span className='text-sm font-medium text-orange-600'>Total: {BRL.format(moneyForDisplay(totalRotativo))}</span>
             </div>
             {rotativos.length === 0
               ? <div className='py-6 text-center text-sm text-slate-400'>Nenhum custo rotativo no mês</div>
@@ -901,7 +903,7 @@ function Custos() {
           </div>
 
           <div className='rounded-xl bg-slate-50 border border-slate-200 px-5 py-3 text-sm font-medium text-slate-700'>
-            Total Custos do Mês: <span className='font-bold text-red-600'>{BRL.format(totalFixo + totalRotativo)}</span>
+            Total Custos do Mês: <span className='font-bold text-red-600'>{BRL.format(moneyForDisplay(sumMoney([totalFixo, totalRotativo])))}</span>
             <span className='ml-2 text-xs text-slate-400'>(alimenta Fluxo de Caixa)</span>
           </div>
         </>
@@ -960,7 +962,7 @@ function InadimplenciaTab() {
       await api.post('/financeiro/inadimplencia', {
         uuid: crypto.randomUUID(),
         empresa_devedora: form.empresa_devedora,
-        valor_aberto: form.valor_aberto ?? 0,
+        valor_aberto: moneyString(form.valor_aberto),
         observacao: form.observacao || null,
       });
       setShowForm(false);
@@ -983,14 +985,14 @@ function InadimplenciaTab() {
     }
   }
 
-  const total = items.reduce((acc, i) => acc + Number(i.valor_aberto ?? 0), 0);
+  const total = sumMoney(items.map((i) => i.valor_aberto));
 
   return (
     <div className='space-y-5'>
       <div className='flex items-center justify-between'>
         {items.length > 0 && (
           <span className='text-sm font-medium text-red-600'>
-            Total em aberto: {BRL.format(total)}
+            Total em aberto: {BRL.format(moneyForDisplay(total))}
           </span>
         )}
         <div className='ml-auto'>
@@ -1024,7 +1026,7 @@ function InadimplenciaTab() {
                 <tr key={i.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
                   <td className='px-5 py-3 text-slate-700'>{i.cliente?.razao_social ?? '—'}</td>
                   <td className='px-5 py-3 text-slate-700'>{i.empresa_devedora ?? '—'}</td>
-                  <td className='px-5 py-3 text-right font-semibold text-red-600'>{BRL.format(i.valor_aberto ?? 0)}</td>
+                  <td className='px-5 py-3 text-right font-semibold text-red-600'>{BRL.format(moneyForDisplay(i.valor_aberto))}</td>
                   <td className='px-5 py-3 text-slate-500 max-w-xs truncate'>{i.observacao ?? '—'}</td>
                   <td className='px-5 py-3 text-right'>
                     <button onClick={() => handleDelete(i.uuid, i.version)} className='text-slate-300 hover:text-red-500 transition-colors'>

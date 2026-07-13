@@ -15,7 +15,7 @@ export class FinanceMovement extends VersionedBaseEntity {
   tipo: string;
 
   @Column({ name: 'valor', type: 'decimal', precision: 10, scale: 2 })
-  valor: number;
+  valor: string;
 
   @Column({ name: 'data', type: 'date', nullable: true })
   data: string | null;

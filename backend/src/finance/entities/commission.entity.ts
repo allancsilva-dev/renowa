@@ -52,17 +52,17 @@ export class Commission extends VersionedBaseEntity {
 
   // Valores
   @Column({ name: 'valor_pedido', type: 'decimal', precision: 12, scale: 2, nullable: true })
-  valor_pedido: number | null;
+  valor_pedido: string | null;
 
   @Column({ name: 'valor_faturado', type: 'decimal', precision: 12, scale: 2, nullable: true })
-  valor_faturado: number | null;
+  valor_faturado: string | null;
 
   @Column({ name: 'perc_comissao', type: 'decimal', precision: 5, scale: 2, nullable: true })
-  perc_comissao: number | null;
+  perc_comissao: string | null;
 
   /** Snapshot imutável — calculado no lançamento */
   @Column({ name: 'valor_comissao', type: 'decimal', precision: 12, scale: 2, default: 0 })
-  valor_comissao: number;
+  valor_comissao: string;
 
   /** 'pendente' | 'faturado' | 'pago' */
   @Column({ name: 'status', type: 'varchar', default: 'pendente' })

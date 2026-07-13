@@ -6,6 +6,7 @@ import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import api from '@/lib/apiClient';
 import type { Product, PaginatedResponse } from '@/types';
+import { moneyForDisplay } from '@/lib/decimal';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -38,7 +39,7 @@ export default function Produtos() {
       key: 'preco_base',
       header: 'Preço Base',
       // preco_base é nullable no modelo de dados
-      cell: (row: Product) => row.preco_base != null ? BRL.format(row.preco_base) : '—',
+      cell: (row: Product) => row.preco_base != null ? BRL.format(moneyForDisplay(row.preco_base)) : '—',
     },
   ];
 

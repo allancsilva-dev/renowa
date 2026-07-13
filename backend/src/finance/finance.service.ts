@@ -12,6 +12,7 @@ import { optimisticSoftDelete, optimisticUpdate } from '../common/persistence/op
 import { CreateComissaoDto, UpdateComissaoDto } from './dto/create-comissao.dto';
 import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
+import { decimal, money, percentageOf, sumMoney } from '../common/decimal/decimal';
 
 @Injectable()
 export class FinanceService {
@@ -51,7 +52,7 @@ export class FinanceService {
     const m = this.movimentoRepo.create({
       uuid: dto.uuid,
       tipo: dto.tipo,
-      valor: dto.valor,
+      valor: money(dto.valor),
       data: dto.data ?? null,
       descricao: dto.descricao ?? null,
       tenant_id: tenantId,
@@ -62,7 +63,7 @@ export class FinanceService {
   async updateMovimento(uuid: string, dto: UpdateMovementDto, tenantId: string): Promise<FinanceMovement> {
     const patch: Partial<FinanceMovement> = {};
     if (dto.tipo !== undefined) patch.tipo = dto.tipo;
-    if (dto.valor !== undefined) patch.valor = dto.valor;
+    if (dto.valor !== undefined) patch.valor = money(dto.valor);
     if (dto.data !== undefined) patch.data = dto.data ?? null;
     if (dto.descricao !== undefined) patch.descricao = dto.descricao ?? null;
     return optimisticUpdate({
@@ -127,9 +128,9 @@ export class FinanceService {
   // ── Fluxo de Caixa ────────────────────────────────────────
 
   async getFluxoCaixa(tenantId: string, mes: number, ano: number): Promise<{
-    receitas: number;
-    custos: number;
-    saldo: number;
+    receitas: string;
+    custos: string;
+    saldo: string;
     lancamentos: FinanceMovement[];
   }> {
     const lancamentos = await this.movimentoRepo
@@ -152,13 +153,12 @@ export class FinanceService {
       .andWhere('EXTRACT(YEAR FROM c.data_faturamento) = :ano', { ano })
       .getRawOne<{ total: string }>();
 
-    const receitas = parseFloat(comissoesResult?.total ?? '0');
-    const custos = lancamentos.reduce((acc, l) => {
-      if (l.tipo === 'Custo Fixo' || l.tipo === 'Custo Rotativo') return acc + Number(l.valor);
-      return acc;
-    }, 0);
+    const receitas = money(comissoesResult?.total);
+    const custos = sumMoney(lancamentos
+      .filter((l) => l.tipo === 'Custo Fixo' || l.tipo === 'Custo Rotativo')
+      .map((l) => l.valor));
 
-    return { receitas, custos, saldo: receitas - custos, lancamentos };
+    return { receitas, custos, saldo: money(decimal(receitas).minus(custos)), lancamentos };
   }
 
   // ── Comissões ─────────────────────────────────────────────
@@ -183,13 +183,14 @@ export class FinanceService {
       numero_nfe: dto.numero_nfe ?? null,
       data_pedido: dto.data_pedido ?? null,
       data_faturamento: dto.data_faturamento ?? null,
-      valor_pedido: dto.valor_pedido ?? null,
-      valor_faturado: dto.valor_faturado ?? null,
-      perc_comissao: dto.perc_comissao ?? null,
-      valor_comissao: dto.valor_comissao
-        ?? (dto.valor_pedido && dto.perc_comissao
-          ? Math.round(dto.valor_pedido * (dto.perc_comissao / 100) * 100) / 100
-          : 0),
+      valor_pedido: dto.valor_pedido === undefined ? null : money(dto.valor_pedido),
+      valor_faturado: dto.valor_faturado === undefined ? null : money(dto.valor_faturado),
+      perc_comissao: dto.perc_comissao === undefined ? null : decimal(dto.perc_comissao).toFixed(2),
+      valor_comissao: dto.valor_comissao !== undefined
+        ? money(dto.valor_comissao)
+        : (dto.valor_pedido && dto.perc_comissao
+          ? percentageOf(dto.valor_pedido, dto.perc_comissao)
+          : '0.00'),
       status: dto.status ?? 'pendente',
     });
     return this.comissaoRepo.save(c);
@@ -199,8 +200,8 @@ export class FinanceService {
     const patch: Partial<Commission> = {};
     if (dto.numero_nfe !== undefined) patch.numero_nfe = dto.numero_nfe ?? null;
     if (dto.data_faturamento !== undefined) patch.data_faturamento = dto.data_faturamento ?? null;
-    if (dto.valor_faturado !== undefined) patch.valor_faturado = dto.valor_faturado ?? null;
-    if (dto.valor_comissao !== undefined) patch.valor_comissao = dto.valor_comissao;
+    if (dto.valor_faturado !== undefined) patch.valor_faturado = dto.valor_faturado === null ? null : money(dto.valor_faturado);
+    if (dto.valor_comissao !== undefined) patch.valor_comissao = money(dto.valor_comissao);
     if (dto.status !== undefined) patch.status = dto.status;
     return optimisticUpdate({
       repository: this.comissaoRepo,
@@ -254,10 +255,10 @@ export class FinanceService {
   }
 
   async getResumoComissoes(tenantId: string, mes?: number, ano?: number): Promise<{
-    total: number;
-    faturado: number;
-    pendente: number;
-    pago: number;
+    total: string;
+    faturado: string;
+    pendente: string;
+    pago: string;
   }> {
     const qb = this.comissaoRepo
       .createQueryBuilder('c')
@@ -280,10 +281,10 @@ export class FinanceService {
     const result = await qb.getRawOne<{ total: string; faturado: string; pendente: string; pago: string }>();
 
     return {
-      total: parseFloat(result?.total ?? '0'),
-      faturado: parseFloat(result?.faturado ?? '0'),
-      pendente: parseFloat(result?.pendente ?? '0'),
-      pago: parseFloat(result?.pago ?? '0'),
+      total: money(result?.total),
+      faturado: money(result?.faturado),
+      pendente: money(result?.pendente),
+      pago: money(result?.pago),
     };
   }
 
@@ -292,7 +293,7 @@ export class FinanceService {
     mes?: number,
     ano?: number,
     fornecedor_id?: number,
-  ): Promise<{ fornecedor_id: number; razao_social: string; total_faturado: number; total_comissao: number; registros: Commission[] }[]> {
+  ): Promise<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Commission[] }[]> {
     const qb = this.comissaoRepo
       .createQueryBuilder('c')
       .leftJoinAndSelect('c.cliente', 'cliente')
@@ -315,21 +316,21 @@ export class FinanceService {
 
     const registros = await qb.orderBy('c.data_pedido', 'DESC').getMany();
 
-    const mapa = new Map<number, { fornecedor_id: number; razao_social: string; total_faturado: number; total_comissao: number; registros: Commission[] }>();
+    const mapa = new Map<number, { fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Commission[] }>();
     for (const r of registros) {
       if (!r.fornecedor_id) continue;
       if (!mapa.has(r.fornecedor_id)) {
         mapa.set(r.fornecedor_id, {
           fornecedor_id: r.fornecedor_id,
           razao_social: r.fornecedor?.razao_social ?? `Fornecedor ${r.fornecedor_id}`,
-          total_faturado: 0,
-          total_comissao: 0,
+          total_faturado: '0.00',
+          total_comissao: '0.00',
           registros: [],
         });
       }
       const entry = mapa.get(r.fornecedor_id)!;
-      entry.total_faturado += Number(r.valor_faturado ?? 0);
-      entry.total_comissao += Number(r.valor_comissao ?? 0);
+      entry.total_faturado = sumMoney([entry.total_faturado, r.valor_faturado]);
+      entry.total_comissao = sumMoney([entry.total_comissao, r.valor_comissao]);
       entry.registros.push(r);
     }
 
@@ -371,10 +372,10 @@ export class FinanceService {
       numero_nfe: dto.numero_nfe ?? null,
       data_pedido: dto.data_pedido,
       data_faturamento: dto.data_faturamento ?? null,
-      valor_pedido: dto.valor_pedido ?? 0,
-      valor_faturado: dto.valor_faturado ?? null,
-      percentual_comissao: dto.percentual_comissao ?? 50,
-      valor_comissao: dto.valor_comissao,
+      valor_pedido: money(dto.valor_pedido ?? 0),
+      valor_faturado: dto.valor_faturado === undefined ? null : money(dto.valor_faturado),
+      percentual_comissao: decimal(dto.percentual_comissao ?? 50).toFixed(2),
+      valor_comissao: money(dto.valor_comissao),
       status: dto.status ?? 'pendente',
     });
     return this.parceiroRepo.save(p);
@@ -384,9 +385,9 @@ export class FinanceService {
     const patch: Partial<Parceiro> = {};
     if (dto.numero_nfe !== undefined) patch.numero_nfe = dto.numero_nfe ?? null;
     if (dto.data_faturamento !== undefined) patch.data_faturamento = dto.data_faturamento ?? null;
-    if (dto.valor_faturado !== undefined) patch.valor_faturado = dto.valor_faturado ?? null;
-    if (dto.percentual_comissao !== undefined) patch.percentual_comissao = dto.percentual_comissao;
-    if (dto.valor_comissao !== undefined) patch.valor_comissao = dto.valor_comissao;
+    if (dto.valor_faturado !== undefined) patch.valor_faturado = dto.valor_faturado === null ? null : money(dto.valor_faturado);
+    if (dto.percentual_comissao !== undefined) patch.percentual_comissao = decimal(dto.percentual_comissao).toFixed(2);
+    if (dto.valor_comissao !== undefined) patch.valor_comissao = money(dto.valor_comissao);
     if (dto.status !== undefined) patch.status = dto.status;
     return optimisticUpdate({
       repository: this.parceiroRepo,
@@ -464,7 +465,7 @@ export class FinanceService {
       tenant_id: tenantId,
       cliente_id,
       empresa_devedora: dto.empresa_devedora ?? null,
-      valor_aberto: dto.valor_aberto ?? null,
+      valor_aberto: dto.valor_aberto === undefined ? null : money(dto.valor_aberto),
       observacao: dto.observacao ?? null,
     });
     return this.inadimplenciaRepo.save(i);
@@ -473,7 +474,7 @@ export class FinanceService {
   async updateInadimplencia(uuid: string, dto: UpdateInadimplenciaDto, tenantId: string): Promise<Inadimplencia> {
     const patch: Partial<Inadimplencia> = {};
     if (dto.empresa_devedora !== undefined) patch.empresa_devedora = dto.empresa_devedora ?? null;
-    if (dto.valor_aberto !== undefined) patch.valor_aberto = dto.valor_aberto ?? null;
+    if (dto.valor_aberto !== undefined) patch.valor_aberto = dto.valor_aberto === null ? null : money(dto.valor_aberto);
     if (dto.observacao !== undefined) patch.observacao = dto.observacao ?? null;
     return optimisticUpdate({
       repository: this.inadimplenciaRepo,
@@ -520,11 +521,11 @@ export class FinanceService {
   // ── Dashboard ─────────────────────────────────────────────
 
   async getDashboard(tenantId: string): Promise<{
-    totalVendas: number;
-    totalCustoFixo: number;
-    totalCustoRotativo: number;
-    totalComissoes: number;
-    totalInadimplencia: number;
+    totalVendas: string;
+    totalCustoFixo: string;
+    totalCustoRotativo: string;
+    totalComissoes: string;
+    totalInadimplencia: string;
   }> {
     const [movResult, comResult, inadResult] = await Promise.all([
       this.movimentoRepo
@@ -554,11 +555,11 @@ export class FinanceService {
     ]);
 
     return {
-      totalVendas: parseFloat(movResult?.vendas ?? '0'),
-      totalCustoFixo: parseFloat(movResult?.custo_fixo ?? '0'),
-      totalCustoRotativo: parseFloat(movResult?.custo_rotativo ?? '0'),
-      totalComissoes: parseFloat(comResult?.total ?? '0'),
-      totalInadimplencia: parseFloat(inadResult?.total ?? '0'),
+      totalVendas: money(movResult?.vendas),
+      totalCustoFixo: money(movResult?.custo_fixo),
+      totalCustoRotativo: money(movResult?.custo_rotativo),
+      totalComissoes: money(comResult?.total),
+      totalInadimplencia: money(inadResult?.total),
     };
   }
 }

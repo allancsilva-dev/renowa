@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDecimal, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateMovementDto {
   @IsUUID('4')
@@ -9,9 +9,8 @@ export class CreateMovementDto {
   @IsString()
   tipo: string;
 
-  @IsNumber()
-  @Min(0)
-  valor: number;
+  @IsDecimal({ decimal_digits: '1,2', force_decimal: false })
+  valor: string;
 
   @IsOptional()
   @IsString()

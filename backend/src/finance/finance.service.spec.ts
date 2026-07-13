@@ -29,7 +29,7 @@ describe('FinanceService tenant supplier validation', () => {
     const result = await service.createComissao({
       uuid: '73a301b7-66f2-49b6-9130-783d5de2497e',
       fornecedor_id: 42,
-      valor_comissao: 10,
+      valor_comissao: '10.00',
     }, 'tenant-a');
 
     expect(dataSource.query).toHaveBeenCalledWith(
@@ -45,7 +45,7 @@ describe('FinanceService tenant supplier validation', () => {
     await expect(service.createComissao({
       uuid: '73a301b7-66f2-49b6-9130-783d5de2497e',
       fornecedor_id: 42,
-      valor_comissao: 10,
+      valor_comissao: '10.00',
     }, 'tenant-b')).rejects.toBeInstanceOf(NotFoundException);
 
     expect(commissionRepo.save).not.toHaveBeenCalled();
@@ -56,7 +56,7 @@ describe('FinanceService tenant supplier validation', () => {
       uuid: '73a301b7-66f2-49b6-9130-783d5de2497e',
       nome_parceiro: 'Parceiro',
       data_pedido: '2026-07-12',
-      valor_comissao: 10,
+      valor_comissao: '10.00',
     }, 'tenant-a');
 
     expect(dataSource.query).not.toHaveBeenCalled();
