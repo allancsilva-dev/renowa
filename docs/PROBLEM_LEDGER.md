@@ -233,17 +233,17 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** EM_ANDAMENTO
 - **Área:** banco / segurança
-- **Sintoma:** `tenant_role_permissions` não tem coluna `tenant_id` — é tenant-escopado só transitivamente via `role_id → tenant_roles.tenant_id`. `permissions` e `role_permissions` também sem `tenant_id`.
-- **Causa raiz:** confirmada — tabelas de catálogo/junção não modeladas com `tenant_id`.
-- **Impacto técnico:** viola a invariante declarada; isolamento depende sempre de join. `permissions`/`role_permissions` são plausivelmente catálogos globais intencionais (suposição), mas `tenant_role_permissions` é dado de tenant e deveria carregar `tenant_id`.
-- **Arquivos/módulos:** `tenant-role-permission.entity.ts`; migration `003:33-39`; `permission.guard.ts:55-60`
-- **Solução proposta:** adicionar `tenant_id` a `tenant_role_permissions` e filtrar explicitamente no `PermissionGuard`.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer` + `security-auditor`.
-- **Evidências/comandos:** leitura das entidades RBAC e migration 003.
-- **Riscos residuais:** hoje seguro porque `role_id` vem do `local_user` tenant-escopado — dependência implícita.
-- **Próximo passo:** decidir modelo RBAC (ver PROB-0034 sobre dois modelos coexistentes).
+- **Sintoma:** originalmente, `tenant_role_permissions` não carregava `tenant_id` e dependia do join transitivo `role_id → tenant_roles.tenant_id`. `permissions` e `role_permissions` permanecem catálogos globais intencionais.
+- **Causa raiz:** confirmada — associação tenant-específica foi criada sem modelar seu escopo explicitamente; além disso, a migration antiga `007_*` não era executada pelo runner de migrations com prefixo de quatro dígitos.
+- **Impacto técnico:** antes da correção, isolamento dependia sempre do join com `tenant_roles`; banco não expressava diretamente ownership da associação.
+- **Arquivos/módulos:** `tenant-role-permission.entity.ts`; `permissions.service.ts`; `permission.guard.ts`; migrations `003_tenant_rbac_model.sql`, `007_tenant_role_permissions_tenant.sql` e `0021_cross_tenant_foreign_keys.sql`; `cross-tenant-foreign-keys.spec.ts`; `permissions.service.spec.ts`
+- **Solução proposta:** adicionar `tenant_id NOT NULL`, unicidade `(tenant_id, role_id, permission_slug)`, FK composta `(tenant_id, role_id)`, metadata TypeORM composta e filtro explícito de tenant nas consultas de permissões.
+- **Solução aplicada:** migration efetiva `0021_cross_tenant_foreign_keys.sql` recupera o modelo ignorado da `007_*`: adiciona e preenche `tenant_id`, exige `NOT NULL`, cria unicidade e índice tenant-escopados e FK composta para `tenant_roles(tenant_id, id)`. Entidade usa `@JoinColumn` composto. `PermissionsService.listEffectiveForRole` filtra `{ tenantId, roleId }`; `PermissionGuard` fornece ambos a partir do usuário autenticado.
+- **Evidências/comandos:** teste dedicado cobre metadata TypeORM e migration composta; teste de `PermissionsService` confirma filtro por tenant. `npm test --workspace=backend -- cross-tenant-foreign-keys --runInBand` — 21/21; suíte backend completa — 116/116; `npm run build --workspace=backend` passou durante PROB-0011. Lint não executou naquela validação porque `eslint` não estava instalado no workspace.
+- **Riscos residuais:** migration ainda não aplicada contra PostgreSQL real por falta de credencial e Docker parado; faltam evidência do catálogo, medição de locks e tentativa cross-tenant retornando `23503`. Coexistência do modelo global `role_permissions` segue separada em PROB-0034.
+- **Próximo passo:** aplicar migration em clone/staging, confirmar constraints validadas, testar escrita cross-tenant real e então marcar `FECHADO`.
 - **Relacionado:** PROB-0034
 
 ### PROB-0013 — `mobile_sessions` e `parceiros_comerciais` ausentes de todas as migrations
