@@ -4,6 +4,7 @@ import DataTable from '@/components/tables/DataTable';
 import apiClient from '@/lib/apiClient';
 import { getApiErrorMessage } from '@/lib/errors';
 import { normalizeListResponse, type PaginationMeta } from '@/lib/pagination';
+import Dialog from '@/components/ui/Dialog';
 
 interface TenantUser {
   id: string;
@@ -49,8 +50,8 @@ export default function UsuariosPage() {
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
-  const fetchUsers = useCallback(async (targetPage?: number) => {
-    const nextPage = targetPage ?? meta.page;
+  const fetchUsers = useCallback(async (targetPage = 1) => {
+    const nextPage = targetPage;
     setLoading(true);
     setError(null);
 
@@ -84,10 +85,10 @@ export default function UsuariosPage() {
     } finally {
       setLoading(false);
     }
-  }, [meta.page]);
+  }, []);
 
   useEffect(() => {
-    void fetchUsers(1);
+    void fetchUsers();
   }, [fetchUsers]);
 
   const columns = useMemo(() => ([
@@ -240,25 +241,21 @@ export default function UsuariosPage() {
       />
 
       {isCreateOpen && (
-        <div className='fixed inset-0 z-40 flex items-center justify-center'>
-          <div
-            className='absolute inset-0 bg-black/40'
-            onClick={() => setIsCreateOpen(false)}
-          />
+        <Dialog open title='Novo usuário' onClose={() => setIsCreateOpen(false)} className='max-w-md'>
           <form
             onSubmit={handleCreateUser}
-            className='relative z-10 w-full max-w-md space-y-4 rounded-xl border bg-white p-6 shadow-xl'
+            className='space-y-4'
           >
-            <h2 className='text-base font-semibold text-slate-900'>Novo Usuário</h2>
             {createError && (
               <div className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600'>
                 {createError}
               </div>
             )}
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>E-mail</label>
+              <label htmlFor='new-user-email' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>E-mail</label>
               <input
                 type='email'
+                id='new-user-email'
                 required
                 value={createForm.email}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
@@ -266,9 +263,10 @@ export default function UsuariosPage() {
               />
             </div>
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nome</label>
+              <label htmlFor='new-user-name' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nome</label>
               <input
                 type='text'
+                id='new-user-name'
                 required
                 value={createForm.nome}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, nome: e.target.value }))}
@@ -276,9 +274,10 @@ export default function UsuariosPage() {
               />
             </div>
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Senha</label>
+              <label htmlFor='new-user-password' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Senha</label>
               <input
                 type='password'
+                id='new-user-password'
                 required
                 minLength={8}
                 autoComplete='new-password'
@@ -289,8 +288,9 @@ export default function UsuariosPage() {
               <p className='text-xs text-slate-400'>Mínimo 8 caracteres.</p>
             </div>
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Role</label>
+              <label htmlFor='new-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Role</label>
               <select
+                id='new-user-role'
                 value={createForm.role}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, role: e.target.value }))}
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
@@ -317,20 +317,15 @@ export default function UsuariosPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {editingUser && (
-        <div className='fixed inset-0 z-40 flex items-center justify-center'>
-          <div
-            className='absolute inset-0 bg-black/40'
-            onClick={() => setEditingUser(null)}
-          />
+        <Dialog open title='Editar usuário' onClose={() => setEditingUser(null)} className='max-w-md'>
           <form
             onSubmit={handleUpdateUser}
-            className='relative z-10 w-full max-w-md space-y-4 rounded-xl border bg-white p-6 shadow-xl'
+            className='space-y-4'
           >
-            <h2 className='text-base font-semibold text-slate-900'>Editar Usuário</h2>
             <p className='text-sm text-slate-500'>{editingUser.email}</p>
 
             {updateError && (
@@ -340,8 +335,9 @@ export default function UsuariosPage() {
             )}
 
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Role</label>
+              <label htmlFor='edit-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Role</label>
               <select
+                id='edit-user-role'
                 value={editRole}
                 onChange={(e) => setEditRole(e.target.value)}
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
@@ -362,9 +358,10 @@ export default function UsuariosPage() {
             </label>
 
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nova senha</label>
+              <label htmlFor='edit-user-password' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nova senha</label>
               <input
                 type='password'
+                id='edit-user-password'
                 minLength={8}
                 autoComplete='new-password'
                 placeholder='Deixe em branco para manter'
@@ -391,7 +388,7 @@ export default function UsuariosPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
     </div>
   );

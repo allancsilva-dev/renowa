@@ -4,6 +4,7 @@ import DataTable from '@/components/tables/DataTable';
 import apiClient from '@/lib/apiClient';
 import { getApiErrorMessage } from '@/lib/errors';
 import { normalizeListResponse, type PaginationMeta } from '@/lib/pagination';
+import Dialog from '@/components/ui/Dialog';
 
 interface Role {
   id: string;
@@ -49,8 +50,8 @@ export default function RolesPage() {
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [permissionsError, setPermissionsError] = useState<string | null>(null);
 
-  const fetchRoles = useCallback(async (targetPage?: number) => {
-    const nextPage = targetPage ?? meta.page;
+  const fetchRoles = useCallback(async (targetPage = 1) => {
+    const nextPage = targetPage;
     setLoading(true);
     setError(null);
 
@@ -84,7 +85,7 @@ export default function RolesPage() {
     } finally {
       setLoading(false);
     }
-  }, [meta.page]);
+  }, []);
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -98,7 +99,7 @@ export default function RolesPage() {
   }, []);
 
   useEffect(() => {
-    void fetchRoles(1);
+    void fetchRoles();
   }, [fetchRoles]);
 
   useEffect(() => {
@@ -144,6 +145,7 @@ export default function RolesPage() {
             type='button'
             onClick={async () => {
               if (permissionsLoading) return;
+              if (!window.confirm(`Desativar a role "${row.name}"? Usuários associados podem perder acesso.`)) return;
               setPermissionsLoading(true);
               setPermissionsError(null);
               try {
@@ -256,25 +258,21 @@ export default function RolesPage() {
       />
 
       {isCreateOpen && (
-        <div className='fixed inset-0 z-40 flex items-center justify-center'>
-          <div
-            className='absolute inset-0 bg-black/40'
-            onClick={() => setIsCreateOpen(false)}
-          />
+        <Dialog open title='Nova role' onClose={() => setIsCreateOpen(false)} className='max-w-md'>
           <form
             onSubmit={handleCreateRole}
-            className='relative z-10 w-full max-w-md space-y-4 rounded-xl border bg-white p-6 shadow-xl'
+            className='space-y-4'
           >
-            <h2 className='text-base font-semibold text-slate-900'>Nova Role</h2>
             {createError && (
               <div className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600'>
                 {createError}
               </div>
             )}
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nome</label>
+              <label htmlFor='new-role-name' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nome</label>
               <input
                 type='text'
+                id='new-role-name'
                 required
                 value={createForm.name}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
@@ -282,8 +280,9 @@ export default function RolesPage() {
               />
             </div>
             <div className='space-y-1'>
-              <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Descrição</label>
+              <label htmlFor='new-role-description' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Descrição</label>
               <textarea
+                id='new-role-description'
                 rows={3}
                 value={createForm.description}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
@@ -307,20 +306,15 @@ export default function RolesPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
 
       {editingRole && (
-        <div className='fixed inset-0 z-40 flex items-center justify-center'>
-          <div
-            className='absolute inset-0 bg-black/40'
-            onClick={() => setEditingRole(null)}
-          />
+        <Dialog open title={`Permissões da role: ${editingRole.name}`} onClose={() => setEditingRole(null)} className='max-w-2xl'>
           <form
             onSubmit={handleSavePermissions}
-            className='relative z-10 w-full max-w-2xl space-y-4 rounded-xl border bg-white p-6 shadow-xl'
+            className='space-y-4'
           >
-            <h2 className='text-base font-semibold text-slate-900'>Permissões da role: {editingRole.name}</h2>
 
             <div className='grid max-h-80 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:grid-cols-2'>
               {permissions.map((permission) => (
@@ -358,7 +352,7 @@ export default function RolesPage() {
               </button>
             </div>
           </form>
-        </div>
+        </Dialog>
       )}
     </div>
   );
