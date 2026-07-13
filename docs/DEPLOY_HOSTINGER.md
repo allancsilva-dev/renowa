@@ -1,6 +1,6 @@
 # Deploy Hostinger VPS
 
-Modelo recomendado: Docker Compose sobe API e frontend sem publicar portas no host. O Nginx Proxy Manager acessa `Renowa-Web:80` pela rede Docker externa `proxy`. O frontend encaminha `/api` para a API pela rede interna dedicada `api_gateway`.
+Modelo recomendado: Docker Compose publica API e frontend somente no loopback da VPS (`127.0.0.1:3083` e `127.0.0.1:3080`, respectivamente), sem exposicao direta na interface publica. O Nginx Proxy Manager tambem pode acessar `Renowa-Web:80` pela rede Docker externa `proxy`. O frontend encaminha `/api` para a API pela rede interna dedicada `api_gateway`.
 
 ## Pre-requisitos
 

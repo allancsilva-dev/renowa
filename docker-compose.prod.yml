@@ -52,6 +52,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:3083:3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s
@@ -73,6 +75,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:3080:80"
     networks:
       proxy: {}
       api_gateway:
