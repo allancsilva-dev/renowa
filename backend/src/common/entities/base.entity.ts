@@ -2,7 +2,6 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  UpdateDateColumn,
   DeleteDateColumn,
   Generated,
 } from 'typeorm';
@@ -28,12 +27,19 @@ export abstract class BaseEntity {
   @Column({ name: 'tenant_id', type: 'uuid' })
   tenant_id: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  // Autoridade exclusiva do PostgreSQL: DEFAULT + trigger set_updated_at().
+  @Column({
+    name: 'updated_at',
+    type: 'timestamptz',
+    default: () => 'CURRENT_TIMESTAMP',
+    insert: false,
+    update: false,
+  })
   updated_at: Date;
 
-  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deleted_at: Date | null;
 }

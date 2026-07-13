@@ -18,6 +18,6 @@ export class RolePermission {
   @JoinColumn({ name: 'permission_slug', referencedColumnName: 'slug' })
   permission: Permission;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 }

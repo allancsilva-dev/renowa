@@ -340,7 +340,7 @@ export class SyncService {
       .map((column, index) => `${this.quoteIdentifier(column)} = $${index + 3}`)
       .join(', ');
     await qr.query(
-      `UPDATE ${this.quoteIdentifier(table)} SET ${assignments}, updated_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
+      `UPDATE ${this.quoteIdentifier(table)} SET ${assignments} WHERE uuid = $1 AND tenant_id = $2`,
       [uuid, tenantId, ...columns.map((column) => record[column])],
     );
   }

@@ -676,17 +676,18 @@ Origem: análise do usuário (`docs/PossiveisErros.md`) sobre `Prompt_Auth_Nativ
 - **Data:** 2026-07-08
 - **Origem:** revisão
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** banco
 - **Sintoma:** `@CreateDateColumn`/`@UpdateDateColumn`/`@DeleteDateColumn` na entidade base geram, no Postgres, colunas `timestamp without time zone`. O trigger `set_updated_at` grava `now()` (que é `timestamptz`); o offset é descartado no armazenamento. Comparações de conflito passam a depender do fuso do container.
 - **Causa raiz:** confirmada — tipo default do TypeORM para `@*DateColumn` no Postgres é `timestamp` sem tz; `timezone:'UTC'` no `TypeOrmModule` é opção mysql-only e é ignorada no Postgres (ver PROB-0036).
 - **Impacto técnico:** toda a estratégia de sync é "último `updated_at` vence" comparando timestamps entre mobile (offline, fuso local) e servidor. Sem tz, o LWW corrompe silenciosamente sob qualquer skew de fuso.
 - **Arquivos/módulos:** `backend/src/common/entities/base.entity.ts:31-38`; `backend/src/database/migrations/001_initial_schema.sql:9-15`; `app.module.ts:50`
 - **Solução proposta:** padronizar `TIMESTAMPTZ` em todas as colunas de data (`{ type: 'timestamptz' }` nas colunas da base + demais datas do financeiro); forçar `TimeZone=UTC` na conexão; entrar na migration baseline.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer` + `backend-engineer`.
-- **Evidências/comandos:** leitura de `base.entity.ts` (sem `type` explícito) + trigger da migration.
-- **Riscos residuais:** migração de tipo em coluna existente exige `USING ... AT TIME ZONE` correto para não deslocar dados já gravados.
-- **Próximo passo:** definir conversão na migration baseline junto de BACKLOG-0004.
+- **Solução aplicada:** migration incremental `0020_utc_timestamps_db_authority.sql` converte deterministicamente todo `timestamp without time zone` de `public` para `timestamptz` com `AT TIME ZONE 'UTC'`; metadata TypeORM declara `timestamptz`; conexões da aplicação e do runner usam sessão UTC. Migrations já aplicadas não foram reescritas, preservando checksums.
+- **Evidências/comandos:** teste de contrato temporal, testes de sync/concorrência, suíte backend completa (95 testes) e build. Lint indisponível porque o workspace não possui binário ESLint instalado/configurado.
+- **Riscos residuais:** conversão toma lock nas tabelas; deploy deve reservar janela compatível com o volume. Valores históricos são interpretados como UTC conforme contrato legado documentado. Apresentação deve usar `America/Sao_Paulo`; datas comerciais sem instante devem continuar como `DATE`.
+- **Próximo passo:** monitorar duração e locks da migration no primeiro deploy com volume real.
 - **Relacionado:** PROB-0022, PROB-0036, BACKLOG-0004, BACKLOG-0009
 
 ### PROB-0038 — Backend sem `trust proxy` atrás do Nginx Proxy Manager
@@ -710,17 +711,18 @@ Origem: análise do usuário (`docs/PossiveisErros.md`) sobre `Prompt_Auth_Nativ
 - **Data:** 2026-07-08
 - **Origem:** revisão
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Verificado em:** 2026-07-12
 - **Área:** banco / backend
 - **Sintoma:** `@UpdateDateColumn` faz o TypeORM escrever `updated_at` pelo relógio da aplicação; o trigger `set_updated_at` sobrescreve com o relógio do banco em todo UPDATE. Ora um, ora outro é autoritativo dependendo do caminho de escrita (ORM vs. SQL cru do sync).
 - **Causa raiz:** confirmada — dois mecanismos de timestamp ativos simultaneamente.
 - **Impacto técnico:** qualquer skew entre relógio do app e do banco corrompe o LWW do sync (que compara `updated_at`). UPDATE via ORM tem o valor do app potencialmente sobrescrito pelo trigger — comportamento não-determinístico entre caminhos.
 - **Arquivos/módulos:** `backend/src/common/entities/base.entity.ts:34-35`; `backend/src/database/migrations/001_initial_schema.sql:9-50`
 - **Solução proposta:** escolher fonte única — o trigger do banco (relógio único, autoritativo). Configurar a coluna como `{ update: false }` (ou não usar `@UpdateDateColumn`) para o TypeORM não escrever `updated_at`. Documentar a decisão.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura de `base.entity.ts` + triggers da migration.
-- **Riscos residuais:** garantir que o SQL cru do sync também não seta `updated_at` manualmente (deixar o trigger cuidar).
-- **Próximo passo:** decidir fonte única junto de PROB-0037.
+- **Solução aplicada:** PostgreSQL tornou-se autoridade exclusiva. `updated_at` é coluna TypeORM comum com `insert:false`/`update:false`; trigger `BEFORE INSERT OR UPDATE` usa `clock_timestamp()`. Escritas manuais foram removidas de sync, optimistic locking e anonimização LGPD. Migration garante trigger em toda tabela `public` que possua `updated_at`.
+- **Evidências/comandos:** teste de metadata prova ausência de `@UpdateDateColumn`; testes de sync e optimistic locking provam ausência de atribuição manual; suíte backend completa (95 testes) e build. Lint indisponível porque o workspace não possui binário ESLint instalado/configurado.
+- **Riscos residuais:** novas tabelas com `updated_at` devem receber trigger em sua própria migration; migration `0020` cobre todas as tabelas existentes no momento da execução.
+- **Próximo passo:** manter contrato temporal nos reviews de novas migrations.
 - **Relacionado:** PROB-0022, PROB-0037, BACKLOG-0009
 
 ### PROB-0040 — Sem optimistic locking (`@VersionColumn`) → edição interativa concorrente perde dado

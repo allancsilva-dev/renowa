@@ -28,7 +28,7 @@ export class TenantRolePermission {
   @Column({ name: 'permission_slug', type: 'varchar', length: 100 })
   permissionSlug: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
   @ManyToOne(() => TenantRole, (role) => role.rolePermissions, {

@@ -152,6 +152,7 @@ describe('SyncService security', () => {
       ['7f9a9e95-78fb-41f8-83c9-108ddab00962', 'tenant-1', 25],
     ]);
     expect(query.mock.calls[2][0]).not.toContain('cliente_uuid');
+    expect(query.mock.calls[2][0]).not.toContain('updated_at');
     expect(queryRunner.commitTransaction).toHaveBeenCalled();
   });
 

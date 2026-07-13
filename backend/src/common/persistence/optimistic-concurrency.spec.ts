@@ -47,6 +47,7 @@ describe('optimistic concurrency', () => {
       { expectedVersion: 3 },
     );
     const set = updateBuilder.set.mock.calls[0][0];
+    expect(set.updated_at).toBeUndefined();
     expect(set.version()).toContain('version');
     expect(set.version()).toContain('+ 1');
   });
@@ -99,6 +100,7 @@ describe('optimistic concurrency', () => {
     await expect(optimisticSoftDelete({ ...baseOptions, repository: repo })).resolves.toBeUndefined();
 
     const set = updateBuilder.set.mock.calls[0][0];
+    expect(set.updated_at).toBeUndefined();
     expect(set.deleted_at()).toBe('CURRENT_TIMESTAMP');
     expect(set.version()).toContain('version');
     expect(set.version()).toContain('+ 1');

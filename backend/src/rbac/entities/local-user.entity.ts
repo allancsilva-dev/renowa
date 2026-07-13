@@ -9,7 +9,6 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
   Unique,
-  UpdateDateColumn,
 } from 'typeorm';
 import { TenantRole } from './tenant-role.entity';
 
@@ -44,13 +43,13 @@ export class LocalUser {
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   lastLoginAt: Date | null;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP', insert: false, update: false })
   updatedAt: Date;
 
-  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt: Date | null;
 
   @ManyToOne(() => TenantRole)

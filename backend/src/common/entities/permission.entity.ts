@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('permissions')
 export class Permission {
@@ -15,9 +15,9 @@ export class Permission {
   @Column({ type: 'varchar', length: 50 })
   module: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   created_at: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP', insert: false, update: false })
   updated_at: Date;
 }

@@ -15,6 +15,7 @@ export async function runMigrations(): Promise<void> {
   await client.connect();
 
   try {
+    await client.query(`SET TIME ZONE 'UTC'`);
     await client.query('SELECT pg_advisory_lock($1)', [ADVISORY_LOCK_ID]);
     await client.query(`
       CREATE TABLE IF NOT EXISTS public.schema_migrations (

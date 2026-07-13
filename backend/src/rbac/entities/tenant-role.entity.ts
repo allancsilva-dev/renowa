@@ -8,7 +8,6 @@ import {
   OneToMany,
   PrimaryGeneratedColumn,
   Unique,
-  UpdateDateColumn,
 } from 'typeorm';
 import { TenantRolePermission } from './tenant-role-permission.entity';
 
@@ -36,13 +35,13 @@ export class TenantRole {
   @Column({ type: 'boolean', default: true })
   active!: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP', insert: false, update: false })
   updatedAt!: Date;
 
-  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
   deletedAt!: Date | null;
 
   @OneToMany(() => TenantRolePermission, (trp) => trp.role)

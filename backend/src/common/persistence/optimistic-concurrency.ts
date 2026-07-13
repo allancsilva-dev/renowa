@@ -46,7 +46,6 @@ export async function optimisticUpdate<T extends VersionedRecord>(
     .set({
       ...options.patch,
       version: () => '"version" + 1',
-      updated_at: () => 'CURRENT_TIMESTAMP',
     } as QueryDeepPartialEntity<T>)
     .where('uuid = :uuid', { uuid: options.uuid })
     .andWhere('tenant_id = :tenantId', { tenantId: options.tenantId })
@@ -67,7 +66,6 @@ export async function optimisticSoftDelete<T extends VersionedRecord>(
     .update()
     .set({
       deleted_at: () => 'CURRENT_TIMESTAMP',
-      updated_at: () => 'CURRENT_TIMESTAMP',
       version: () => '"version" + 1',
     } as QueryDeepPartialEntity<T>)
     .where('uuid = :uuid', { uuid: options.uuid })

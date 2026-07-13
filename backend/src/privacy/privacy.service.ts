@@ -60,7 +60,7 @@ export class PrivacyService {
         const result = await manager.query(`UPDATE clientes SET razao_social = $3, cnpj = NULL, email = NULL,
           tel = NULL, endereco = NULL, bairro = NULL, cidade = NULL, uf = NULL, cep = NULL, contato = NULL,
           inscricao_estadual = NULL, suframa = NULL, pgt_padrao = NULL, prazo = NULL, local_entrega = NULL,
-          observacao = NULL, deleted_at = COALESCE(deleted_at, clock_timestamp()), updated_at = clock_timestamp(), version = version + 1
+          observacao = NULL, deleted_at = COALESCE(deleted_at, clock_timestamp()), version = version + 1
           WHERE tenant_id = $1 AND uuid = $2 RETURNING uuid`, [user.tenantId, request.subject_uuid, marker]);
         if (!result[0]) throw new NotFoundException('Titular não encontrado.');
         request.result = { strategy: 'ANONYMIZED_WITH_RELATIONS_RETAINED', fieldsRemoved: ANONYMIZED_FIELDS.length };

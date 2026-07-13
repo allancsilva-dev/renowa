@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 export type LgpdRequestStatus = 'RECEIVED' | 'IDENTITY_VERIFIED' | 'APPROVED' | 'IN_PROGRESS' | 'COMPLETED' | 'DENIED' | 'FAILED';
 export type LgpdRequestType = 'ERASURE' | 'EXPORT';
@@ -20,6 +20,6 @@ export class LgpdRequest {
   @Column({ type: 'text', nullable: true }) failure_reason: string | null;
   @Column({ type: 'jsonb', default: {} }) result: Record<string, unknown>;
   @CreateDateColumn({ type: 'timestamptz' }) created_at: Date;
-  @UpdateDateColumn({ type: 'timestamptz' }) updated_at: Date;
+  @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP', insert: false, update: false }) updated_at: Date;
   @Column({ type: 'timestamptz', nullable: true }) completed_at: Date | null;
 }
