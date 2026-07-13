@@ -34,7 +34,10 @@ export class TenantRolePermission {
   @ManyToOne(() => TenantRole, (role) => role.rolePermissions, {
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'role_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenantId' },
+    { name: 'role_id', referencedColumnName: 'id' },
+  ])
   role: TenantRole;
 
   @ManyToOne(() => Permission, { eager: true, onDelete: 'CASCADE' })

@@ -12,7 +12,10 @@ export class Inadimplencia extends VersionedBaseEntity {
   cliente_id: number | null;
 
   @ManyToOne(() => Client, { nullable: true })
-  @JoinColumn({ name: 'cliente_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'cliente_id', referencedColumnName: 'id' },
+  ])
   cliente: Client | null;
 
   @Column({ name: 'empresa_devedora', type: 'varchar', nullable: true })

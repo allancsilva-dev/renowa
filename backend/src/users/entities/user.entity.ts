@@ -10,6 +10,7 @@ import { BaseEntity } from '../../common/entities/base.entity';
  * CHANGELOG #7: roles é string[].
  */
 @Entity('usuarios')
+@Index(['tenant_id', 'id'], { unique: true })
 @Index(['tenant_id', 'uuid'], { unique: true })   // CHANGELOG #2
 @Index(['email'], { unique: true })               // Auth nativa: email global único
 export class User extends BaseEntity {

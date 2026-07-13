@@ -3,6 +3,7 @@ import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity
 import { Transport } from '../../transport/entities/transport.entity';
 
 @Entity('clientes')
+@Index(['tenant_id', 'id'], { unique: true })
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])
@@ -59,6 +60,9 @@ export class Client extends VersionedBaseEntity {
   transportadora_id: number | null;
 
   @ManyToOne(() => Transport, { nullable: true })
-  @JoinColumn({ name: 'transportadora_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'transportadora_id', referencedColumnName: 'id' },
+  ])
   transportadora: Transport | null;
 }

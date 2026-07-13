@@ -53,6 +53,9 @@ export class LocalUser {
   deletedAt: Date | null;
 
   @ManyToOne(() => TenantRole)
-  @JoinColumn({ name: 'role_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenantId' },
+    { name: 'role_id', referencedColumnName: 'id' },
+  ])
   role: TenantRole;
 }

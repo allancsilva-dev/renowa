@@ -20,14 +20,20 @@ export class Commission extends VersionedBaseEntity {
   cliente_id: number | null;
 
   @ManyToOne(() => Client, { nullable: true })
-  @JoinColumn({ name: 'cliente_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'cliente_id', referencedColumnName: 'id' },
+  ])
   cliente: Client | null;
 
   @Column({ name: 'fornecedor_id', type: 'int', nullable: true })
   fornecedor_id: number | null;
 
   @ManyToOne(() => Supplier, { nullable: true })
-  @JoinColumn({ name: 'fornecedor_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'fornecedor_id', referencedColumnName: 'id' },
+  ])
   fornecedor: Supplier | null;
 
   // Dados do pedido/NF

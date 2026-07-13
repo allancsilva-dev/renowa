@@ -2,6 +2,7 @@ import { Column, Entity, Index } from 'typeorm';
 import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 
 @Entity('fornecedores')
+@Index(['tenant_id', 'id'], { unique: true })
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])

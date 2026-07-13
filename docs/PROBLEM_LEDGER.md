@@ -223,10 +223,10 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Impacto técnico:** vazamento cross-tenant na camada de integridade; ex.: `leftJoinAndSelect('c.fornecedor')` pode trazer `razao_social` de outro tenant.
 - **Arquivos/módulos:** `order.entity.ts:31,41,48`; `client.entity.ts:61`; `product.entity.ts:13`; `inadimplencia.entity.ts:14`; `commission.entity.ts:22,29`; `parceiro.entity.ts:21,28`; `order-item.entity.ts:15,23`
 - **Solução proposta:** FKs compostas `(tenant_id, cliente_id) REFERENCES clientes(tenant_id, id)` etc.; exige unique composto nos pais.
-- **Solução aplicada:** nenhuma ainda. Delegado a `database-engineer` + `security-auditor`.
-- **Evidências/comandos:** leitura das entidades.
-- **Riscos residuais:** hoje mitigado só por disciplina de aplicação (services filtram tenant).
-- **Próximo passo:** planejar migração de constraints compostas.
+- **Solução aplicada:** migration incremental `0021_cross_tenant_foreign_keys.sql` audita e aborta diante de referências cross-tenant, recupera o escopo tenant de `tenant_role_permissions` ignorado pela migration antiga `007_*`, cria chaves/índices compostos, adiciona 16 FKs `(tenant_id, <fk>_id)` como `NOT VALID`, valida e só então remove FKs simples legadas. Entidades TypeORM usam `@JoinColumn` composto; `permissions` permanece catálogo global.
+- **Evidências/comandos:** teste dedicado valida 16 relações, metadata TypeORM, cobertura da auditoria e ordem `NOT VALID`/`VALIDATE`; `npm test --workspace=backend -- cross-tenant-foreign-keys --runInBand` — 21/21; suíte backend completa — 116/116; `npm run build --workspace=backend` passou. Lint não executou porque `eslint` não está instalado no workspace. PostgreSQL local exige credencial não disponível e Docker está parado, então migration ainda não foi aplicada contra banco real.
+- **Riscos residuais:** índices são criados dentro da transação do runner atual e exigem janela operacional compatível com volume; auditoria e constraints ainda precisam ser executadas em staging/produção. Status permanece aberto até evidência do catálogo PostgreSQL e tentativa cross-tenant retornando `23503`.
+- **Próximo passo:** aplicar em clone/staging com volume representativo, confirmar auditoria zerada, medir locks, testar escrita cross-tenant real e então promover para produção.
 - **Relacionado:** PROB-0026, BACKLOG-0006
 
 ### PROB-0012 — Invariante "tenant_id em TODA tabela" violado em `tenant_role_permissions`

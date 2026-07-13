@@ -3,6 +3,7 @@ import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity
 import { Supplier } from '../../suppliers/entities/supplier.entity';
 
 @Entity('produtos')
+@Index(['tenant_id', 'id'], { unique: true })
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])
@@ -11,7 +12,10 @@ export class Product extends VersionedBaseEntity {
   fornecedor_id: number | null;
 
   @ManyToOne(() => Supplier, { nullable: true })
-  @JoinColumn({ name: 'fornecedor_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'fornecedor_id', referencedColumnName: 'id' },
+  ])
   fornecedor: Supplier | null;
 
   @Column({ name: 'codigo', type: 'varchar', nullable: true })

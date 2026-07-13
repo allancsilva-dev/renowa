@@ -12,6 +12,7 @@ import {
 import { TenantRolePermission } from './tenant-role-permission.entity';
 
 @Entity('tenant_roles')
+@Unique(['tenantId', 'id'])
 @Unique(['tenantId', 'name'])
 @Index(['tenantId'])
 @Index(['tenantId', 'active'])

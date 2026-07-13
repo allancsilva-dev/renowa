@@ -11,6 +11,7 @@ import { OrderItem } from './order-item.entity';
  * CHANGELOG #9: UNIQUE(tenant_id, numero_pedido) — NUNCA UNIQUE simples.
  */
 @Entity('pedidos')
+@Index(['tenant_id', 'id'], { unique: true })
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'numero_pedido'], { unique: true, where: 'numero_pedido IS NOT NULL' })
 @Index(['tenant_id', 'updated_at'])
@@ -29,7 +30,10 @@ export class Order extends VersionedBaseEntity {
   cliente_id: number | null;
 
   @ManyToOne(() => Client, { nullable: true })
-  @JoinColumn({ name: 'cliente_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'cliente_id', referencedColumnName: 'id' },
+  ])
   cliente: Client | null;
 
   @Column({ name: 'vendedor_id', type: 'int', nullable: true })
@@ -39,14 +43,20 @@ export class Order extends VersionedBaseEntity {
   fornecedor_id: number | null;
 
   @ManyToOne(() => Supplier, { nullable: true })
-  @JoinColumn({ name: 'fornecedor_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'fornecedor_id', referencedColumnName: 'id' },
+  ])
   fornecedor: Supplier | null;
 
   @Column({ name: 'transportadora_id', type: 'int', nullable: true })
   transportadora_id: number | null;
 
   @ManyToOne(() => Transport, { nullable: true })
-  @JoinColumn({ name: 'transportadora_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'transportadora_id', referencedColumnName: 'id' },
+  ])
   transportadora: Transport | null;
 
   @Column({ name: 'data', type: 'date', nullable: true })

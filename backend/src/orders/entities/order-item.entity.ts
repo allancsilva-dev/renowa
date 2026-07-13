@@ -13,7 +13,10 @@ export class OrderItem extends VersionedBaseEntity {
   pedido_id: number;
 
   @ManyToOne(() => Order, (order) => order.itens)
-  @JoinColumn({ name: 'pedido_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'pedido_id', referencedColumnName: 'id' },
+  ])
   pedido: Order;
 
   /** produto_id nullable — item pode ser produto manual sem cadastro */
@@ -21,7 +24,10 @@ export class OrderItem extends VersionedBaseEntity {
   produto_id: number | null;
 
   @ManyToOne(() => Product, { nullable: true })
-  @JoinColumn({ name: 'produto_id' })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'produto_id', referencedColumnName: 'id' },
+  ])
   produto: Product | null;
 
   /** Código manual quando não há produto cadastrado */
