@@ -62,7 +62,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         code = this.httpStatusToCode(status);
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
       this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
     } else {
       this.logger.error('Unhandled exception', String(exception));

@@ -10,7 +10,14 @@ describe('AuthController', () => {
     login: jest.fn(async () => ({ accessToken: 'a', refreshToken: 'r' })),
     logout: jest.fn(async () => undefined),
   };
-  const mobileSessions = { revokeSession: jest.fn(async () => undefined) };
+  const mobileSessions = {
+    createSessionFromCredentials: jest.fn(async () => ({
+      token: 'mobile-token',
+      expires_at: '2026-08-11T00:00:00.000Z',
+      session_uuid: 'session-a',
+    })),
+    revokeSession: jest.fn(async () => undefined),
+  };
   const permissions = {
     listAllSlugs: jest.fn(async () => ['clientes.ver']),
     listEffectiveForRole: jest.fn(async () => ['pedidos.ver']),
@@ -45,5 +52,25 @@ describe('AuthController', () => {
 
     expect(permissions.listEffectiveForRole).toHaveBeenCalledWith('tenant-a', 7);
     expect(result).toMatchObject({ permissions: ['pedidos.ver'] });
+  });
+
+  it('creates a mobile session through the unified auth controller', async () => {
+    const result = await controller.createMobileSession({
+      email: 'mobile@renowa.com',
+      senha: 'strong-password',
+      device_info: 'Hermes',
+    });
+
+    expect(mobileSessions.createSessionFromCredentials).toHaveBeenCalledWith(
+      'mobile@renowa.com',
+      'strong-password',
+      'Hermes',
+    );
+    expect(result).toEqual({
+      data: expect.objectContaining({
+        token: 'mobile-token',
+        session_uuid: 'session-a',
+      }),
+    });
   });
 });

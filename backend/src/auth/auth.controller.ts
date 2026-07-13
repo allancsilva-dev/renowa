@@ -10,6 +10,10 @@ import { NativeAuthService } from './native-auth.service';
 import { MobileSessionService } from './mobile-session.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import {
+  CreateMobileSessionDto,
+  MobileSessionResponseDto,
+} from './dto/mobile-session.dto';
 import { setAuthCookies, clearAuthCookies, RT_COOKIE } from './cookie.util';
 import { PermissionsService } from '../permissions/permissions.service';
 import { LocalUser } from '../rbac/entities/local-user.entity';
@@ -58,6 +62,21 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async changePassword(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {
     await this.auth.changePassword(user.sub, user.tenantId, dto.current_password, dto.new_password);
+  }
+
+  @Public()
+  @Post('mobile-session')
+  @HttpCode(HttpStatus.CREATED)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  async createMobileSession(
+    @Body() dto: CreateMobileSessionDto,
+  ): Promise<{ data: MobileSessionResponseDto }> {
+    const data = await this.mobileSessions.createSessionFromCredentials(
+      dto.email,
+      dto.senha,
+      dto.device_info,
+    );
+    return { data };
   }
 
   @Get('me')

@@ -319,17 +319,17 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** segurança
 - **Sintoma:** para qualquer não-`HttpException` (500), o `exception.message` cru volta no body JSON, junto de `request.url`.
 - **Causa raiz:** confirmada.
 - **Impacto técnico:** vazamento de strings internas/de DB (info disclosure).
 - **Arquivos/módulos:** `backend/src/common/filters/global-exception.filter.ts:53-55`, `:60-67`
 - **Solução proposta:** mensagem genérica para 500; detalhes só no log do servidor.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura do filter.
+- **Solução aplicada:** respostas de exceções inesperadas mantêm `INTERNAL_SERVER_ERROR` e mensagem genérica; mensagem e stack internas ficam restritas ao log do servidor. Respostas controladas de `HttpException` permanecem preservadas. Testes cobrem `Error`, valor não-`Error` e metadados de conflito otimista.
+- **Evidências/comandos:** `npm test --workspace=backend -- global-exception.filter.spec.ts --runInBand` (3 testes); suíte backend completa (16 suítes, 83 testes); build backend aprovado.
 - **Riscos residuais:** nenhum.
-- **Próximo passo:** sanitizar resposta de 500.
+- **Próximo passo:** nenhum.
 - **Relacionado:** —
 
 ### PROB-0018 — `server_time` capturado após a query abre janela de lost-update
@@ -446,27 +446,27 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Impacto técnico:** derrota o uso offline (re-login exige token ZonaDev fresco = internet).
 - **Arquivos/módulos:** `mobile/src/services/ApiService.ts:67`, `:69`; `mobile/App.tsx:13-16`
 - **Solução proposta:** verificar no SDK alvo; se ausente, usar `expo-crypto`/`base-64` ou decodificar manualmente.
-- **Solução aplicada:** nenhuma ainda. Delegado a `mobile-engineer`.
+- **Solução aplicada:** nenhuma. Mantido aberto porque instrução vigente exclui alterações e validações do workspace `mobile`.
 - **Evidências/comandos:** leitura de `ApiService.ts`.
 - **Riscos residuais:** precisa validação em runtime.
-- **Próximo passo:** testar em build Expo alvo.
+- **Próximo passo:** retomar somente após autorização explícita para trabalhar no workspace `mobile`; então validar no build Expo alvo antes de escolher decoder.
 - **Relacionado:** —
 
 ### PROB-0025 — Rota `POST /api/auth/mobile-session` duplicada (placeholder que lança 500)
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** backend
 - **Sintoma:** dois `@Controller('auth')` declaram `@Post('mobile-session')`. O handler de `AuthController` faz `throw new Error(...)` (HTTP 500). O primeiro registrado (`AuthControllerImpl`) vence por ordem do Express — o que lança fica morto mas load-bearing na ordem de registro.
 - **Causa raiz:** confirmada — controller placeholder deixado registrado.
 - **Impacto técnico:** frágil; reordenar o array `controllers` quebra o login com 500.
 - **Arquivos/módulos:** `backend/src/auth/auth.service.ts:48-70`; `auth.controller.ts:34-46`; `auth.module.ts:15`
 - **Solução proposta:** remover o `createMobileSession` placeholder (mover `revokeSession`/`me` se necessário).
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura dos controllers + module.
-- **Riscos residuais:** nenhum enquanto a ordem não mudar.
-- **Próximo passo:** remover placeholder.
+- **Solução aplicada:** `POST /auth/mobile-session` consolidado em `AuthController`; `AuthControllerImpl` e seu arquivo foram removidos; `AuthModule` registra somente um controller de auth. DTO, throttle, status `201` e delegação ao `MobileSessionService` foram preservados.
+- **Evidências/comandos:** busca por `@Post('mobile-session')` retorna uma ocorrência; teste de `AuthController` aprovado (3 testes); suíte backend completa (16 suítes, 83 testes); build backend aprovado.
+- **Riscos residuais:** nenhum.
+- **Próximo passo:** nenhum.
 - **Relacionado:** —
 
 ### PROB-0026 — `fornecedor_id` do cliente não validado por tenant em Finance

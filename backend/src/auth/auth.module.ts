@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { MobileSession } from './entities/mobile-session.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { MobileSessionService } from './mobile-session.service';
-import { AuthControllerImpl } from './auth.service';
 import { AuthController } from './auth.controller';
 import { NativeAuthService } from './native-auth.service';
 import { PasswordService } from './password.service';
@@ -17,7 +16,7 @@ import { PermissionsModule } from '../permissions/permissions.module';
     TypeOrmModule.forFeature([MobileSession, RefreshToken, User]),
     PermissionsModule,
   ],
-  controllers: [AuthControllerImpl, AuthController],
+  controllers: [AuthController],
   providers: [
     MobileSessionService,
     NativeAuthService,
