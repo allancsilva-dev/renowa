@@ -268,17 +268,17 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** RESOLVIDO
 - **Área:** frontend
 - **Sintoma:** `isAdmin()`/`hasPermission()` comparam com literal `'ADMIN'` (maiúsculo). `ROLE_OPTIONS` usa `['admin','manager','viewer']` (minúsculo) e `useAuth.ts` compara case-insensitive — dois verificadores discordam.
 - **Causa raiz:** confirmada (inconsistência interna); casing real do backend = suposição.
 - **Impacto técnico:** se o JWT emite `'admin'`, `isAdmin()` retorna false e a rota `adminOnly` `/configuracoes` redireciona um admin real para `/`.
 - **Arquivos/módulos:** `frontend/src/context/AuthContext.tsx:70,75`; `hooks/useAuth.ts:7`; `pages/UsuariosPage.tsx:30`; `App.tsx:103`
 - **Solução proposta:** normalizar casing num único helper compartilhado (comparação lowercase).
-- **Solução aplicada:** nenhuma ainda. Delegado a `frontend-engineer`.
-- **Evidências/comandos:** leitura dos arquivos de auth do frontend.
-- **Riscos residuais:** relacionado a duas entradas de `useAuth` (PROB-0027).
-- **Próximo passo:** unificar helper de role.
+- **Solução aplicada:** verificadores e normalização centralizados em `frontend/src/lib/authorization.ts`; `AuthContext` normaliza roles recebidas da API; hook reutiliza os mesmos helpers; store Zustand não utilizado e case-sensitive removido.
+- **Evidências/comandos:** busca sem comparações diretas de role no frontend; `npm run build --workspace=frontend` passou. Lint indisponível porque o script referencia `eslint`, pacote ausente das dependências do workspace.
+- **Riscos residuais:** duas entradas públicas de `useAuth` permanecem por compatibilidade (PROB-0027), mas ambas usam a mesma fonte de autorização.
+- **Próximo passo:** tratar separadamente a API duplicada de hooks em PROB-0027.
 - **Relacionado:** PROB-0027
 
 ### PROB-0015 — AuthCallback trata falha como sucesso

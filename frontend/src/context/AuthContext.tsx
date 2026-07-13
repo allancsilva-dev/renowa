@@ -8,13 +8,13 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '@/types';
+import {
+  hasPermission as userHasPermission,
+  isAdmin as userIsAdmin,
+  normalizeRoles,
+} from '@/lib/authorization';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
-
-function rolesInclude(roles: string[] | undefined, target: string): boolean {
-  // Roles nativas são minúsculas ('admin'); comparação case-insensitive.
-  return roles?.some((r) => r.toLowerCase() === target.toLowerCase()) ?? false;
-}
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -62,8 +62,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body && typeof body === 'object' && 'data' in body
           ? (body as { data?: AuthUser }).data ?? null
           : (body as AuthUser | null);
-      setUser(authUser && Object.keys(authUser).length > 0 ? authUser : null);
-      setPermissions(authUser?.permissions ?? []);
+      const normalizedUser = authUser && Object.keys(authUser).length > 0
+        ? { ...authUser, roles: normalizeRoles(authUser.roles) }
+        : null;
+      setUser(normalizedUser);
+      setPermissions(normalizedUser?.permissions ?? []);
     } catch {
       setUser(null);
       setPermissions([]);
@@ -78,12 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadUser]);
 
   const hasPermission = useCallback((slug: string): boolean => {
-    if (rolesInclude(user?.roles, 'admin')) return true;
-    return permissions.includes(slug);
+    return userHasPermission(user?.roles, permissions, slug);
   }, [permissions, user]);
 
   const isAdmin = useCallback((): boolean => {
-    return rolesInclude(user?.roles, 'admin');
+    return userIsAdmin(user?.roles);
   }, [user]);
 
   const login = useCallback(async (email: string, password: string) => {
