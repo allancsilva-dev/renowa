@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import type { Client } from '@/types';
+import type { ApiResponse, Client } from '@/types';
+import { withGeneratedUuid } from '@/lib/entityPayload';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -103,8 +104,8 @@ export default function ClienteForm() {
     if (!uuid) return;
     setFetching(true);
     api
-      .get<Client>(`/clientes/${uuid}`)
-      .then((r) => setForm(toFields(r.data)))
+      .get<ApiResponse<Client>>(`/clientes/${uuid}`)
+      .then((r) => setForm(toFields(r.data.data)))
       .catch(() => setError('Erro ao carregar cliente.'))
       .finally(() => setFetching(false));
   }, [uuid]);
@@ -130,9 +131,12 @@ export default function ClienteForm() {
     if (cepLimpo.length !== 8) return;
 
     setCepLoading(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5_000);
     try {
-      const res = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`);
-      const data = await res.json();
+      const res = await fetch(`https://viacep.com.br/ws/${cepLimpo}/json/`, { signal: controller.signal });
+      if (!res.ok) throw new Error(`ViaCEP: ${res.status}`);
+      const data = await res.json() as { erro?: boolean; logradouro?: string; bairro?: string; localidade?: string; uf?: string };
       if (!data.erro) {
         setForm((prev) => ({
           ...prev,
@@ -145,6 +149,7 @@ export default function ClienteForm() {
     } catch {
       // Falha silenciosa — usuário preenche manualmente
     } finally {
+      window.clearTimeout(timeout);
       setCepLoading(false);
     }
   }
@@ -171,7 +176,7 @@ export default function ClienteForm() {
       if (isEdit) {
         await api.patch(`/clientes/${uuid}`, payload);
       } else {
-        await api.post('/clientes', payload);
+        await api.post('/clientes', withGeneratedUuid(payload));
       }
       navigate('/clientes');
     } catch {
@@ -205,7 +210,7 @@ export default function ClienteForm() {
       <form onSubmit={handleSubmit}>
         <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6 space-y-6'>
           {error && (
-            <div className='rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600'>
+            <div role='alert' className='rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700'>
               {error}
             </div>
           )}
@@ -218,11 +223,12 @@ export default function ClienteForm() {
             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
               {/* Razão Social */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                <label htmlFor='razao_social' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
                   Razão Social <span className='text-red-500'>*</span>
                 </label>
                 <input
                   type='text'
+                  id='razao_social'
                   name='razao_social'
                   value={form.razao_social}
                   onChange={handleChange}
@@ -233,9 +239,10 @@ export default function ClienteForm() {
 
               {/* CNPJ */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>CNPJ</label>
+                <label htmlFor='cnpj' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>CNPJ</label>
                 <input
                   type='text'
+                  id='cnpj'
                   name='cnpj'
                   value={form.cnpj}
                   onChange={handleCnpj}
@@ -247,9 +254,10 @@ export default function ClienteForm() {
 
               {/* E-mail */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>E-mail</label>
+                <label htmlFor='email' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>E-mail</label>
                 <input
-                  type='text'
+                  type='email'
+                  id='email'
                   name='email'
                   value={form.email}
                   onChange={handleChange}
@@ -260,9 +268,10 @@ export default function ClienteForm() {
 
               {/* Telefone */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Telefone</label>
+                <label htmlFor='tel' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Telefone</label>
                 <input
                   type='text'
+                  id='tel'
                   name='tel'
                   value={form.tel}
                   onChange={handleTel}
@@ -274,9 +283,10 @@ export default function ClienteForm() {
 
               {/* Contato */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Contato</label>
+                <label htmlFor='contato' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Contato</label>
                 <input
                   type='text'
+                  id='contato'
                   name='contato'
                   value={form.contato}
                   onChange={handleChange}
@@ -294,11 +304,12 @@ export default function ClienteForm() {
             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
               {/* CEP */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                <label htmlFor='cep' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
                   CEP {cepLoading && <span className='text-slate-400 normal-case font-normal'>(buscando...)</span>}
                 </label>
                 <input
                   type='text'
+                  id='cep'
                   name='cep'
                   value={form.cep}
                   onChange={handleCep}
@@ -310,9 +321,10 @@ export default function ClienteForm() {
 
               {/* Endereço */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Endereço</label>
+                <label htmlFor='endereco' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Endereço</label>
                 <input
                   type='text'
+                  id='endereco'
                   name='endereco'
                   value={form.endereco}
                   onChange={handleChange}
@@ -322,9 +334,10 @@ export default function ClienteForm() {
 
               {/* Bairro */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Bairro</label>
+                <label htmlFor='bairro' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Bairro</label>
                 <input
                   type='text'
+                  id='bairro'
                   name='bairro'
                   value={form.bairro}
                   onChange={handleChange}
@@ -334,9 +347,10 @@ export default function ClienteForm() {
 
               {/* Cidade */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Cidade</label>
+                <label htmlFor='cidade' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Cidade</label>
                 <input
                   type='text'
+                  id='cidade'
                   name='cidade'
                   value={form.cidade}
                   onChange={handleChange}
@@ -346,8 +360,9 @@ export default function ClienteForm() {
 
               {/* UF — dropdown */}
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>UF</label>
+                <label htmlFor='uf' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>UF</label>
                 <select
+                  id='uf'
                   name='uf'
                   value={form.uf}
                   onChange={handleChange}
@@ -369,24 +384,25 @@ export default function ClienteForm() {
             </h2>
             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Pagamento Padrão</label>
-                <input type='text' name='pgt_padrao' value={form.pgt_padrao} onChange={handleChange} className={inputClass} />
+                <label htmlFor='pgt_padrao' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Pagamento padrão</label>
+                <input id='pgt_padrao' type='text' name='pgt_padrao' value={form.pgt_padrao} onChange={handleChange} className={inputClass} />
               </div>
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Prazo</label>
-                <input type='text' name='prazo' value={form.prazo} onChange={handleChange} className={inputClass} />
+                <label htmlFor='prazo' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Prazo</label>
+                <input id='prazo' type='text' name='prazo' value={form.prazo} onChange={handleChange} className={inputClass} />
               </div>
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Local de Entrega</label>
-                <input type='text' name='local_entrega' value={form.local_entrega} onChange={handleChange} className={inputClass} />
+                <label htmlFor='local_entrega' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Local de entrega</label>
+                <input id='local_entrega' type='text' name='local_entrega' value={form.local_entrega} onChange={handleChange} className={inputClass} />
               </div>
             </div>
           </div>
 
           {/* Observação */}
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Observação</label>
+            <label htmlFor='observacao' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Observação</label>
             <textarea
+              id='observacao'
               name='observacao'
               value={form.observacao}
               onChange={handleChange}
@@ -408,8 +424,7 @@ export default function ClienteForm() {
           <button
             type='submit'
             disabled={loading}
-            className='rounded-lg px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60'
-            style={{ backgroundColor: '#2A9D8F' }}
+            className='min-h-11 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 disabled:opacity-60'
           >
             {loading ? 'Salvando...' : 'Salvar'}
           </button>

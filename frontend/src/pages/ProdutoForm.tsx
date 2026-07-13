@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import type { Product } from '@/types';
+import type { ApiResponse, Product } from '@/types';
+import { withGeneratedUuid } from '@/lib/entityPayload';
 
 type FormFields = {
   codigo: string;
@@ -37,9 +38,9 @@ export default function ProdutoForm() {
     if (!uuid) return;
     setFetching(true);
     api
-      .get<Product>(`/produtos/${uuid}`)
+      .get<ApiResponse<Product>>(`/produtos/${uuid}`)
       .then((r) => {
-        setForm(toFields(r.data));
+        setForm(toFields(r.data.data));
       })
       .catch(() => setError('Erro ao carregar produto.'))
       .finally(() => setFetching(false));
@@ -69,7 +70,7 @@ export default function ProdutoForm() {
       if (isEdit) {
         await api.patch(`/produtos/${uuid}`, payload);
       } else {
-        await api.post('/produtos', payload);
+        await api.post('/produtos', withGeneratedUuid(payload));
       }
       navigate('/produtos');
     } catch {
@@ -101,17 +102,18 @@ export default function ProdutoForm() {
       <form onSubmit={handleSubmit}>
         <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6 space-y-4'>
           {error && (
-            <div className='rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600'>
+            <div role='alert' className='rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700'>
               {error}
             </div>
           )}
 
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+            <label htmlFor='produto-codigo' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               Código
             </label>
             <input
               type='text'
+              id='produto-codigo'
               name='codigo'
               value={form.codigo}
               onChange={handleChange}
@@ -121,11 +123,12 @@ export default function ProdutoForm() {
           </div>
 
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+            <label htmlFor='produto-descricao' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               Descrição <span className='text-red-500'>*</span>
             </label>
             <input
               type='text'
+              id='produto-descricao'
               name='descricao'
               value={form.descricao}
               onChange={handleChange}
@@ -136,11 +139,12 @@ export default function ProdutoForm() {
           </div>
 
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+            <label htmlFor='produto-preco' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               Preço Base (R$)
             </label>
             <input
               type='number'
+              id='produto-preco'
               name='preco_base'
               value={form.preco_base}
               onChange={handleChange}
@@ -163,8 +167,7 @@ export default function ProdutoForm() {
           <button
             type='submit'
             disabled={loading}
-            className='rounded-lg px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60'
-            style={{ backgroundColor: '#2A9D8F' }}
+            className='min-h-11 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 disabled:opacity-60'
           >
             {loading ? 'Salvando...' : 'Salvar'}
           </button>

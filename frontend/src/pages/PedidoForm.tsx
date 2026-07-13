@@ -1,18 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import type { OrderStatus } from '@/types';
+import { fetchClients } from '@/services/clients.service';
+import type { Client, OrderStatus } from '@/types';
+import { withGeneratedUuid } from '@/lib/entityPayload';
 
 type FormFields = {
   data: string;
-  cliente_id: string;
+  cliente_uuid: string;
   status: OrderStatus;
   observacao: string;
 };
 
 const empty: FormFields = {
   data: '',
-  cliente_id: '',
+  cliente_uuid: '',
   status: 'em_aberto',
   observacao: '',
 };
@@ -28,6 +30,17 @@ export default function PedidoForm() {
   const [form, setForm] = useState<FormFields>(empty);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    fetchClients({ page: 1, limit: 100 })
+      .then((result) => { if (active) setClients(result.data); })
+      .catch(() => { if (active) setError('Não foi possível carregar os clientes.'); })
+      .finally(() => { if (active) setClientsLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   function handleChange(
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
@@ -41,12 +54,12 @@ export default function PedidoForm() {
     setLoading(true);
     setError(null);
 
-    const payload = {
+    const payload = withGeneratedUuid({
       data: form.data || null,
-      cliente_id: form.cliente_id ? Number(form.cliente_id) : null,
+      cliente_uuid: form.cliente_uuid || undefined,
       status: form.status,
       observacao: form.observacao.trim() || null,
-    };
+    });
 
     try {
       await api.post('/pedidos', payload);
@@ -68,17 +81,18 @@ export default function PedidoForm() {
       <form onSubmit={handleSubmit}>
         <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6 space-y-4'>
           {error && (
-            <div className='rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600'>
+            <div role='alert' className='rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700'>
               {error}
             </div>
           )}
 
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+            <label htmlFor='pedido-data' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               Data
             </label>
             <input
               type='date'
+              id='pedido-data'
               name='data'
               value={form.data}
               onChange={handleChange}
@@ -87,25 +101,30 @@ export default function PedidoForm() {
           </div>
 
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
-              ID do Cliente
+            <label htmlFor='pedido-cliente' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+              Cliente
             </label>
-            <input
-              type='number'
-              name='cliente_id'
-              value={form.cliente_id}
+            <select
+              id='pedido-cliente'
+              name='cliente_uuid'
+              value={form.cliente_uuid}
               onChange={handleChange}
-              placeholder='ID numérico do cliente'
-              min={1}
+              disabled={clientsLoading}
               className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
-            />
+            >
+              <option value=''>{clientsLoading ? 'Carregando clientes...' : 'Selecione um cliente'}</option>
+              {clients.map((client) => (
+                <option key={client.uuid} value={client.uuid}>{client.razao_social}</option>
+              ))}
+            </select>
           </div>
 
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+            <label htmlFor='pedido-status' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               Status
             </label>
             <select
+              id='pedido-status'
               name='status'
               value={form.status}
               onChange={handleChange}
@@ -120,10 +139,11 @@ export default function PedidoForm() {
           </div>
 
           <div className='flex flex-col gap-1'>
-            <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+            <label htmlFor='pedido-observacao' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               Observação
             </label>
             <textarea
+              id='pedido-observacao'
               name='observacao'
               value={form.observacao}
               onChange={handleChange}
@@ -144,8 +164,7 @@ export default function PedidoForm() {
           <button
             type='submit'
             disabled={loading}
-            className='rounded-lg px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60'
-            style={{ backgroundColor: '#2A9D8F' }}
+            className='min-h-11 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 disabled:opacity-60'
           >
             {loading ? 'Salvando...' : 'Salvar'}
           </button>

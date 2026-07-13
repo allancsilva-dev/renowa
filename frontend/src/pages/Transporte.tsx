@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import api from '@/lib/apiClient';
+import Dialog from '@/components/ui/Dialog';
+import { withGeneratedUuid } from '@/lib/entityPayload';
 import type { PaginatedResponse } from '@/types';
 
 interface Transport {
@@ -88,12 +90,12 @@ export default function Transporte() {
     setSaving(true);
     setFormError(null);
     try {
-      await api.post('/transportadoras', {
+      await api.post('/transportadoras', withGeneratedUuid({
         razao_social: form.razao_social,
         cnpj: form.cnpj || null,
         telefone: form.telefone || null,
         endereco_completo: form.endereco_completo || null,
-      });
+      }));
       setIsOpen(false);
       setForm(emptyForm);
       reload();
@@ -109,8 +111,7 @@ export default function Transporte() {
       <div className='flex justify-end'>
         <button
           onClick={() => { setIsOpen(true); setForm(emptyForm); setFormError(null); }}
-          className='flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity'
-          style={{ backgroundColor: '#2A9D8F' }}
+          className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
         >
           <Plus className='h-4 w-4' />
           Nova Transportadora
@@ -130,38 +131,21 @@ export default function Transporte() {
 
       {/* Modal */}
       {isOpen && (
-        <div className='fixed inset-0 z-50 flex items-center justify-center'>
-          {/* Overlay */}
-          <div
-            className='absolute inset-0 bg-black/40'
-            onClick={() => setIsOpen(false)}
-          />
-
-          {/* Dialog */}
-          <div className='relative z-10 w-full max-w-md rounded-xl bg-white shadow-xl p-6'>
-            <div className='flex items-center justify-between mb-5'>
-              <h2 className='text-base font-bold text-slate-900'>Nova Transportadora</h2>
-              <button
-                onClick={() => setIsOpen(false)}
-                className='rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors'
-              >
-                <X className='h-5 w-5' />
-              </button>
-            </div>
-
+        <Dialog open title='Nova Transportadora' onClose={() => setIsOpen(false)} className='max-w-md'>
             <form onSubmit={handleSubmit} className='space-y-4'>
               {formError && (
-                <div className='rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600'>
+                <div role='alert' className='rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700'>
                   {formError}
                 </div>
               )}
 
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                <label htmlFor='transportadora-razao' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
                   Razão Social <span className='text-red-500'>*</span>
                 </label>
                 <input
                   type='text'
+                  id='transportadora-razao'
                   name='razao_social'
                   value={form.razao_social}
                   onChange={handleChange}
@@ -171,9 +155,10 @@ export default function Transporte() {
               </div>
 
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>CNPJ</label>
+                <label htmlFor='transportadora-cnpj' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>CNPJ</label>
                 <input
                   type='text'
+                  id='transportadora-cnpj'
                   name='cnpj'
                   value={form.cnpj}
                   onChange={handleChange}
@@ -184,9 +169,10 @@ export default function Transporte() {
               </div>
 
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Telefone</label>
+                <label htmlFor='transportadora-telefone' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Telefone</label>
                 <input
                   type='text'
+                  id='transportadora-telefone'
                   name='telefone'
                   value={form.telefone}
                   onChange={handleChange}
@@ -197,9 +183,10 @@ export default function Transporte() {
               </div>
 
               <div className='flex flex-col gap-1'>
-                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Endereço</label>
+                <label htmlFor='transportadora-endereco' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Endereço</label>
                 <input
                   type='text'
+                  id='transportadora-endereco'
                   name='endereco_completo'
                   value={form.endereco_completo}
                   onChange={handleChange}
@@ -218,15 +205,13 @@ export default function Transporte() {
                 <button
                   type='submit'
                   disabled={saving}
-                  className='rounded-lg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60 transition-opacity'
-                  style={{ backgroundColor: '#2A9D8F' }}
+                  className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors'
                 >
                   {saving ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );
