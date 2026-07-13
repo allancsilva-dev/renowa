@@ -148,17 +148,17 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** backend / segurança
-- **Sintoma:** `POST /api/sync` e todos os `GET /api/sync/*` não têm `@Roles`/`@RequirePermission`. `PermissionGuard` retorna `true` quando nenhuma permissão é declarada.
-- **Causa raiz:** confirmada — só os guards globais de auth rodam no caminho de sync.
-- **Impacto técnico:** qualquer usuário autenticado (mesmo `viewer`) cria/atualiza/deleta pedidos, clientes, produtos via sync, contornando os checks de role/permissão dos controllers REST.
-- **Arquivos/módulos:** `backend/src/sync/sync.controller.ts` (arquivo inteiro); `permission.guard.ts:55-60`
+- **Sintoma:** originalmente, push e pull de sync não declaravam autorização. Uma mitigação parcial posterior protegeu pull, mas exigia todas as permissões `.editar` no push inteiro, sem distinguir entidade ou operação.
+- **Causa raiz:** endpoint de push é polimórfico; autorização estática por controller não inspecionava `entity` e `operation` de cada item.
+- **Impacto técnico:** antes da correção, usuário autenticado podia contornar RBAC; na mitigação parcial, usuários legítimos eram bloqueados e `CREATE`/`DELETE` não exigiam seus slugs exatos.
+- **Arquivos/módulos:** `sync.controller.ts`; `sync-authorization.service.ts`; `sync-entity-policy.ts`; testes dedicados de controller, política e autorização.
 - **Solução proposta:** aplicar checagem de permissão por entidade/operação no caminho de sync.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura do controller (sem decorators de RBAC).
-- **Riscos residuais:** combinado com PROB-0003 amplia a superfície de escrita indevida.
-- **Próximo passo:** definir matriz permissão×entidade para sync.
+- **Solução aplicada:** política central define `pull/create/update/delete` para cada entidade. Push v1/v2 carrega permissões uma vez, valida lote inteiro antes de qualquer escrita e rejeita tudo com `403` se faltar um slug. `itens_pedido` herda permissões de `pedidos`. `SUPERADMIN` e papel tenant `admin` mantêm bypass; contexto ausente, inativo ou cross-tenant é negado. Pull v1/v2 permanece protegido por `.ver`, com teste de invariância contra a política. Negação gera log estruturado sem payload/PII de domínio.
+- **Evidências/comandos:** `npm test --workspace=backend -- sync --runInBand --silent` — 68/68. Cobertura inclui admin, manager, viewer, lote misto, operação exata, zero escrita após negação, contexto cross-tenant, filtros tenant-scoped no push/pull e todas as rotas pull v1/v2.
+- **Riscos residuais:** autorização é tenant-scoped e queries mantêm `tenant_id`; teste contra PostgreSQL real continua dependente de ambiente integrado disponível.
+- **Próximo passo:** monitorar eventos `sync_authorization_denied` e manter teste de invariantes ao adicionar entidade ou operação.
 - **Relacionado:** PROB-0003
 
 ### PROB-0008 — Cursor de sync único e global entre entidades causa perda silenciosa de dados
