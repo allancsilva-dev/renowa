@@ -30,11 +30,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      TRUST_PROXY: 172.30.0.2/32
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:3083:3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s
@@ -42,7 +41,9 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - renowa
+      renowa: {}
+      api_gateway:
+        ipv4_address: 172.30.0.3
 
   frontend:
     build:
@@ -54,11 +55,10 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:3080:80"
     networks:
-      - renowa
-      - proxy
+      proxy: {}
+      api_gateway:
+        ipv4_address: 172.30.0.2
 
   backup:
     image: postgres:16-alpine
@@ -91,3 +91,9 @@ networks:
     driver: bridge
   proxy:
     external: true
+  api_gateway:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/28
