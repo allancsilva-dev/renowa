@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import LoadingState from '../feedback/LoadingState';
 
 export default function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -21,7 +22,9 @@ export default function AppShell() {
         <Header onToggle={() => setSidebarOpen((prev) => !prev)} />
 
         <main className='flex-1 overflow-y-auto p-6' style={{ backgroundColor: '#F4F7F6' }}>
-          <Outlet />
+          <Suspense fallback={<LoadingState />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

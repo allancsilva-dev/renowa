@@ -1,21 +1,20 @@
-import { Suspense, lazy } from 'react';
+import { lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
 import { AuthProvider } from '@/context/AuthContext';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import LoadingState from '@/components/feedback/LoadingState';
 import Login from '@/pages/Login';
-import Dashboard from '@/pages/Dashboard';
-import Clientes from '@/pages/Clientes';
-import ClienteForm from '@/pages/ClienteForm';
-import Pedidos from '@/pages/Pedidos';
-import PedidoForm from '@/pages/PedidoForm';
-import Produtos from '@/pages/Produtos';
-import ProdutoForm from '@/pages/ProdutoForm';
-import Transporte from '@/pages/Transporte';
-import Financeiro from '@/pages/Financeiro';
-import Configuracoes from '@/pages/Configuracoes';
 
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Clientes = lazy(() => import('@/pages/Clientes'));
+const ClienteForm = lazy(() => import('@/pages/ClienteForm'));
+const Pedidos = lazy(() => import('@/pages/Pedidos'));
+const PedidoForm = lazy(() => import('@/pages/PedidoForm'));
+const Produtos = lazy(() => import('@/pages/Produtos'));
+const ProdutoForm = lazy(() => import('@/pages/ProdutoForm'));
+const Transporte = lazy(() => import('@/pages/Transporte'));
+const Financeiro = lazy(() => import('@/pages/Financeiro'));
+const Configuracoes = lazy(() => import('@/pages/Configuracoes'));
 const ConfiguracoesHome = lazy(() => import('@/pages/configuracoes/ConfiguracoesHome'));
 const UsuariosPage = lazy(() => import('@/pages/configuracoes/UsuariosPage'));
 const RolesPage = lazy(() => import('@/pages/configuracoes/RolesPage'));
@@ -108,30 +107,9 @@ export default function App() {
             )}
           >
             <Route element={<Configuracoes />}>
-              <Route
-                index
-                element={(
-                  <Suspense fallback={<LoadingState />}>
-                    <ConfiguracoesHome />
-                  </Suspense>
-                )}
-              />
-              <Route
-                path='usuarios'
-                element={(
-                  <Suspense fallback={<LoadingState />}>
-                    <UsuariosPage />
-                  </Suspense>
-                )}
-              />
-              <Route
-                path='roles'
-                element={(
-                  <Suspense fallback={<LoadingState />}>
-                    <RolesPage />
-                  </Suspense>
-                )}
-              />
+              <Route index element={<ConfiguracoesHome />} />
+              <Route path='usuarios' element={<UsuariosPage />} />
+              <Route path='roles' element={<RolesPage />} />
             </Route>
           </Route>
         </Routes>
