@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/auth-context';
 import LoadingState from '@/components/feedback/LoadingState';
+import ErrorState from '@/components/feedback/ErrorState';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -10,10 +11,14 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children, permission, adminOnly = false }: ProtectedRouteProps) {
-  const { user, loading, hasPermission, isAdmin } = useAuth();
+  const { user, loading, error, reload, hasPermission, isAdmin } = useAuth();
 
   if (loading) {
     return <LoadingState />;
+  }
+
+  if (error) {
+    return <ErrorState title='Não foi possível validar sua sessão' description={error} onRetry={() => void reload()} />;
   }
 
   if (!user) {

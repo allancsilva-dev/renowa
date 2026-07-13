@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth } from '@/context/auth-context';
 
 const schema = z.object({
   email: z.string().email('E-mail inválido'),
@@ -70,7 +70,7 @@ export default function Login() {
           {errors.password && <p className='text-xs text-red-600'>{errors.password.message}</p>}
         </div>
 
-        {error && <p className='text-sm text-red-600'>{error}</p>}
+        {error && <p role='alert' className='text-sm text-red-700'>{error}</p>}
 
         <button
           type='submit'

@@ -1,13 +1,12 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '@/types';
+import { AuthContext, type AuthContextValue } from '@/context/auth-context';
 import {
   hasPermission as userHasPermission,
   isAdmin as userIsAdmin,
@@ -16,29 +15,19 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 
-interface AuthContextValue {
-  user: AuthUser | null;
-  permissions: string[];
-  loading: boolean;
-  hasPermission: (slug: string) => boolean;
-  isAdmin: () => boolean;
-  login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
-  reload: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null);
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadUser = useCallback(async () => {
+    setLoading(true);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
 
     try {
+      setError(null);
       const res = await fetch(`${API_URL}/auth/me`, {
         method: 'GET',
         credentials: 'include',
@@ -68,8 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(normalizedUser);
       setPermissions(normalizedUser?.permissions ?? []);
     } catch {
-      setUser(null);
-      setPermissions([]);
+      setError('Não foi possível validar sua sessão. Verifique sua conexão.');
     } finally {
       clearTimeout(timeout);
       setLoading(false);
@@ -113,24 +101,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     permissions,
     loading,
+    error,
     hasPermission,
     isAdmin,
     login,
     logout,
     reload: loadUser,
-  }), [hasPermission, isAdmin, login, loadUser, loading, logout, permissions, user]);
+  }), [error, hasPermission, isAdmin, login, loadUser, loading, logout, permissions, user]);
 
   return (
     <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return ctx;
 }
