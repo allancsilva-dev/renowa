@@ -7,7 +7,8 @@ export interface AuthUser {
   email: string;
   roles: string[];
   tenantId: string;
-  // Auth nativa: /auth/me não retorna mais plan/defaultRole.
+  permissions: string[];
+  // Campos legados opcionais; autorização usa permissions retornadas por /auth/me.
   plan?: string;
   defaultRole?: string;
 }

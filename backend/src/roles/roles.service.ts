@@ -41,9 +41,9 @@ export class RolesService {
     return role;
   }
 
-  private async listRolePermissionSlugs(roleId: number): Promise<string[]> {
+  private async listRolePermissionSlugs(tenantId: string, roleId: number): Promise<string[]> {
     const links = await this.tenantRolePermissionRepo.find({
-      where: { roleId },
+      where: { tenantId, roleId },
       relations: ['permission'],
     });
 
@@ -68,7 +68,7 @@ export class RolesService {
         name: role.name,
         description: role.description,
         active: role.active,
-        permissions: await this.listRolePermissionSlugs(role.id),
+        permissions: await this.listRolePermissionSlugs(tenantId, role.id),
       })),
     );
 
@@ -112,7 +112,7 @@ export class RolesService {
       name: saved.name,
       description: saved.description,
       active: saved.active,
-      permissions: await this.listRolePermissionSlugs(saved.id),
+      permissions: await this.listRolePermissionSlugs(tenantId, saved.id),
     };
   }
 
@@ -156,7 +156,7 @@ export class RolesService {
       name: saved.name,
       description: saved.description,
       active: saved.active,
-      permissions: await this.listRolePermissionSlugs(saved.id),
+      permissions: await this.listRolePermissionSlugs(tenantId, saved.id),
     };
   }
 
@@ -196,12 +196,13 @@ export class RolesService {
     }
 
     await this.tenantRolePermissionRepo.manager.transaction(async (manager) => {
-      await manager.getRepository(TenantRolePermission).delete({ roleId: role.id });
+      await manager.getRepository(TenantRolePermission).delete({ tenantId, roleId: role.id });
 
       if (normalized.length === 0) return;
 
       const toInsert = normalized.map((permissionSlug) =>
         manager.getRepository(TenantRolePermission).create({
+          tenantId,
           roleId: role.id,
           permissionSlug,
         }),
@@ -215,7 +216,7 @@ export class RolesService {
       name: role.name,
       description: role.description,
       active: role.active,
-      permissions: await this.listRolePermissionSlugs(role.id),
+      permissions: await this.listRolePermissionSlugs(tenantId, role.id),
     };
   }
 }

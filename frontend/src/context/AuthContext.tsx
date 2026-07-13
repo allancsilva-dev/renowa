@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ? (body as { data?: AuthUser }).data ?? null
           : (body as AuthUser | null);
       setUser(authUser && Object.keys(authUser).length > 0 ? authUser : null);
-      setPermissions([]);
+      setPermissions(authUser?.permissions ?? []);
     } catch {
       setUser(null);
       setPermissions([]);

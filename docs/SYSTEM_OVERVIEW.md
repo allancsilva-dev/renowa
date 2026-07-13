@@ -6,7 +6,7 @@ _Última atualização: 2026-07-08 (após auditoria completa do sistema — ver 
 
 ## Stack real
 
-- **Backend:** NestJS + TypeORM + PostgreSQL. Auth via `jose` (JWKS), `nestjs-cls`, `jsonwebtoken`.
+- **Backend:** NestJS + TypeORM + PostgreSQL. Auth via `jose` (JWKS) e `jsonwebtoken`.
 - **Frontend:** React + Vite + TypeScript + Tailwind + shadcn/ui + Zustand + React Hook Form + Zod + Recharts + axios + React Router v6.
 - **Mobile:** React Native + Expo + expo-sqlite + expo-secure-store + @react-native-community/netinfo + axios.
 - **Monorepo:** `backend/`, `frontend/`, `mobile/`.
@@ -29,10 +29,9 @@ SaaS multi-tenant. Tenant #1 = Renowa Representações. Ecossistema ZonaDev: **Z
 
 ## Fluxo multi-tenant
 
-- `tenant_id UUID NOT NULL` na maioria das tabelas. **Exceção verificada (2026-07-08):** tabelas RBAC `permissions`, `role_permissions` (catálogos, plausivelmente globais) e `tenant_role_permissions` (dado de tenant que **deveria** ter `tenant_id`) não têm a coluna — ver [PROB-0012](PROBLEM_LEDGER.md).
+- `tenant_id UUID NOT NULL` nas tabelas tenant-scoped, inclusive `tenant_role_permissions` após migration 007. `permissions` e `role_permissions` permanecem catálogos globais.
 - `tenant_id` vem **exclusivamente do JWT** — nunca aceito do cliente. Verificado: nenhum controller/service confia em `tenant_id` do cliente; services REST filtram e forçam `tenant_id` de `user.tenantId`.
-- CLS populado em **Interceptor** (não middleware — middleware roda antes do Guard). Fluxo: **Middleware → Guard → Interceptor → Controller**.
-- **Correção (2026-07-08):** o `tenant.subscriber` **NÃO está ativo** — a classe nunca é registrada como provider nem instanciada por DI (`grep -rn TenantSubscriber backend/src` → só o próprio arquivo). A proteção "injeta tenant_id em todo INSERT" **não existe**; interceptor+CLS são efetivamente código morto. Isolamento depende 100% de cada service passar `tenantId` manualmente (hoje passam). Sync usa `INSERT` cru e nunca passaria por subscriber. Ver [PROB-0016](PROBLEM_LEDGER.md).
+- Tenant é passado explicitamente para services/repositories. Subscriber e CLS mortos foram removidos; isolamento não depende de interceptação parcial de inserts.
 
 ## Fluxo principal do produto
 
@@ -85,7 +84,7 @@ Representação comercial: usuários registram clientes e pedidos. `pedidos` usa
 - FKs sem `tenant_id` composto → referência cross-tenant no DB — [PROB-0011](PROBLEM_LEDGER.md).
 - Casing de role trava admin real; AuthCallback trata falha como sucesso — [PROB-0014](PROBLEM_LEDGER.md) / [PROB-0015](PROBLEM_LEDGER.md).
 
-**Defesa em profundidade:** o `tenant.subscriber` documentado **não está ativo** (código morto) — isolamento depende só da disciplina de aplicação ([PROB-0016](PROBLEM_LEDGER.md)).
+**Defesa em profundidade:** filtros explícitos na aplicação e constraints tenant-scoped no banco. SQL cru exige o mesmo contrato explícito.
 
 **LGPD:** sem erasure, sem trilha de auditoria, PII em cleartext no mobile — [PROB-0030..0032](PROBLEM_LEDGER.md).
 

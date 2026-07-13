@@ -27,6 +27,24 @@ export class FinanceService {
     private readonly dataSource: DataSource,
   ) {}
 
+  private async resolveSupplierId(
+    supplierId: number | undefined,
+    tenantId: string,
+  ): Promise<number | null> {
+    if (supplierId === undefined) return null;
+
+    const rows = await this.dataSource.query(
+      `SELECT id FROM fornecedores WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+      [supplierId, tenantId],
+    );
+
+    if (!rows[0]?.id) {
+      throw new NotFoundException('Fornecedor não encontrado no tenant.');
+    }
+
+    return rows[0].id as number;
+  }
+
   // ── Movimentações ─────────────────────────────────────────
 
   async createMovimento(dto: CreateMovementDto, tenantId: string): Promise<FinanceMovement> {
@@ -146,6 +164,7 @@ export class FinanceService {
   // ── Comissões ─────────────────────────────────────────────
 
   async createComissao(dto: CreateComissaoDto, tenantId: string): Promise<Commission> {
+    const fornecedor_id = await this.resolveSupplierId(dto.fornecedor_id, tenantId);
     let cliente_id: number | null = null;
     if (dto.cliente_uuid) {
       const rows = await this.dataSource.query(
@@ -159,7 +178,7 @@ export class FinanceService {
       uuid: dto.uuid,
       tenant_id: tenantId,
       cliente_id,
-      fornecedor_id: dto.fornecedor_id ?? null,
+      fornecedor_id,
       numero_pedido: dto.numero_pedido ?? null,
       numero_nfe: dto.numero_nfe ?? null,
       data_pedido: dto.data_pedido ?? null,
@@ -204,7 +223,11 @@ export class FinanceService {
     const qb = this.comissaoRepo
       .createQueryBuilder('c')
       .leftJoinAndSelect('c.cliente', 'cliente')
-      .leftJoinAndSelect('c.fornecedor', 'fornecedor')
+      .leftJoinAndSelect(
+        'c.fornecedor',
+        'fornecedor',
+        'fornecedor.tenant_id = :tenantId',
+      )
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.deleted_at IS NULL');
 
@@ -273,7 +296,11 @@ export class FinanceService {
     const qb = this.comissaoRepo
       .createQueryBuilder('c')
       .leftJoinAndSelect('c.cliente', 'cliente')
-      .leftJoinAndSelect('c.fornecedor', 'fornecedor')
+      .leftJoinAndSelect(
+        'c.fornecedor',
+        'fornecedor',
+        'fornecedor.tenant_id = :tenantId',
+      )
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.deleted_at IS NULL')
       .andWhere('c.fornecedor_id IS NOT NULL');
@@ -323,6 +350,7 @@ export class FinanceService {
   // ── Parceiros Comerciais ───────────────────────────────────
 
   async createParceiro(dto: CreateParceiroDto, tenantId: string): Promise<Parceiro> {
+    const fornecedor_id = await this.resolveSupplierId(dto.fornecedor_id, tenantId);
     let cliente_id: number | null = null;
     if (dto.cliente_uuid) {
       const rows = await this.dataSource.query(
@@ -338,7 +366,7 @@ export class FinanceService {
       nome_parceiro: dto.nome_parceiro,
       empresa_parceiro: dto.empresa_parceiro ?? null,
       cliente_id,
-      fornecedor_id: dto.fornecedor_id ?? null,
+      fornecedor_id,
       numero_pedido: dto.numero_pedido ?? null,
       numero_nfe: dto.numero_nfe ?? null,
       data_pedido: dto.data_pedido,
@@ -381,7 +409,11 @@ export class FinanceService {
     const qb = this.parceiroRepo
       .createQueryBuilder('p')
       .leftJoinAndSelect('p.cliente', 'cliente')
-      .leftJoinAndSelect('p.fornecedor', 'fornecedor')
+      .leftJoinAndSelect(
+        'p.fornecedor',
+        'fornecedor',
+        'fornecedor.tenant_id = :tenantId',
+      )
       .where('p.tenant_id = :tenantId', { tenantId })
       .andWhere('p.deleted_at IS NULL');
 

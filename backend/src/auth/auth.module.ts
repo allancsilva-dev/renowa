@@ -10,10 +10,12 @@ import { PasswordService } from './password.service';
 import { AccessTokenService } from './access-token.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { User } from '../users/entities/user.entity';
+import { PermissionsModule } from '../permissions/permissions.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([MobileSession, RefreshToken, User]),
+    PermissionsModule,
   ],
   controllers: [AuthControllerImpl, AuthController],
   providers: [

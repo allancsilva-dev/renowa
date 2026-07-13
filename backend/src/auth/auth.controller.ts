@@ -11,6 +11,10 @@ import { MobileSessionService } from './mobile-session.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { setAuthCookies, clearAuthCookies, RT_COOKIE } from './cookie.util';
+import { PermissionsService } from '../permissions/permissions.service';
+import { LocalUser } from '../rbac/entities/local-user.entity';
+
+type AuthenticatedRequest = Request & { localUser?: LocalUser };
 
 function reqMeta(req: Request) {
   return { userAgent: req.headers['user-agent'], ip: req.ip };
@@ -21,6 +25,7 @@ export class AuthController {
   constructor(
     private readonly auth: NativeAuthService,
     private readonly mobileSessions: MobileSessionService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   @Public()
@@ -56,10 +61,22 @@ export class AuthController {
   }
 
   @Get('me')
-  me(@CurrentUser() user: RequestUser) {
+  async me(@CurrentUser() user: RequestUser, @Req() req: AuthenticatedRequest) {
     if (!user) return {};
     const { sub, email, roles, tenantId } = user;
-    return { sub, email, roles, tenantId };
+    const localUser = req.localUser;
+    let permissions: string[] = [];
+
+    if (roles?.includes('SUPERADMIN') || localUser?.role?.name === 'admin') {
+      permissions = await this.permissionsService.listAllSlugs();
+    } else if (localUser?.roleId) {
+      permissions = await this.permissionsService.listEffectiveForRole(
+        localUser.tenantId,
+        localUser.roleId,
+      );
+    }
+
+    return { sub, email, roles, tenantId, permissions };
   }
 
   // Preservar endpoint existente de revogar sessão mobile (regressão se removido).
