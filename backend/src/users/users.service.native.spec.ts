@@ -13,7 +13,7 @@ describe('UsersService.createTenantUser (nativo)', () => {
     };
     const dataSource = { transaction: async (cb: any) => cb(manager) } as any;
     const svc = new UsersService(
-      {} as any, {} as any, {} as any, {} as any, new PasswordService(), dataSource,
+      {} as any, {} as any, {} as any, {} as any, new PasswordService(), dataSource, {} as any,
     );
     await expect(
       svc.createTenantUser('t-1', { email: 'a@b.c', nome: 'A', senha: 'senha1234', role: 'admin' } as any),

@@ -18,6 +18,8 @@ const Configuracoes = lazy(() => import('@/pages/Configuracoes'));
 const ConfiguracoesHome = lazy(() => import('@/pages/configuracoes/ConfiguracoesHome'));
 const UsuariosPage = lazy(() => import('@/pages/configuracoes/UsuariosPage'));
 const RolesPage = lazy(() => import('@/pages/configuracoes/RolesPage'));
+const AuditoriaPage = lazy(() => import('@/pages/configuracoes/AuditoriaPage'));
+const PrivacidadePage = lazy(() => import('@/pages/configuracoes/PrivacidadePage'));
 
 export default function App() {
   return (
@@ -110,6 +112,8 @@ export default function App() {
               <Route index element={<ConfiguracoesHome />} />
               <Route path='usuarios' element={<UsuariosPage />} />
               <Route path='roles' element={<RolesPage />} />
+              <Route path='auditoria' element={<AuditoriaPage />} />
+              <Route path='privacidade' element={<PrivacidadePage />} />
             </Route>
           </Route>
         </Routes>

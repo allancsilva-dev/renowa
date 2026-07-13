@@ -23,7 +23,7 @@ export class UsersController {
   @Get()
   @RequirePermission('users.manage')
   async list(@CurrentUser() user: RequestUser) {
-    return this.usersService.listTenantUsers(user.tenantId);
+    return this.usersService.listTenantUsers(user.tenantId, user);
   }
 
   @Post()
@@ -32,7 +32,7 @@ export class UsersController {
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateUserDto,
   ) {
-    return this.usersService.createTenantUser(user.tenantId, dto);
+    return this.usersService.createTenantUser(user.tenantId, dto, user);
   }
 
   @Patch(':id')
@@ -42,7 +42,7 @@ export class UsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserDto,
   ) {
-    return this.usersService.updateTenantUser(user.tenantId, id, dto);
+    return this.usersService.updateTenantUser(user.tenantId, id, dto, user);
   }
 
   @Get('me')

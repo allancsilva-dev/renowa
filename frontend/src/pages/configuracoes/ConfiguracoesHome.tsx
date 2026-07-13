@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Users, ShieldCheck } from 'lucide-react';
+import { Users, ShieldCheck, ClipboardList, UserRoundCheck } from 'lucide-react';
 
 const sections = [
   {
@@ -14,6 +14,13 @@ const sections = [
     description: 'Defina papéis e permissões atribuídos aos usuários.',
     icon: ShieldCheck,
   },
+  {
+    to: '/configuracoes/auditoria',
+    title: 'Auditoria LGPD',
+    description: 'Consulte acessos e alterações de dados pessoais.',
+    icon: ClipboardList,
+  },
+  { to: '/configuracoes/privacidade', title: 'Direitos LGPD', description: 'Gerencie apagamento e portabilidade de titulares.', icon: UserRoundCheck },
 ];
 
 export default function ConfiguracoesHome() {

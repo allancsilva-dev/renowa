@@ -558,14 +558,14 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** PARCIALMENTE RESOLVIDO
 - **Área:** LGPD
 - **Sintoma:** `base.entity.ts:16` afirma "dados nunca são apagados fisicamente"; só existe soft delete. PII de cliente (`cnpj`, `email`, `tel`, `endereco`, `contato`) e de usuário (`email`, `nome`) retida indefinidamente, sem caminho de erasure/anonimização.
 - **Causa raiz:** confirmada — só `softDelete`.
 - **Impacto técnico:** não há como honrar pedido de titular (Art. 18).
 - **Arquivos/módulos:** `backend/src/common/entities/base.entity.ts:16`; `clients.service.ts:82-85`; `sync.service.ts:100-103`
 - **Solução proposta:** fluxo de anonimização/hard-delete para requisição de titular.
-- **Solução aplicada:** nenhuma ainda. Delegado a `lgpd-auditor`.
+- **Solução aplicada:** state machine Admin e anonimização idempotente de clientes em `privacy/`; referências legais/contábeis preservadas. Usuários e campos livres em pedidos ainda dependem de matriz jurídica.
 - **Evidências/comandos:** leitura de entidades e services.
 - **Riscos residuais:** parte de programa LGPD maior.
 - **Próximo passo:** desenhar fluxo de erasure.
@@ -575,14 +575,14 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** PARCIALMENTE RESOLVIDO
 - **Área:** LGPD
 - **Sintoma:** grep por audit/log de acesso não encontrou nada. Nenhum registro de quem leu ou alterou PII. Só `console.error` ad-hoc em tenant mismatch.
 - **Causa raiz:** confirmada.
 - **Impacto técnico:** gap de accountability (Art. 37).
 - **Arquivos/módulos:** projeto todo; `auto-provision.guard.ts:55`, `:72`
 - **Solução proposta:** trilha de auditoria de acesso/modificação de PII.
-- **Solução aplicada:** nenhuma ainda. Delegado a `lgpd-auditor`.
+- **Solução aplicada:** audit log append-only, isolado por tenant, com eventos transacionais para clientes e eventos de administração de usuários; consulta exclusiva para Admin. Campos livres em pedidos e demais módulos ainda exigem inventário jurídico final.
 - **Evidências/comandos:** grep sem resultados de auditoria.
 - **Riscos residuais:** parte de programa LGPD.
 - **Próximo passo:** definir modelo de audit log.

@@ -13,6 +13,8 @@ import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.en
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { PasswordService } from '../auth/password.service';
+import { AuditService } from '../audit/audit.service';
+import { RequestUser } from '../common/types/jwt-payload.type';
 
 @Injectable()
 export class UsersService {
@@ -27,6 +29,7 @@ export class UsersService {
     private readonly tenantRolePermissionRepo: Repository<TenantRolePermission>,
     private readonly passwords: PasswordService,
     private readonly dataSource: DataSource,
+    private readonly audit: AuditService,
   ) {}
 
   private normalizeRoleName(defaultRole?: string): string {
@@ -220,7 +223,7 @@ export class UsersService {
     });
   }
 
-  async listTenantUsers(tenantId: string): Promise<Array<{
+  async listTenantUsers(tenantId: string, actor?: RequestUser): Promise<Array<{
     id: string;
     authUserId: string;
     email: string;
@@ -234,7 +237,7 @@ export class UsersService {
       order: { createdAt: 'ASC' },
     });
 
-    return users.map((entry) => ({
+    const result = users.map((entry) => ({
       id: entry.uuid,
       authUserId: entry.authUserId,
       email: entry.email,
@@ -242,6 +245,9 @@ export class UsersService {
       tenantId: entry.tenantId,
       active: entry.active,
     }));
+    if (actor) await this.audit.record({ tenantId, actor, action: 'READ', resourceType: 'usuario',
+      fields: ['email', 'role', 'active'], purpose: 'Administração de usuários do tenant', metadata: { resultCount: result.length } });
+    return result;
   }
 
   /**
@@ -251,6 +257,7 @@ export class UsersService {
   async createTenantUser(
     tenantId: string,
     dto: CreateUserDto,
+    actor?: RequestUser,
   ): Promise<{
     id: string;
     authUserId: string;
@@ -294,7 +301,7 @@ export class UsersService {
         }),
       );
 
-      return {
+      const result = {
         id: localUser.uuid,
         authUserId: localUser.authUserId,
         email: localUser.email,
@@ -302,6 +309,9 @@ export class UsersService {
         tenantId,
         active: localUser.active,
       };
+      if (actor) await this.audit.record({ tenantId, actor, action: 'CREATE', resourceType: 'usuario',
+        resourceUuid: savedUser.uuid, fields: ['email', 'nome', 'roles'], purpose: 'Administração de usuários do tenant' }, manager);
+      return result;
     });
   }
 
@@ -333,6 +343,7 @@ export class UsersService {
     tenantId: string,
     userUuid: string,
     dto: UpdateUserDto,
+    actor?: RequestUser,
   ): Promise<{
     id: string;
     authUserId: string;
@@ -378,7 +389,7 @@ export class UsersService {
       where: { tenantId, uuid: userUuid },
     });
 
-    return {
+    const result = {
       id: updated.uuid,
       authUserId: updated.authUserId,
       email: updated.email,
@@ -386,6 +397,10 @@ export class UsersService {
       tenantId: updated.tenantId,
       active: updated.active,
     };
+    if (actor) await this.audit.record({ tenantId, actor, action: 'UPDATE', resourceType: 'usuario',
+      resourceUuid: updated.authUserId, fields: Object.keys(dto).filter((field) => field !== 'new_password').concat(dto.new_password ? ['senha_hash'] : []),
+      purpose: 'Administração de usuários do tenant' });
+    return result;
   }
 
   async findByUuidAndTenant(uuid: string, tenantId: string): Promise<User> {

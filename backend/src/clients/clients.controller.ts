@@ -33,7 +33,7 @@ export class ClientsController {
   @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   @RequirePermission('clientes.criar')
   async create(@Body() dto: CreateClientDto, @CurrentUser() user: RequestUser) {
-    return this.clientsService.create(dto, user.tenantId);
+    return this.clientsService.create(dto, user);
   }
 
   @Get()
@@ -43,13 +43,13 @@ export class ClientsController {
     @Query('search') search: string,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.clientsService.findAll(user.tenantId, pagination, search);
+    return this.clientsService.findAll(user, pagination, search);
   }
 
   @Get(':uuid')
   @RequirePermission('clientes.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
-    return this.clientsService.findOne(uuid, user.tenantId);
+    return this.clientsService.findOneForUser(uuid, user);
   }
 
   @Patch(':uuid')
@@ -60,7 +60,7 @@ export class ClientsController {
     @Body() dto: UpdateClientDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.clientsService.update(uuid, dto, user.tenantId);
+    return this.clientsService.update(uuid, dto, user);
   }
 
   @Delete(':uuid')
@@ -68,6 +68,6 @@ export class ClientsController {
   @RequirePermission('clientes.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {
-    await this.clientsService.remove(uuid, user.tenantId);
+    await this.clientsService.remove(uuid, user);
   }
 }

@@ -31,6 +31,15 @@ export default function Configuracoes() {
           >
             Roles
           </NavLink>
+          <NavLink
+            to='/configuracoes/auditoria'
+            className={({ isActive }) => `rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+              isActive ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            Auditoria LGPD
+          </NavLink>
+          <NavLink to='/configuracoes/privacidade' className={({ isActive }) => `rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${isActive ? 'bg-primary text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>Direitos LGPD</NavLink>
         </div>
       </div>
 
