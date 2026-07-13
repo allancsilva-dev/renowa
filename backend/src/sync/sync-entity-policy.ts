@@ -8,6 +8,12 @@ export interface SyncForeignKeyPolicy {
 
 export interface SyncEntityPolicy {
   readonly table: string;
+  readonly permissions: {
+    readonly pull: string;
+    readonly create: string;
+    readonly update: string;
+    readonly delete: string;
+  };
   readonly writableFields: readonly string[];
   readonly foreignKeys: Readonly<Record<string, SyncForeignKeyPolicy>>;
   readonly serverControlledFields: readonly string[];
@@ -26,6 +32,7 @@ const BASE_SERVER_CONTROLLED_FIELDS = [
 export const SYNC_ENTITY_POLICIES = {
   [SyncEntity.CLIENTES]: {
     table: 'clientes',
+    permissions: syncPermissions('clientes'),
     writableFields: [
       'razao_social', 'cnpj', 'email', 'tel', 'endereco', 'bairro', 'cidade', 'uf',
       'cep', 'contato', 'inscricao_estadual', 'suframa', 'pgt_padrao', 'prazo',
@@ -42,6 +49,7 @@ export const SYNC_ENTITY_POLICIES = {
   },
   [SyncEntity.PEDIDOS]: {
     table: 'pedidos',
+    permissions: syncPermissions('pedidos'),
     writableFields: [
       'data', 'status', 'total_sem_imposto', 'total_com_imposto', 'pgt', 'prazo',
       'local_entrega', 'observacao',
@@ -60,6 +68,7 @@ export const SYNC_ENTITY_POLICIES = {
   },
   [SyncEntity.PRODUTOS]: {
     table: 'produtos',
+    permissions: syncPermissions('produtos'),
     writableFields: ['codigo', 'descricao', 'preco_base'],
     foreignKeys: {
       fornecedor_uuid: { column: 'fornecedor_id', targetTable: 'fornecedores', nullable: true },
@@ -68,18 +77,26 @@ export const SYNC_ENTITY_POLICIES = {
   },
   [SyncEntity.FORNECEDORES]: {
     table: 'fornecedores',
+    permissions: syncPermissions('fornecedores'),
     writableFields: ['razao_social', 'cnpj'],
     foreignKeys: {},
     serverControlledFields: BASE_SERVER_CONTROLLED_FIELDS,
   },
   [SyncEntity.TRANSPORTADORAS]: {
     table: 'transportadoras',
+    permissions: syncPermissions('transportadoras'),
     writableFields: ['razao_social', 'cnpj', 'telefone', 'endereco_completo'],
     foreignKeys: {},
     serverControlledFields: BASE_SERVER_CONTROLLED_FIELDS,
   },
   [SyncEntity.ITENS_PEDIDO]: {
     table: 'itens_pedido',
+    permissions: {
+      pull: 'pedidos.ver',
+      create: 'pedidos.editar',
+      update: 'pedidos.editar',
+      delete: 'pedidos.editar',
+    },
     writableFields: [
       'codigo_manual', 'descricao_manual', 'qtd_caixas', 'qtd_unitaria',
       'preco_unitario', 'desconto_perc', 'total_item',
@@ -91,6 +108,15 @@ export const SYNC_ENTITY_POLICIES = {
     serverControlledFields: BASE_SERVER_CONTROLLED_FIELDS,
   },
 } as const satisfies Record<SyncEntity, SyncEntityPolicy>;
+
+function syncPermissions(module: string): SyncEntityPolicy['permissions'] {
+  return {
+    pull: `${module}.ver`,
+    create: `${module}.criar`,
+    update: `${module}.editar`,
+    delete: `${module}.deletar`,
+  };
+}
 
 export function getSyncEntityPolicy(entity: SyncEntity): SyncEntityPolicy {
   return SYNC_ENTITY_POLICIES[entity];

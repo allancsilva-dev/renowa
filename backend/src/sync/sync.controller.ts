@@ -6,7 +6,9 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { SyncService } from './sync.service';
 import { SyncPushDto, SyncPushV2Dto, SyncPullDto, SyncPullV2Dto, SyncEntity } from './dto/sync.dto';
@@ -19,6 +21,10 @@ import { Product } from '../products/entities/product.entity';
 import { Supplier } from '../suppliers/entities/supplier.entity';
 import { Transport } from '../transport/entities/transport.entity';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
+import { LocalUser } from '../rbac/entities/local-user.entity';
+import { SyncAuthorizationService } from './sync-authorization.service';
+
+type SyncRequest = Request & { localUser?: LocalUser };
 
 /**
  * CHANGELOG #8: Endpoints separados por entidade (sync por entidade).
@@ -26,7 +32,10 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
  */
 @Controller('sync')
 export class SyncController {
-  constructor(private readonly syncService: SyncService) {}
+  constructor(
+    private readonly syncService: SyncService,
+    private readonly syncAuthorization: SyncAuthorizationService,
+  ) {}
 
   /**
    * POST /api/sync
@@ -37,31 +46,24 @@ export class SyncController {
   @Post()
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
-  @RequirePermission([
-    'clientes.editar',
-    'pedidos.editar',
-    'produtos.editar',
-    'fornecedores.editar',
-    'transportadoras.editar',
-  ])
   async push(
     @Body() dto: SyncPushDto,
     @CurrentUser() user: RequestUser,
+    @Req() req: SyncRequest,
   ) {
+    await this.syncAuthorization.assertCanPush(dto.items, user, req.localUser);
     return this.syncService.pushItems(dto.items, user.tenantId);
   }
 
   @Post('v2')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
-  @RequirePermission([
-    'clientes.editar',
-    'pedidos.editar',
-    'produtos.editar',
-    'fornecedores.editar',
-    'transportadoras.editar',
-  ])
-  pushV2(@Body() dto: SyncPushV2Dto, @CurrentUser() user: RequestUser) {
+  async pushV2(
+    @Body() dto: SyncPushV2Dto,
+    @CurrentUser() user: RequestUser,
+    @Req() req: SyncRequest,
+  ) {
+    await this.syncAuthorization.assertCanPush(dto.items, user, req.localUser);
     return this.syncService.pushItemsV2(dto, user.tenantId);
   }
 
