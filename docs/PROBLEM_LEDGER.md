@@ -302,14 +302,14 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** backend / segurança
 - **Sintoma:** `TenantSubscriber` não é registrado como provider nem instanciado por DI (grep confirma: só referências no próprio arquivo). O `cls.set('tenantId')` do interceptor não tem consumidor ativo — o único `cls.get` era esse subscriber.
 - **Causa raiz:** confirmada — `grep -rn "TenantSubscriber" backend/src` retorna só `tenant.subscriber.ts:24` e `:39`.
 - **Impacto técnico:** a proteção "injeta/valida tenant_id em todo INSERT" descrita na memória do projeto **não existe**. Isolamento depende 100% de cada service passar `tenantId` manualmente (hoje passam). Sync usa `INSERT` cru — nunca passaria por subscriber de qualquer forma. Interceptor+CLS são efetivamente código morto. **Corrige afirmação falsa em SYSTEM_OVERVIEW e DIAGRAMS.**
 - **Arquivos/módulos:** `backend/src/common/subscribers/tenant.subscriber.ts`; `tenant-context.interceptor.ts:27-28`
 - **Solução proposta:** registrar `TenantSubscriber` como provider de módulo, OU remover interceptor/subscriber mortos para não dar falsa sensação de proteção.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
+- **Solução aplicada:** subscriber, interceptor e dependência CLS mortos removidos. Tenant permanece explícito nos services/repositories; constraints tenant-scoped são defesa no banco.
 - **Evidências/comandos:** `grep -rn "TenantSubscriber" backend/src` → 2 hits (mesmo arquivo).
 - **Riscos residuais:** nota: o agente de segurança assumiu que o subscriber protegia — **assunção incorreta**, refutada por este grep.
 - **Próximo passo:** decidir registrar vs remover.
@@ -473,14 +473,14 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** backend / segurança
 - **Sintoma:** `createComissao`/`createParceiro` gravam `dto.fornecedor_id` (id numérico cru) sem checar se pertence ao tenant (diferente de `cliente_uuid`, resolvido com filtro de tenant).
 - **Causa raiz:** confirmada.
 - **Impacto técnico:** comissão/parceiro do tenant A referencia fornecedor do tenant B; `leftJoinAndSelect('c.fornecedor')` expõe `razao_social` do outro tenant em relatórios.
 - **Arquivos/módulos:** `backend/src/finance/finance.service.ts:147`, `:314`; `create-comissao.dto.ts:11-13`
 - **Solução proposta:** resolver/validar fornecedor por uuid+tenant como é feito com clientes.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
+- **Solução aplicada:** resolução central exige fornecedor ativo pelo par `id + tenant_id` antes de criar comissão ou parceiro; testes cobrem sucesso, cross-tenant e ausência opcional.
 - **Evidências/comandos:** leitura de `finance.service.ts`.
 - **Riscos residuais:** subconjunto de PROB-0011.
 - **Próximo passo:** validar FK por tenant.
@@ -490,14 +490,14 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** frontend
 - **Sintoma:** `permissions` é hardcoded `[]` a cada load; resultado de `/auth/me` não é mapeado. `hasPermission(slug)` só retorna true para admin.
 - **Causa raiz:** confirmada.
 - **Impacto técnico:** hoje nenhuma rota passa `permission` (só `adminOnly`), mas o prop `permission` de `ProtectedRoute` é uma armadilha viva para uso futuro. Duas entradas de `useAuth` (context vs hook) aumentam o risco de drift.
 - **Arquivos/módulos:** `frontend/src/context/AuthContext.tsx:45,55,69-72`; `ProtectedRoute.tsx:29`
 - **Solução proposta:** popular permissions da API ou remover a superfície morta.
-- **Solução aplicada:** nenhuma ainda. Delegado a `frontend-engineer`.
+- **Solução aplicada:** `/auth/me` retorna permissões efetivas tenant-scoped; guard usa mesma fonte; frontend popula `AuthContext.permissions`. Associação RBAC ganhou `tenant_id` e FK composta para `tenant_roles`.
 - **Evidências/comandos:** leitura de `AuthContext.tsx`.
 - **Riscos residuais:** relacionado a PROB-0014.
 - **Próximo passo:** decidir ativar vs remover.
@@ -693,17 +693,17 @@ Origem: análise do usuário (`docs/PossiveisErros.md`) sobre `Prompt_Auth_Nativ
 - **Data:** 2026-07-08
 - **Origem:** revisão
 - **Severidade:** MEDIUM
-- **Status:** ABERTO
+- **Status:** FECHADO_COM_RESSALVA
 - **Área:** segurança / infra
-- **Sintoma:** `main.ts` não configura `app.set('trust proxy', 1)`. Atrás do NPM (que termina o TLS), `req.secure` fica `false`, `req.ip` e `X-Forwarded-For` refletem o proxy, e `X-Forwarded-Proto` é ignorado.
-- **Causa raiz:** confirmada — ausência de configuração de confiança no proxy.
+- **Sintoma:** configuração anterior por contagem de dois saltos era dependente da topologia; frontend também sobrescrevia `X-Forwarded-Proto` com HTTP interno.
+- **Causa raiz:** confiança baseada em distância e ausência de normalização segura dos cabeçalhos no último proxy.
 - **Impacto técnico:** hoje parcial (throttle é por `user.sub`, não por IP — PROB-0036). Após a auth nativa vira pleno: cookie `Secure`/redirect por `req.secure` erra, lockout e rate-limit por IP enxergam o IP do proxy para todos os usuários, e a auditoria `ip INET` de `refresh_tokens` registra o IP do proxy.
-- **Arquivos/módulos:** `backend/src/main.ts:8-9` (bootstrap, sem `trust proxy`)
-- **Solução proposta:** `app.set('trust proxy', 1)` no Express subjacente do Nest; garantir que o NPM encaminha `X-Forwarded-For`/`X-Forwarded-Proto`.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer`.
-- **Evidências/comandos:** leitura de `main.ts` (sem `set('trust proxy')`).
-- **Riscos residuais:** confiar no proxy sem garantir que só o proxy alcança a app permite spoof de `X-Forwarded-For` — restringir a rede.
-- **Próximo passo:** aplicar junto da Fase 0/1 da migração.
+- **Arquivos/módulos:** `backend/src/main.ts`, `backend/src/config/trust-proxy.config.ts`, `frontend/nginx.conf`, `docker-compose.prod.yml`.
+- **Solução proposta:** confiar somente no endereço explícito do frontend, normalizar cabeçalhos e retirar acesso direto à API.
+- **Solução aplicada:** rede interna `api_gateway`, frontend fixo em `172.30.0.2`, API sem porta publicada, `TRUST_PROXY=172.30.0.2/32`, validação fail-fast e cabeçalhos normalizados no nginx.
+- **Evidências/comandos:** 43 testes backend; builds backend/frontend; `docker compose config --quiet`. Lint indisponível por ausência de ESLint/configuração no repositório.
+- **Riscos residuais:** NPM deve permanecer na rede `proxy` e sobrescrever cabeçalhos recebidos do cliente.
+- **Próximo passo:** validar `nginx -t`, executar smoke test HTTPS após deploy e confirmar IP real na auditoria.
 - **Relacionado:** PROB-0036, BACKLOG-0009
 
 ### PROB-0039 — Dupla fonte de verdade para `updated_at` (trigger DB + `@UpdateDateColumn`)
