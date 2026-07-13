@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { User } from './entities/user.entity';
 import { LocalUser } from '../rbac/entities/local-user.entity';
@@ -226,6 +226,7 @@ export class UsersService {
   async listTenantUsers(tenantId: string, actor?: RequestUser): Promise<Array<{
     id: string;
     authUserId: string;
+    name: string;
     email: string;
     role: string;
     tenantId: string;
@@ -237,9 +238,18 @@ export class UsersService {
       order: { createdAt: 'ASC' },
     });
 
+    const identities = users.length
+      ? await this.userRepo.find({
+          where: { tenant_id: tenantId, uuid: In(users.map((entry) => entry.authUserId)) },
+          select: { uuid: true, nome: true },
+        })
+      : [];
+    const namesByAuthUserId = new Map(identities.map((identity) => [identity.uuid, identity.nome]));
+
     const result = users.map((entry) => ({
       id: entry.uuid,
       authUserId: entry.authUserId,
+      name: namesByAuthUserId.get(entry.authUserId) ?? entry.email,
       email: entry.email,
       role: entry.role?.name ?? 'viewer',
       tenantId: entry.tenantId,

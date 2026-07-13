@@ -9,6 +9,7 @@ import Dialog from '@/components/ui/Dialog';
 interface TenantUser {
   id: string;
   authUserId: string;
+  name: string;
   email: string;
   role: string;
   tenantId: string;
@@ -31,6 +32,11 @@ const DEFAULT_FORM: UserUpsertForm = {
 };
 
 const ROLE_OPTIONS = ['admin', 'manager', 'viewer'];
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrador',
+  manager: 'Gestor',
+  viewer: 'Consulta',
+};
 
 export default function UsuariosPage() {
   const [users, setUsers] = useState<TenantUser[]>([]);
@@ -94,18 +100,18 @@ export default function UsuariosPage() {
   const columns = useMemo(() => ([
     {
       key: 'email',
-      header: 'E-mail',
+      header: 'Usuário',
       cell: (row: TenantUser) => (
         <div>
-          <p className='font-medium text-slate-900'>{row.email}</p>
-          <p className='text-xs text-slate-500'>Auth ID: {row.authUserId}</p>
+          <p className='font-medium text-slate-900'>{row.name || row.email}</p>
+          <p className='text-xs text-slate-600'>{row.email}</p>
         </div>
       ),
     },
     {
       key: 'role',
-      header: 'Role',
-      cell: (row: TenantUser) => row.role,
+      header: 'Perfil de acesso',
+      cell: (row: TenantUser) => ROLE_LABELS[row.role] ?? row.role,
     },
     {
       key: 'status',
@@ -206,7 +212,7 @@ export default function UsuariosPage() {
       <div className='flex items-center justify-between gap-4'>
         <div>
           <h1 className='text-xl font-bold text-slate-900'>Usuários</h1>
-          <p className='text-sm text-slate-500'>Gerencie os usuários do tenant e seus níveis de acesso.</p>
+          <p className='text-sm text-slate-600'>Gerencie pessoas e defina o que cada uma pode acessar.</p>
         </div>
         <button
           type='button'
@@ -288,7 +294,7 @@ export default function UsuariosPage() {
               <p className='text-xs text-slate-400'>Mínimo 8 caracteres.</p>
             </div>
             <div className='space-y-1'>
-              <label htmlFor='new-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Role</label>
+              <label htmlFor='new-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Perfil de acesso</label>
               <select
                 id='new-user-role'
                 value={createForm.role}
@@ -296,7 +302,7 @@ export default function UsuariosPage() {
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
               >
                 {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>{role}</option>
+                  <option key={role} value={role}>{ROLE_LABELS[role] ?? role}</option>
                 ))}
               </select>
             </div>
@@ -335,7 +341,7 @@ export default function UsuariosPage() {
             )}
 
             <div className='space-y-1'>
-              <label htmlFor='edit-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Role</label>
+              <label htmlFor='edit-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Perfil de acesso</label>
               <select
                 id='edit-user-role'
                 value={editRole}
@@ -343,7 +349,7 @@ export default function UsuariosPage() {
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
               >
                 {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>{role}</option>
+                  <option key={role} value={role}>{ROLE_LABELS[role] ?? role}</option>
                 ))}
               </select>
             </div>

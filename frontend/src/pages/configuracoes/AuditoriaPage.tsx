@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable from '@/components/tables/DataTable';
+import apiClient from '@/lib/apiClient';
 import { getApiErrorMessage } from '@/lib/errors';
+import { normalizeListResponse } from '@/lib/pagination';
 import { fetchAuditEvents, type AuditAction, type PiiAuditEvent } from '@/services/audit.service';
 import type { PaginatedResponse } from '@/types';
 
@@ -10,10 +12,21 @@ const actionLabels: Record<AuditAction, string> = {
 };
 
 const emptyMeta = { total: 0, page: 1, limit: 25, totalPages: 1 };
+const roleLabels: Record<string, string> = { admin: 'Administrador', manager: 'Gestor', viewer: 'Consulta' };
+const fieldLabels: Record<string, string> = {
+  active: 'status', cnpj: 'CNPJ', email: 'e-mail', endereco: 'endereço', nome: 'nome',
+  role: 'perfil de acesso', roles: 'perfis de acesso', senha_hash: 'senha', tel: 'telefone',
+};
+const resourceLabels: Record<string, string> = { cliente: 'Cliente', usuario: 'Usuário' };
+
+function readableLabel(value: string): string {
+  return fieldLabels[value] ?? value.replace(/_/g, ' ');
+}
 
 export default function AuditoriaPage() {
   const [result, setResult] = useState<PaginatedResponse<PiiAuditEvent>>({ data: [], meta: emptyMeta });
   const [action, setAction] = useState('');
+  const [actorNames, setActorNames] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,15 +38,23 @@ export default function AuditoriaPage() {
   }, [action]);
 
   useEffect(() => { void load(1); }, [load]);
+  useEffect(() => {
+    apiClient.get<unknown>('/users', { params: { page: 1, limit: 1000 } })
+      .then((response) => {
+        const users = normalizeListResponse<{ authUserId: string; name: string; email: string }>(response.data, 1, 1000).items;
+        setActorNames(new Map(users.map((user) => [user.authUserId, user.name || user.email])));
+      })
+      .catch(() => setActorNames(new Map()));
+  }, []);
 
   const columns = useMemo(() => [
     { key: 'date', header: 'Data e hora', cell: (row: PiiAuditEvent) => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(row.occurred_at)) },
     { key: 'action', header: 'Ação', cell: (row: PiiAuditEvent) => <span className='font-medium text-slate-900'>{actionLabels[row.action]}</span> },
-    { key: 'resource', header: 'Recurso', cell: (row: PiiAuditEvent) => <div><p>{row.resource_type}</p><p className='max-w-48 truncate text-xs text-slate-600' title={row.resource_uuid ?? undefined}>{row.resource_uuid ?? 'Vários registros'}</p></div> },
-    { key: 'actor', header: 'Ator', cell: (row: PiiAuditEvent) => <div><p className='max-w-44 truncate' title={row.actor_id}>{row.actor_id}</p><p className='text-xs text-slate-600'>{row.actor_roles.join(', ')}</p></div> },
+    { key: 'resource', header: 'Dados afetados', cell: (row: PiiAuditEvent) => resourceLabels[row.resource_type] ?? readableLabel(row.resource_type) },
+    { key: 'actor', header: 'Responsável', cell: (row: PiiAuditEvent) => <div><p className='font-medium text-slate-900'>{actorNames.get(row.actor_id) ?? 'Usuário do sistema'}</p><p className='text-xs text-slate-600'>{row.actor_roles.map((role) => roleLabels[role.toLowerCase()] ?? role).join(', ')}</p></div> },
     { key: 'purpose', header: 'Finalidade', cell: (row: PiiAuditEvent) => <p className='max-w-72 text-slate-700'>{row.purpose}</p> },
-    { key: 'fields', header: 'Campos', cell: (row: PiiAuditEvent) => row.fields.length ? row.fields.join(', ') : '—' },
-  ], []);
+    { key: 'fields', header: 'Informações', cell: (row: PiiAuditEvent) => row.fields.length ? row.fields.map(readableLabel).join(', ') : '—' },
+  ], [actorNames]);
 
   return (
     <section className='space-y-4' aria-labelledby='audit-title'>

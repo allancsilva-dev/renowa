@@ -5,13 +5,13 @@ const sections = [
   {
     to: '/configuracoes/usuarios',
     title: 'Usuários',
-    description: 'Gerencie os usuários do tenant, convites e acessos.',
+    description: 'Gerencie pessoas, convites e acessos da empresa.',
     icon: Users,
   },
   {
     to: '/configuracoes/roles',
-    title: 'Roles',
-    description: 'Defina papéis e permissões atribuídos aos usuários.',
+    title: 'Perfis de acesso',
+    description: 'Defina o que cada grupo de usuários pode fazer.',
     icon: ShieldCheck,
   },
   {
@@ -20,7 +20,7 @@ const sections = [
     description: 'Consulte acessos e alterações de dados pessoais.',
     icon: ClipboardList,
   },
-  { to: '/configuracoes/privacidade', title: 'Direitos LGPD', description: 'Gerencie apagamento e portabilidade de titulares.', icon: UserRoundCheck },
+  { to: '/configuracoes/privacidade', title: 'Solicitações de privacidade', description: 'Gerencie apagamento e portabilidade de dados de clientes.', icon: UserRoundCheck },
 ];
 
 export default function ConfiguracoesHome() {

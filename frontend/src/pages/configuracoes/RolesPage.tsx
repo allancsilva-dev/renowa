@@ -112,7 +112,7 @@ export default function RolesPage() {
   const columns = useMemo(() => ([
     {
       key: 'name',
-      header: 'Role',
+      header: 'Perfil de acesso',
       cell: (row: Role) => (
         <div>
           <p className='font-medium text-slate-900'>{row.name}</p>
@@ -145,7 +145,7 @@ export default function RolesPage() {
             type='button'
             onClick={async () => {
               if (permissionsLoading) return;
-              if (!window.confirm(`Desativar a role "${row.name}"? Usuários associados podem perder acesso.`)) return;
+              if (!window.confirm(`Desativar o perfil "${row.name}"? Usuários associados podem perder acesso.`)) return;
               setPermissionsLoading(true);
               setPermissionsError(null);
               try {
@@ -222,8 +222,8 @@ export default function RolesPage() {
     <div className='space-y-4'>
       <div className='flex items-center justify-between gap-4'>
         <div>
-          <h1 className='text-xl font-bold text-slate-900'>Roles</h1>
-          <p className='text-sm text-slate-500'>Defina funções e permissões para os usuários do tenant.</p>
+          <h1 className='text-xl font-bold text-slate-900'>Perfis de acesso</h1>
+          <p className='text-sm text-slate-600'>Defina o que cada grupo de usuários pode acessar e alterar.</p>
         </div>
         <button
           type='button'
@@ -235,7 +235,7 @@ export default function RolesPage() {
           className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
         >
           <Plus className='h-4 w-4' />
-          Nova Role
+          Novo perfil
         </button>
       </div>
 
@@ -254,11 +254,11 @@ export default function RolesPage() {
         onRetry={() => fetchRoles(meta.page)}
         meta={meta}
         onPageChange={(page) => { void fetchRoles(page); }}
-        emptyTitle='Nenhuma role cadastrada'
+        emptyTitle='Nenhum perfil de acesso cadastrado'
       />
 
       {isCreateOpen && (
-        <Dialog open title='Nova role' onClose={() => setIsCreateOpen(false)} className='max-w-md'>
+        <Dialog open title='Novo perfil de acesso' onClose={() => setIsCreateOpen(false)} className='max-w-md'>
           <form
             onSubmit={handleCreateRole}
             className='space-y-4'
@@ -310,7 +310,7 @@ export default function RolesPage() {
       )}
 
       {editingRole && (
-        <Dialog open title={`Permissões da role: ${editingRole.name}`} onClose={() => setEditingRole(null)} className='max-w-2xl'>
+        <Dialog open title={`Permissões de ${editingRole.name}`} onClose={() => setEditingRole(null)} className='max-w-2xl'>
           <form
             onSubmit={handleSavePermissions}
             className='space-y-4'
@@ -325,10 +325,10 @@ export default function RolesPage() {
                     onChange={() => togglePermission(permission.slug)}
                   />
                   <span className='text-sm text-slate-700'>
-                    <strong>{permission.slug}</strong>
+                    <strong>{permission.description || permission.module}</strong>
                     <br />
                     <span className='text-xs text-slate-500'>
-                      {permission.description || permission.module}
+                      {permission.module}
                     </span>
                   </span>
                 </label>
