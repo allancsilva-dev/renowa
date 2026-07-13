@@ -285,17 +285,17 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO
 - **Área:** frontend
-- **Sintoma:** `await res.json()` seguido de `setStatus('success')` sem checar `res.ok`. Callback OIDC com falha (state mismatch, code expirado, 4xx/5xx) e sem `redirect` cai no fallback `window.location.href = '/dashboard'` reportando sucesso.
-- **Causa raiz:** confirmada — status da resposta ignorado.
-- **Impacto técnico:** usuário entra no app sem cookie válido → loop de redirect via tratamento de 401.
-- **Arquivos/módulos:** `frontend/src/pages/AuthCallback.tsx:32-39`
-- **Solução proposta:** checar `res.ok` e presença de `data.redirect`; senão exibir erro.
-- **Solução aplicada:** nenhuma ainda. Delegado a `frontend-engineer`.
-- **Evidências/comandos:** leitura de `AuthCallback.tsx`.
-- **Riscos residuais:** nenhum além do loop.
-- **Próximo passo:** tratamento de erro no callback.
+- **Sintoma:** no fluxo OIDC legado, `await res.json()` era seguido de `setStatus('success')` sem checar `res.ok`. Falhas de callback (state mismatch, code expirado, 4xx/5xx) sem `redirect` caíam no fallback `window.location.href = '/dashboard'`, reportando sucesso sem sessão válida.
+- **Causa raiz:** confirmada — status HTTP, formato do payload e estabelecimento da sessão não eram validados antes do redirect.
+- **Impacto técnico:** usuário era enviado ao app sem cookie válido, causando novo 401 e loop de redirect.
+- **Arquivos/módulos:** antigo `frontend/src/pages/AuthCallback.tsx`; `frontend/src/App.tsx`; fluxo atual em `frontend/src/pages/Login.tsx` e `frontend/src/context/AuthContext.tsx`.
+- **Solução proposta:** validar `res.ok`, payload e sessão antes do redirect ou eliminar o callback ao substituir OIDC.
+- **Solução aplicada:** autenticação nativa substituiu integralmente o fluxo OIDC no commit `418f91a` (`feat(auth): wire frontend native login`). `AuthCallback.tsx` e rota `/callback` foram removidos; frontend atual usa rota pública `/login`. Não foi mantido patch em código morto.
+- **Evidências/comandos:** histórico do Git confirma remoção de `AuthCallback.tsx` e `/callback` no commit `418f91a`; busca em `backend/src` e `frontend/src` não encontrou referências a `OIDC`, `/auth/oidc/*`, `/callback` ou `AuthCallback`.
+- **Riscos residuais:** configuração externa antiga de redirect OIDC, se ainda existir no provedor ou ambiente de deploy, deve ser removida para evitar tráfego para rota inexistente.
+- **Próximo passo:** manter teste de regressão das rotas públicas e retirar eventual configuração OIDC residual do ambiente.
 - **Relacionado:** —
 
 ### PROB-0016 — `TenantSubscriber` nunca registrado — defesa em profundidade inexistente
