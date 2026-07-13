@@ -1,5 +1,5 @@
 import api from '@/lib/apiClient';
-import type { ApiResponse, PaginatedResponse } from '@/types';
+import type { PaginatedResponse } from '@/types';
 
 export type AuditAction = 'READ' | 'CREATE' | 'UPDATE' | 'DELETE' | 'EXPORT' | 'AUDIT_READ';
 
@@ -18,6 +18,6 @@ export interface PiiAuditEvent {
 export async function fetchAuditEvents(params: {
   page?: number; limit?: number; action?: string; resourceType?: string;
 }): Promise<PaginatedResponse<PiiAuditEvent>> {
-  const { data } = await api.get<ApiResponse<PaginatedResponse<PiiAuditEvent>>>('/admin/audit', { params });
-  return data.data;
+  const { data } = await api.get<PaginatedResponse<PiiAuditEvent>>('/admin/audit', { params });
+  return data;
 }
