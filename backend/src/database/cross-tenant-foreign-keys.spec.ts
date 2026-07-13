@@ -26,7 +26,7 @@ const audit = readFileSync(
   'utf8',
 );
 
-const tenantRelations: Array<[Function, string]> = [
+const tenantRelations: Array<[new (...args: any[]) => unknown, string]> = [
   [Order, 'cliente'],
   [Order, 'fornecedor'],
   [Order, 'transportadora'],

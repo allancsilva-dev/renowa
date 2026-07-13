@@ -51,7 +51,10 @@ export class NativeAuthService {
       last_login_at: new Date(),
     });
 
-    return this.issuePair(user.uuid, user.tenant_id, user.roles, user.email, user.id, meta);
+    return this.issuePair(
+      user.uuid, user.tenant_id, user.roles, user.email,
+      user.access_token_version, user.id, meta,
+    );
   }
 
   async refresh(rawRefresh: string, meta: RequestMeta) {
@@ -67,12 +70,14 @@ export class NativeAuthService {
       tenantId: user.tenant_id,
       roles: user.roles,
       email: user.email,
+      tokenVersion: user.access_token_version,
     });
     return { accessToken, refreshToken: rotated.token };
   }
 
-  async logout(rawRefresh: string): Promise<void> {
-    await this.refreshTokens.revokeFamilyByRawToken(rawRefresh);
+  async logout(rawRefresh: string | undefined, userSub: string, tenantId: string): Promise<void> {
+    if (rawRefresh) await this.refreshTokens.revokeFamilyByRawToken(rawRefresh);
+    await this.userRepo.increment({ uuid: userSub, tenant_id: tenantId }, 'access_token_version', 1);
   }
 
   async changePassword(
@@ -88,7 +93,10 @@ export class NativeAuthService {
       throw new UnauthorizedException('Credenciais inválidas');
     }
     const hash = await this.passwords.hash(next);
-    await this.userRepo.update(user.id, { senha_hash: hash });
+    await this.userRepo.update(user.id, {
+      senha_hash: hash,
+      access_token_version: user.access_token_version + 1,
+    });
     await this.refreshTokens.revokeAllForUser(user.id);
   }
 
@@ -97,10 +105,13 @@ export class NativeAuthService {
     tenantId: string,
     roles: string[],
     email: string,
+    tokenVersion: number,
     userId: number,
     meta: RequestMeta,
   ) {
-    const accessToken = this.accessTokens.sign({ sub, tenantId, roles, email });
+    const accessToken = this.accessTokens.sign({
+      sub, tenantId, roles, email, tokenVersion,
+    });
     const { token: refreshToken } = await this.refreshTokens.issue({
       userId,
       tenantId,

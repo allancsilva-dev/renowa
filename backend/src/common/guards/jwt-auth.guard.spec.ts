@@ -13,7 +13,7 @@ function ctxFor(req: any) {
 describe('JwtAuthGuard', () => {
   const reflector = { getAllAndOverride: () => false } as unknown as Reflector;
   const access = {
-    verify: (t: string) => {
+    verify: async (t: string) => {
       if (t === 'good') return { sub: 'u-1', tenantId: 't-1', roles: ['admin'] };
       throw new Error('bad');
     },

@@ -7,7 +7,8 @@ import { CreateLgpdRequestDto, DenyLgpdRequestDto, ReviewLgpdRequestDto } from '
 import { LgpdRequest } from './entities/lgpd-request.entity';
 
 const CLIENT_FIELDS = ['razao_social','cnpj','email','tel','endereco','bairro','cidade','uf','cep','contato','inscricao_estadual','suframa','pgt_padrao','prazo','local_entrega','observacao'];
-const USER_FIELDS = ['email', 'nome', 'senha_hash', 'roles', 'is_active'];
+const USER_FIELDS = ['usuarios.email', 'usuarios.nome', 'usuarios.senha_hash', 'usuarios.roles',
+  'usuarios.is_active', 'local_users.email', 'local_users.active'];
 const ORDER_FIELDS = ['pgt', 'prazo', 'local_entrega', 'observacao'];
 
 @Injectable()
@@ -82,9 +83,13 @@ export class PrivacyService {
           } else {
             const email = `anon-${request.subject_uuid}@invalid.local`;
             const rows = await manager.query(`UPDATE usuarios SET email = $3, nome = 'Titular anonimizado', senha_hash = NULL,
-              roles = '[]'::jsonb, is_active = false, deleted_at = COALESCE(deleted_at, clock_timestamp())
+              roles = '[]'::jsonb, is_active = false, access_token_version = access_token_version + 1,
+              deleted_at = COALESCE(deleted_at, clock_timestamp())
               WHERE tenant_id = $1 AND uuid = $2 RETURNING id`, [user.tenantId, request.subject_uuid, email]);
             if (!rows[0]) throw new NotFoundException('Titular nao encontrado.');
+            await manager.query(`UPDATE local_users SET email = $3, active = false,
+              deleted_at = COALESCE(deleted_at, clock_timestamp())
+              WHERE tenant_id = $1 AND auth_user_id = $2`, [user.tenantId, request.subject_uuid, email]);
             await manager.query('UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, clock_timestamp()) WHERE tenant_id = $1 AND user_id = $2', [user.tenantId, rows[0].id]);
             await manager.query('UPDATE mobile_sessions SET is_active = false, token_version = token_version + 1 WHERE tenant_id = $1 AND user_uuid = $2', [user.tenantId, request.subject_uuid]);
             request.result = { strategy: 'ANONYMIZED_AND_SESSIONS_REVOKED', fieldsRemoved: USER_FIELDS.length };

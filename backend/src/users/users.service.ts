@@ -371,19 +371,39 @@ export class UsersService {
       nextRoleName = role.name;
     }
 
-    await this.localUserRepo.update(existing.id, {
-      roleId: nextRoleId,
-      active: dto.active ?? existing.active,
-    });
+    const senhaHash = dto.new_password ? await this.passwords.hash(dto.new_password) : undefined;
+    const identityChanged = dto.role !== undefined || dto.active !== undefined || senhaHash !== undefined;
 
-    // Reset de senha (opcional): grava novo hash em usuarios.
-    if (dto.new_password) {
-      const senha_hash = await this.passwords.hash(dto.new_password);
-      await this.userRepo.update(
-        { email: existing.email, tenant_id: tenantId },
-        { senha_hash },
-      );
-    }
+    await this.dataSource.transaction(async (manager) => {
+      await manager.getRepository(LocalUser).update(existing.id, {
+        roleId: nextRoleId,
+        active: dto.active ?? existing.active,
+      });
+
+      if (identityChanged) {
+        const userPatch: Partial<User> = {
+          roles: [nextRoleName],
+          is_active: dto.active ?? existing.active,
+        };
+        if (senhaHash) userPatch.senha_hash = senhaHash;
+        await manager.getRepository(User).update(
+          { uuid: existing.authUserId, tenant_id: tenantId },
+          userPatch,
+        );
+        await manager.getRepository(User).increment(
+          { uuid: existing.authUserId, tenant_id: tenantId },
+          'access_token_version',
+          1,
+        );
+        if (senhaHash || dto.active === false) {
+          await manager.query(
+            `UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, clock_timestamp())
+             WHERE tenant_id = $1 AND user_id = (SELECT id FROM usuarios WHERE tenant_id = $1 AND uuid = $2)`,
+            [tenantId, existing.authUserId],
+          );
+        }
+      }
+    });
 
     const updated = await this.localUserRepo.findOneOrFail({
       where: { tenantId, uuid: userUuid },

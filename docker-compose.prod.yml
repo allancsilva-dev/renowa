@@ -20,6 +20,21 @@ services:
     networks:
       - renowa
 
+  redis:
+    image: redis:7-alpine
+    container_name: Renowa-Redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - renowa-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - renowa
+
   api:
     build:
       context: ./backend
@@ -31,8 +46,11 @@ services:
       NODE_ENV: production
       PORT: 3000
       TRUST_PROXY: 172.30.0.2/32
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
@@ -85,6 +103,7 @@ services:
 
 volumes:
   renowa-db-data:
+  renowa-redis-data:
 
 networks:
   renowa:

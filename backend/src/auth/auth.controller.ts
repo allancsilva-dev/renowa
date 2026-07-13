@@ -54,7 +54,8 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const raw = (req as any).cookies?.[RT_COOKIE] as string | undefined;
-    if (raw) await this.auth.logout(raw);
+    const user = (req as Request & { user?: RequestUser }).user;
+    if (user) await this.auth.logout(raw, user.sub, user.tenantId);
     clearAuthCookies(res);
   }
 

@@ -31,7 +31,7 @@ export class JwtAuthGuard implements CanActivate {
     // Web: access token nativo HS256 no cookie renowa_at
     if (cookieToken) {
       try {
-        req.user = this.accessTokens.verify(cookieToken);
+        req.user = await this.accessTokens.verify(cookieToken);
         return true;
       } catch {
         throw new UnauthorizedException('Token inválido ou expirado');

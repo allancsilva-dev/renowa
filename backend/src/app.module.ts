@@ -24,6 +24,7 @@ import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { AuditModule } from './audit/audit.module';
 import { PrivacyModule } from './privacy/privacy.module';
+import { RedisThrottlerStorage } from './common/throttling/redis-throttler.storage';
 
 @Module({
   controllers: [AppController],
@@ -53,7 +54,18 @@ import { PrivacyModule } from './privacy/privacy.module';
     }),
 
     // CHANGELOG #11: Rate limiting global — chave por user.sub via UserThrottlerGuard
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const redisUrl = config.get<string>('REDIS_URL');
+        if (!redisUrl && config.get<string>('NODE_ENV') === 'production') {
+          throw new Error('REDIS_URL é obrigatória em produção para throttling compartilhado');
+        }
+        return redisUrl
+          ? { throttlers: [{ ttl: 60_000, limit: 100 }], storage: new RedisThrottlerStorage(redisUrl) }
+          : [{ ttl: 60_000, limit: 100 }];
+      },
+    }),
 
     AuthModule,
     ClientsModule,

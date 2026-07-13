@@ -1,8 +1,11 @@
-import { Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Post, ServiceUnavailableException } from '@nestjs/common';
 import { Public } from './common/decorators/public.decorator';
+import { DataSource } from 'typeorm';
 
 @Controller()
 export class AppController {
+  constructor(private readonly dataSource: DataSource) {}
+
   /** Healthcheck — usado pelo Docker e monitoramento externo */
   @Public()
   @Get('health')
@@ -18,8 +21,13 @@ export class AppController {
 
   @Public()
   @Get('health/ready')
-  readiness(): { status: string } {
-    return { status: 'ready' };
+  async readiness(): Promise<{ status: string }> {
+    try {
+      await this.dataSource.query('SELECT 1');
+      return { status: 'ready' };
+    } catch {
+      throw new ServiceUnavailableException({ status: 'not_ready', dependency: 'database' });
+    }
   }
 
   @Public()
