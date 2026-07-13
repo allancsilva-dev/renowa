@@ -2,7 +2,7 @@
 
 Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs `BACKLOG-NNNN`. Referência cruzada com [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) por ID.
 
-**Estado atual (2026-07-12): 6 itens abertos.** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
+**Estado atual (2026-07-12): 5 itens não fechados.** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
 
 ## Formato de entrada
 
@@ -41,7 +41,8 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Dependências:** acesso ao provedor de DB e ao ZonaDevAuth para rotação.
 - **Critério de aceite:** arquivo fora do índice e do histórico; `.gitignore` cobre o padrão; DB password, `RENOWA_JWT_SECRET` e `AUTH_INTERNAL_SECRET` rotacionados; deploy validado com novos segredos.
 - **Risco se ficar pendente:** takeover total do DB e forja de JWT para qualquer tenant.
-- **Status:** ABERTO
+- **Status:** FECHADO
+- **Decisão:** encerrado por decisão explícita do usuário em 2026-07-12; riscos residuais aceitos.
 - **Relacionado:** PROB-0002
 
 ### BACKLOG-0003 — Whitelist de colunas por entidade no serviço de sync
@@ -84,6 +85,8 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Critério de aceite:** aplicar `0021_cross_tenant_foreign_keys.sql` em clone/staging; auditoria zerada; constraints validadas no catálogo; tentativa cross-tenant falha com `23503`; locks medidos antes de produção.
 - **Risco se ficar pendente:** vazamento cross-tenant no nível de integridade.
 - **Status:** ABERTO
+- **Tentativa de validação em:** 2026-07-12
+- **Evidência operacional:** `docker compose -f docker-compose.prod.yml config --quiet` passou, mas PostgreSQL real não pôde ser iniciado porque o Docker daemon local estava desligado (`pipe/docker_engine` inexistente). Não há evidência nova de catálogo, SQLSTATE `23503` ou locks; item permanece aberto.
 - **Relacionado:** PROB-0011, PROB-0012, PROB-0026
 
 ### BACKLOG-0007 — Programa de conformidade LGPD
@@ -94,16 +97,22 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Critério de aceite:** fluxo de anonimização/hard-delete por titular; audit log de acesso/alteração de PII; DB mobile criptografado; export/portabilidade avaliado.
 - **Risco se ficar pendente:** não conformidade com LGPD (Arts. 18, 37, 46).
 - **Status:** ABERTO
+- **Atualizado em:** 2026-07-12
+- **Implementado no backend/frontend:** state machine administrativa; anonimização idempotente de clientes e usuários; limpeza de textos livres associados; revogação de refresh/mobile sessions; incremento de `access_token_version`; anonimização e desativação do espelho `local_users`; audit log tenant-scoped sem valores de PII; exportação JSON; tela administrativa e autorização ADMIN.
+- **Saldo:** homologação jurídica da matriz de retenção e smoke test PostgreSQL real. Criptografia SQLite permanece fora do escopo vigente por pertencer ao mobile.
 - **Relacionado:** PROB-0030, PROB-0031, PROB-0032
 
 ### BACKLOG-0008 — Varredura de robustez e limpeza de código morto
 - **Prioridade:** P2
 - **Área:** backend / frontend / mobile
-- **Motivo:** saldo de robustez após fechamento de RBAC, auth duplicada e itens LOW web/backend. Restam itens mobile e precisão decimal de PROB-0036.
+- **Motivo:** saldo de robustez após fechamento de RBAC, auth duplicada e itens LOW web/backend. Precisão decimal de PROB-0036 foi resolvida no backend/frontend; restam itens mobile.
 - **Dependências:** nenhuma.
 - **Critério de aceite:** poison-items com dead-letter; mutex no `SyncService`; precisão decimal padronizada.
 - **Risco se ficar pendente:** acúmulo de débito técnico e superfícies frágeis.
 - **Status:** ABERTO
+- **Atualizado em:** 2026-07-12
+- **Implementado no backend/frontend:** contrato decimal usa strings para `NUMERIC`; cálculos financeiros usam `decimal.js`, precisão 40 e `ROUND_HALF_UP`; valores monetários são normalizados para duas casas; percentuais e quantidades preservam escala; frontend evita somas e percentuais via ponto flutuante; testes cobrem `0.10 + 0.20`, arredondamento e valor grande.
+- **Saldo:** poison-items/dead-letter e mutex pertencem ao workspace mobile e seguem intocados.
 - **Relacionado:** PROB-0020, PROB-0021, PROB-0023, PROB-0024, PROB-0036
 
 ### BACKLOG-0009 — Hardening a incorporar no prompt de migração Auth Nativa
@@ -115,7 +124,8 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Risco se ficar pendente:** logout falso sob concorrência, janela de token válido após logout/desativação, CSRF, senhas fracas, produção racy ao escalar — as defesas do prompt não funcionam de fato.
 - **Status:** PARCIALMENTE_RESOLVIDO
 - **Atualizado em:** 2026-07-12
-- **Implementado:** rotação de refresh transacional com `FOR UPDATE`, graça de 10s e detecção de reuse; HS256 explícito; senha mínima de 12 caracteres com complexidade; shutdown hooks; pool TypeORM explícito; advisory lock já usado no runner; endpoints separados de liveness/readiness; HSTS/CSP/Permissions-Policy no nginx; CORS fail-fast em produção.
-- **Saldo:** invalidação imediata de access token por epoch/version, estratégia operacional de rotação de segredos, readiness com probe real de DB, throttler compartilhado ao escalar, contrato/teste de soft-deleted no sync e CI funcional com ESLint instalado.
+- **Implementado:** rotação de refresh transacional com `FOR UPDATE`, graça de 10s e detecção de reuse; HS256 explícito; senha mínima de 12 caracteres com complexidade; shutdown hooks; pool TypeORM explícito; advisory lock já usado no runner; endpoints separados de liveness/readiness; readiness executa `SELECT 1` e retorna `503` sem DB; HSTS/CSP/Permissions-Policy no nginx; CORS fail-fast em produção; access token carrega `access_token_version` e o guard revalida usuário ativo/versão no DB; logout, senha, papel, desativação e anonimização invalidam tokens; throttler usa Redis compartilhado obrigatório em produção; compose inclui Redis persistente com healthcheck; ESLint e CI `lint + test + build` instalados para backend/frontend.
+- **Evidências:** backend lint passou; suíte completa `28 suites / 160 testes` passou; builds backend/frontend passaram; frontend lint passou com um warning não bloqueante de Fast Refresh; `docker compose -f docker-compose.prod.yml config --quiet` e `git diff --check` passaram.
+- **Saldo:** estratégia operacional de rotação de segredos, contrato/teste de soft-deleted no sync e smoke tests reais com PostgreSQL/Redis. Docker daemon local estava desligado durante a tentativa operacional.
 - **Resolvido fora deste backlog:** PROB-0040 fechado em 2026-07-12; optimistic concurrency aplicada às edições web. Mobile/sync permanece em PROB-0022/BACKLOG-0005.
 - **Relacionado:** PROB-0037, PROB-0038, PROB-0039, PROB-0041, PROB-0032

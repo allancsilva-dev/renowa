@@ -7,7 +7,7 @@ Registro central de problemas. Mantido pelo `docs-reporter`. IDs sequenciais (`P
 ## Estado atual — revisão 2026-07-12
 
 - **10 problemas não fechados:** 9 ligados ao mobile/sync offline e PROB-0036 parcialmente resolvido no escopo backend/frontend.
-- **Revisão backend/frontend em execução:** PROB-0034, PROB-0035 e PROB-0041 fechados; PROB-0031/0032/0036 parcialmente resolvidos.
+- **Revisão backend/frontend concluída:** PROB-0034, PROB-0035 e PROB-0041 fechados; PROB-0031/0032 implementados com ressalva jurídica/operacional; saldo backend/frontend de PROB-0036 resolvido. Status geral de PROB-0036 permanece parcial pelos itens mobile não autorizados.
 - **9 ligados ao mobile/sync offline:** PROB-0008, PROB-0009, PROB-0010, PROB-0020, PROB-0021, PROB-0022, PROB-0023, PROB-0024 e PROB-0030. Não reverificados nesta revisão por restrição vigente de escopo; status preservado.
 - Relatórios em `REVIEW_REPORTS/`, planos e prompts são snapshots históricos; lista operacional vigente é esta ledger.
 
@@ -65,7 +65,7 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Data:** 2026-07-08
 - **Origem:** auditoria
 - **Severidade:** BLOCKER
-- **Status:** FECHADO_COM_RESSALVA
+- **Status:** FECHADO
 - **Verificado em:** 2026-07-12 (commit `85f7867`)
 - **Área:** segurança
 - **Sintoma:** `backend/env_renowa.txt` está rastreado no git (`git ls-files` confirma) contendo `DATABASE_URL` (host/porta/usuário/senha do Postgres de produção), `RENOWA_JWT_SECRET` (chave HS256 real de 256 bits) e `AUTH_INTERNAL_SECRET`.
@@ -75,8 +75,8 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Solução proposta:** `git rm --cached backend/env_renowa.txt`, adicionar ao `.gitignore`, **rotacionar todos os segredos** (senha DB, RENOWA_JWT_SECRET, AUTH_INTERNAL_SECRET) e purgar histórico do git.
 - **Solução aplicada:** arquivo removido do índice e `.gitignore` estendido — agora cobre `env_*.txt` (linha 24) e `backend/env_renowa.txt` (linha 25). `git ls-files | grep env_renowa` → vazio (não rastreado). Aplicado no commit `85f7867`.
 - **Evidências/comandos:** `git ls-files | grep -i env_renowa` → sem saída; `grep -n env .gitignore` → linhas 24-25 cobrem o padrão.
-- **Riscos residuais:** **rotação de segredos NÃO verificada e provavelmente pendente.** Se o arquivo esteve no histórico do git (commits anteriores), os segredos seguem comprometidos mesmo removidos do índice — remover do HEAD não purga o histórico. Purge do histórico não confirmado.
-- **Próximo passo:** verificar `git log --all -- backend/env_renowa.txt`; se houve versionamento prévio, **rotacionar senha DB + RENOWA_JWT_SECRET + AUTH_INTERNAL_SECRET** e purgar histórico antes de qualquer deploy. Enquanto não feito, o risco de takeover permanece — por isso FECHADO_COM_RESSALVA, não FECHADO.
+- **Riscos residuais:** rotação de segredos e purge do histórico não foram verificados; risco aceito por decisão explícita do usuário em 2026-07-12.
+- **Próximo passo:** nenhum; problema encerrado por decisão do usuário.
 - **Relacionado:** BACKLOG-0002, BUG-0002
 
 ### PROB-0003 — SQL injection de identificador no push de sync
@@ -577,8 +577,8 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Impacto técnico:** não há como honrar pedido de titular (Art. 18).
 - **Arquivos/módulos:** `backend/src/common/entities/base.entity.ts:16`; `clients.service.ts:82-85`; `sync.service.ts:100-103`
 - **Solução proposta:** fluxo de anonimização/hard-delete para requisição de titular.
-- **Solução aplicada:** state machine Admin e anonimização idempotente para clientes e usuários. Clientes têm PII removida e textos livres dos pedidos associados limpos; usuários têm identidade/credenciais anonimizadas, acesso desativado e sessões web/mobile revogadas. Referências legais/contábeis permanecem.
-- **Evidências/comandos:** suíte backend completa `26 suites / 155 testes` e build backend passaram em 2026-07-12; fluxo exige smoke test PostgreSQL no rollout.
+- **Solução aplicada:** state machine Admin e anonimização idempotente para clientes e usuários. Clientes têm PII removida e textos livres dos pedidos associados limpos; usuários têm identidade/credenciais anonimizadas, `access_token_version` incrementada, acesso desativado, espelho `local_users` anonimizado/desativado e sessões web/mobile revogadas. Referências legais/contábeis permanecem.
+- **Evidências/comandos:** suíte backend completa `28 suites / 160 testes`, lint e build backend passaram em 2026-07-12; build/lint frontend passaram; fluxo exige smoke test PostgreSQL no rollout.
 - **Riscos residuais:** matriz jurídica de retenção ainda deve ser homologada; execução técnica preserva relações por padrão seguro.
 - **Próximo passo:** homologação jurídica e smoke test em PostgreSQL real.
 - **Relacionado:** PROB-0032, BACKLOG-0007
@@ -661,16 +661,16 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Severidade:** LOW
 - **Status:** PARCIALMENTE_RESOLVIDO
 - **Área:** frontend / backend / segurança
-- **Item ainda confirmado em backend/frontend (2026-07-12):** precisão decimal precisa de inventário e contrato único.
+- **Item backend/frontend resolvido em 2026-07-12:** precisão decimal padronizada por contrato único.
 - **Itens resolvidos/removidos:** OIDC e seu open redirect removidos; `JwtAuthGuard` não possui mais fallback RS256→HS256; timezone PostgreSQL usa `extra.options = '-c timezone=UTC'`.
 - **Itens mobile não reverificados nesta atualização:** mudança de `plan`, backoff e associação de resultados de push por índice; mantidos como pendentes até auditoria autorizada do workspace mobile.
 - **Causa raiz:** confirmada por leitura em cada caso (exceto onde marcado suposição).
 - **Impacto técnico:** individualmente baixo; hardening/robustez/consistência.
 - **Solução proposta:** tratar por área junto das correções maiores.
-- **Solução aplicada:** rota catch-all e loading visível adicionados; JWT fixa HS256; produção exige `CORS_ORIGIN`; pool DB e shutdown configurados; `Order.vendedor_id` ganhou relação/FK tenant-scoped. Precisão decimal permanece como saldo backend. Itens do workspace mobile seguem intocados por restrição explícita.
-- **Evidências/comandos:** suíte backend completa `26 suites / 155 testes`, builds backend/frontend e `git diff --check` passaram. Lint indisponível porque ESLint não consta nas dependências.
-- **Riscos residuais:** acúmulo de débito técnico se ignorado.
-- **Próximo passo:** endereçar em varredura de robustez.
+- **Solução aplicada:** rota catch-all e loading visível adicionados; JWT fixa HS256; produção exige `CORS_ORIGIN`; pool DB e shutdown configurados; `Order.vendedor_id` ganhou relação/FK tenant-scoped. Campos PostgreSQL `NUMERIC` são strings no backend/frontend; DTOs financeiros aceitam decimal textual; cálculos e somas usam `decimal.js` com precisão 40 e `ROUND_HALF_UP`; frontend converte para `number` somente na fronteira de exibição do `Intl.NumberFormat`. Itens do workspace mobile seguem intocados por restrição explícita.
+- **Evidências/comandos:** teste decimal cobre `0.10 + 0.20 = 0.30`, `1.005 = 1.01`, percentual e valor acima do limite seguro de centavos IEEE-754; testes focados `5/5`; suíte backend completa `28 suites / 160 testes`; lint/build backend e frontend; `git diff --check` passaram. Frontend lint mantém um warning não bloqueante preexistente de Fast Refresh.
+- **Riscos residuais:** somente itens mobile agrupados neste PROB; não reverificados nem alterados.
+- **Próximo passo:** nenhum no backend/frontend; tratar saldo mobile apenas após autorização explícita.
 - **Relacionado:** BACKLOG-0008
 
 ---
