@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react';
 
-interface InputMoneyProps {
+interface InputMoneyProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type' | 'inputMode'> {
   value: number | null;
   onChange: (value: number | null) => void;
-  placeholder?: string;
-  className?: string;
-  disabled?: boolean;
-  required?: boolean;
 }
 
 const inputCls =
@@ -38,6 +34,7 @@ export function InputMoney({
   className,
   disabled,
   required,
+  ...inputProps
 }: InputMoneyProps) {
   const [displayValue, setDisplayValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -64,6 +61,7 @@ export function InputMoney({
 
   return (
     <input
+      {...inputProps}
       type="text"
       inputMode="decimal"
       value={displayValue}

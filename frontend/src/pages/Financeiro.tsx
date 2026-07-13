@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, X, Wallet, TrendingDown, BarChart2, Trash2 } from 'lucide-react';
+import { cloneElement, useState, useEffect, useCallback, useId } from 'react';
+import { Plus, Wallet, TrendingDown, BarChart2, Trash2 } from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
+import Dialog from '@/components/ui/Dialog';
 import { moneyForDisplay, moneyString, percentageOf, sumMoney } from '@/lib/decimal';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
@@ -114,8 +115,7 @@ function BtnPrimary({ onClick, children }: { onClick: () => void; children: Reac
   return (
     <button
       onClick={onClick}
-      className='flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white hover:opacity-90 transition-opacity'
-      style={{ backgroundColor: '#2A9D8F' }}
+      className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
     >
       {children}
     </button>
@@ -124,26 +124,16 @@ function BtnPrimary({ onClick, children }: { onClick: () => void; children: Reac
 
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className='fixed inset-0 z-50 flex items-center justify-center'>
-      <div className='absolute inset-0 bg-black/40' onClick={onClose} />
-      <div className='relative z-10 w-full max-w-lg rounded-xl bg-white shadow-xl p-6 max-h-[90vh] overflow-y-auto'>
-        <div className='flex items-center justify-between mb-5'>
-          <h2 className='text-base font-bold text-slate-900'>{title}</h2>
-          <button onClick={onClose} className='rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 transition-colors'>
-            <X className='h-5 w-5' />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
+    <Dialog open title={title} onClose={onClose}>{children}</Dialog>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: React.ReactElement<{ id?: string }> }) {
+  const id = useId();
   return (
     <div className='flex flex-col gap-1'>
-      <label className={labelCls}>{label}</label>
-      {children}
+      <label htmlFor={id} className={labelCls}>{label}</label>
+      {cloneElement(children, { id })}
     </div>
   );
 }
@@ -154,7 +144,7 @@ function ModalBtns({ onClose, saving }: { onClose: () => void; saving: boolean }
       <button type='button' onClick={onClose} className='rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'>
         Cancelar
       </button>
-      <button type='submit' disabled={saving} className='rounded-lg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60 transition-opacity' style={{ backgroundColor: '#2A9D8F' }}>
+      <button type='submit' disabled={saving} className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors'>
         {saving ? 'Salvando...' : 'Salvar'}
       </button>
     </div>
@@ -184,6 +174,7 @@ function FluxoCaixa() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<{ tipo: string; descricao: string; valor: number | null; data: string }>({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const TIPO_COLORS: Record<string, string> = {
     'Custo Fixo': 'bg-red-100 text-red-700',
@@ -193,13 +184,14 @@ function FluxoCaixa() {
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     api
       .get(`/financeiro/fluxo-caixa?mes=${mes}&ano=${ano}`)
       .then((r) => {
         const d = (r.data as { data: typeof data }).data ?? r.data;
         setData(d as { receitas: string; custos: string; saldo: string; lancamentos: Lancamento[] });
       })
-      .catch(() => setData(null))
+      .catch(() => { setData(null); setError('Não foi possível carregar o fluxo de caixa.'); })
       .finally(() => setLoading(false));
   }, [mes, ano]);
 
@@ -208,6 +200,7 @@ function FluxoCaixa() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       await api.post('/financeiro/lancamentos', {
         uuid: crypto.randomUUID(),
@@ -219,6 +212,8 @@ function FluxoCaixa() {
       setShowForm(false);
       setForm({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
       load();
+    } catch (requestError) {
+      setError(writeErrorMessage(requestError));
     } finally {
       setSaving(false);
     }
@@ -230,6 +225,7 @@ function FluxoCaixa() {
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
         <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
       </div>
+      <WriteError message={error} />
 
       {loading ? (
         <div className='text-sm text-slate-400 py-8 text-center'>Carregando...</div>
@@ -262,7 +258,7 @@ function FluxoCaixa() {
             </div>
           </div>
 
-          <div className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
+          <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
             <div className='px-5 py-4 border-b border-slate-100'>
               <h3 className='text-xs font-semibold uppercase tracking-wider text-slate-400'>Lançamentos do Mês</h3>
             </div>
@@ -333,13 +329,15 @@ function Empresas() {
   const [ano, setAno] = useState(now.getFullYear());
   const [grupos, setGrupos] = useState<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Comissao[] }[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     api
       .get(`/financeiro/comissoes/por-empresa?mes=${mes}&ano=${ano}`)
       .then((r) => setGrupos((r.data as { data: typeof grupos }).data ?? r.data ?? []))
-      .catch(() => setGrupos([]))
+      .catch(() => { setGrupos([]); setError('Não foi possível carregar vendas por empresa.'); })
       .finally(() => setLoading(false));
   }, [mes, ano]);
 
@@ -348,13 +346,14 @@ function Empresas() {
   return (
     <div className='space-y-5'>
       <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      <WriteError message={error} />
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
       ) : grupos.length === 0 ? (
         <div className='py-10 text-center text-sm text-slate-400'>Nenhuma venda registrada no período</div>
       ) : (
         grupos.map((g) => (
-          <div key={g.fornecedor_id} className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
+          <div key={g.fornecedor_id} className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
             <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
               <h3 className='font-semibold text-slate-900'>📦 {g.razao_social}</h3>
               <div className='text-sm font-medium text-slate-600'>
@@ -415,6 +414,7 @@ function ComissaoAlune() {
     perc_comissao: '', valor_comissao: null, status: 'pendente',
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get('/fornecedores?limit=100').then((r) => {
@@ -424,6 +424,7 @@ function ComissaoAlune() {
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     const params = new URLSearchParams({ mes: String(mes), ano: String(ano), limit: '100' });
     if (status) params.set('status', status);
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
@@ -436,7 +437,7 @@ function ComissaoAlune() {
         setComissoes((r1.data as { data: Comissao[] }).data ?? r1.data ?? []);
         setResumo((r2.data as { data: typeof resumo }).data ?? r2.data ?? { total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
       })
-      .catch(() => {})
+      .catch(() => setError('Não foi possível carregar comissões.'))
       .finally(() => setLoading(false));
   }, [mes, ano, status, fornecedorId]);
 
@@ -450,6 +451,7 @@ function ComissaoAlune() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       await api.post('/financeiro/comissoes', {
         uuid: crypto.randomUUID(),
@@ -466,6 +468,8 @@ function ComissaoAlune() {
       });
       setShowForm(false);
       load();
+    } catch (requestError) {
+      setError(writeErrorMessage(requestError));
     } finally {
       setSaving(false);
     }
@@ -491,6 +495,7 @@ function ComissaoAlune() {
         </div>
         <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Nova Comissão</BtnPrimary>
       </div>
+      <WriteError message={error} />
 
       {/* Resumo */}
       <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>
@@ -508,7 +513,7 @@ function ComissaoAlune() {
       </div>
 
       {/* Tabela */}
-      <div className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
+      <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
         {loading ? (
           <div className='py-10 text-center text-sm text-slate-400'>Carregando...</div>
         ) : comissoes.length === 0 ? (
@@ -583,7 +588,7 @@ function ComissaoAlune() {
             <div className='grid grid-cols-2 gap-3'>
               <Field label='% Comissão'>
                 <div className='relative'>
-                  <input type='number' step='0.01' min='0' max='100' value={form.perc_comissao}
+                  <input type='number' aria-label='Percentual de comissão' step='0.01' min='0' max='100' value={form.perc_comissao}
                     onChange={(e) => {
                       const pc = e.target.value;
                       setForm((p) => ({ ...p, perc_comissao: pc, valor_comissao: calcVc(p.valor_pedido, pc) }));
@@ -628,12 +633,14 @@ function Parceiros() {
     valor_comissao: null, status: 'pendente',
   });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     api.get(`/financeiro/parceiros?mes=${mes}&ano=${ano}&limit=100`)
       .then((r) => setParceiros((r.data as { data: Parceiro[] }).data ?? r.data ?? []))
-      .catch(() => setParceiros([]))
+      .catch(() => { setParceiros([]); setError('Não foi possível carregar parceiros.'); })
       .finally(() => setLoading(false));
   }, [mes, ano]);
 
@@ -642,6 +649,7 @@ function Parceiros() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       await api.post('/financeiro/parceiros', {
         uuid: crypto.randomUUID(),
@@ -656,6 +664,8 @@ function Parceiros() {
       });
       setShowForm(false);
       load();
+    } catch (requestError) {
+      setError(writeErrorMessage(requestError));
     } finally {
       setSaving(false);
     }
@@ -675,6 +685,7 @@ function Parceiros() {
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
         <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
       </div>
+      <WriteError message={error} />
 
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
@@ -682,7 +693,7 @@ function Parceiros() {
         <div className='py-10 text-center text-sm text-slate-400'>Nenhum parceiro no período</div>
       ) : (
         Object.values(grupos).map((g) => (
-          <div key={g.nome} className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
+          <div key={g.nome} className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
             <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
               <div>
                 <h3 className='font-semibold text-slate-900'>👤 {g.nome}</h3>
@@ -748,7 +759,7 @@ function Parceiros() {
               </Field>
               <Field label='% Comissão'>
                 <div className='relative'>
-                  <input type='number' step='0.01' min='0' max='100' value={form.percentual_comissao}
+                  <input type='number' aria-label='Percentual de comissão' step='0.01' min='0' max='100' value={form.percentual_comissao}
                     onChange={(e) => {
                       const pc = e.target.value;
                       const vc = form.valor_faturado !== null && pc !== ''
@@ -801,7 +812,7 @@ function Custos() {
         setFixos((r1.data as { data: Lancamento[] }).data ?? r1.data ?? []);
         setRotativos((r2.data as { data: Lancamento[] }).data ?? r2.data ?? []);
       })
-      .catch(() => {})
+      .catch(() => setWriteError('Não foi possível carregar os custos.'))
       .finally(() => setLoading(false));
   }, [mes, ano]);
 
@@ -810,6 +821,7 @@ function Custos() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setWriteError(null);
     try {
       await api.post('/financeiro/lancamentos', {
         uuid: crypto.randomUUID(),
@@ -820,6 +832,8 @@ function Custos() {
       });
       setShowForm(false);
       load();
+    } catch (requestError) {
+      setWriteError(writeErrorMessage(requestError));
     } finally {
       setSaving(false);
     }
@@ -858,7 +872,7 @@ function Custos() {
               <td className='px-5 py-3 text-slate-500'>{fmtDate(l.data)}</td>
               <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(moneyForDisplay(l.valor))}</td>
               <td className='px-5 py-3 text-right'>
-                <button onClick={() => handleDelete(l.uuid, l.version)} className='text-slate-300 hover:text-red-500 transition-colors'>
+                <button aria-label={`Remover custo ${l.descricao ?? ''}`} onClick={() => handleDelete(l.uuid, l.version)} className='inline-flex h-11 w-11 items-center justify-center rounded text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'>
                   <Trash2 className='h-4 w-4' />
                 </button>
               </td>
@@ -882,7 +896,7 @@ function Custos() {
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
       ) : (
         <>
-          <div className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
+          <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
             <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
               <h3 className='font-semibold text-slate-900'>📌 Custo Fixo</h3>
               <span className='text-sm font-medium text-red-600'>Total: {BRL.format(moneyForDisplay(totalFixo))}</span>
@@ -892,7 +906,7 @@ function Custos() {
               : <CustoTable items={fixos} />}
           </div>
 
-          <div className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
+          <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
             <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
               <h3 className='font-semibold text-slate-900'>🔄 Custo Rotativo</h3>
               <span className='text-sm font-medium text-orange-600'>Total: {BRL.format(moneyForDisplay(totalRotativo))}</span>
@@ -947,9 +961,10 @@ function InadimplenciaTab() {
 
   const load = useCallback(() => {
     setLoading(true);
+    setWriteError(null);
     api.get('/financeiro/inadimplencia?limit=100')
       .then((r) => setItems((r.data as { data: Inadimplencia[] }).data ?? r.data ?? []))
-      .catch(() => setItems([]))
+      .catch(() => { setItems([]); setWriteError('Não foi possível carregar a inadimplência.'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -958,6 +973,7 @@ function InadimplenciaTab() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
+    setWriteError(null);
     try {
       await api.post('/financeiro/inadimplencia', {
         uuid: crypto.randomUUID(),
@@ -968,6 +984,8 @@ function InadimplenciaTab() {
       setShowForm(false);
       setForm({ empresa_devedora: '', valor_aberto: null, observacao: '' });
       load();
+    } catch (requestError) {
+      setWriteError(writeErrorMessage(requestError));
     } finally {
       setSaving(false);
     }
@@ -1010,7 +1028,7 @@ function InadimplenciaTab() {
           <p className='text-slate-600 font-medium'>Nenhum registro de inadimplência. Parabéns!</p>
         </div>
       ) : (
-        <div className='rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden'>
+        <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
           <table className='w-full text-sm'>
             <thead>
               <tr className='text-xs uppercase text-slate-400 bg-slate-50'>
@@ -1029,7 +1047,7 @@ function InadimplenciaTab() {
                   <td className='px-5 py-3 text-right font-semibold text-red-600'>{BRL.format(moneyForDisplay(i.valor_aberto))}</td>
                   <td className='px-5 py-3 text-slate-500 max-w-xs truncate'>{i.observacao ?? '—'}</td>
                   <td className='px-5 py-3 text-right'>
-                    <button onClick={() => handleDelete(i.uuid, i.version)} className='text-slate-300 hover:text-red-500 transition-colors'>
+                    <button aria-label={`Remover inadimplência de ${i.empresa_devedora ?? 'cliente'}`} onClick={() => handleDelete(i.uuid, i.version)} className='inline-flex h-11 w-11 items-center justify-center rounded text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'>
                       <Trash2 className='h-4 w-4' />
                     </button>
                   </td>
