@@ -5,15 +5,18 @@ import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { runMigrations } from './database/migrate';
+import { resolveTrustProxy } from './config/trust-proxy.config';
 
 async function bootstrap() {
+  const trustProxy = resolveTrustProxy();
+
   if (process.env.NODE_ENV === 'production') {
     await runMigrations();
   }
 
   const app = await NestFactory.create(AppModule);
 
-  app.getHttpAdapter().getInstance().set('trust proxy', 2);
+  app.getHttpAdapter().getInstance().set('trust proxy', trustProxy);
 
   app.setGlobalPrefix('api');
 
