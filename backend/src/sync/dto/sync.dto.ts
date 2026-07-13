@@ -12,6 +12,7 @@ import {
   IsInt,
   Min,
   Max,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -80,6 +81,44 @@ export class SyncPullDto {
   @IsOptional()
   @Type(() => Number)
   limit?: number = 200;
+}
+
+export class SyncItemV2Dto {
+  @IsUUID()
+  operation_id: string;
+
+  @IsUUID()
+  uuid: string;
+
+  @IsEnum(SyncEntity)
+  entity: SyncEntity;
+
+  @IsEnum(SyncOperation)
+  operation: SyncOperation;
+
+  @IsObject()
+  payload: Record<string, unknown>;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  base_version?: number;
+}
+
+export class SyncPushV2Dto {
+  @IsUUID()
+  device_id: string;
+
+  @IsOptional()
+  @IsUUID()
+  sync_run_id?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @ArrayMaxSize(200)
+  @Type(() => SyncItemV2Dto)
+  items: SyncItemV2Dto[];
 }
 
 /** bigint fica string no contrato HTTP para não perder precisão em JavaScript. */

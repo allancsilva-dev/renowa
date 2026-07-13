@@ -8,6 +8,8 @@ import {
   SyncOperation,
   SyncPullDto,
   SyncPullV2Dto,
+  SyncPushV2Dto,
+  SyncItemV2Dto,
 } from './dto/sync.dto';
 import { getSyncEntityPolicy, SyncEntityPolicy } from './sync-entity-policy';
 
@@ -41,6 +43,171 @@ export class SyncService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
   ) {}
+
+  async pushItemsV2(dto: SyncPushV2Dto, tenantId: string): Promise<{
+    sync_run_id?: string;
+    results: SyncItemV2Result[];
+  }> {
+    const results: SyncItemV2Result[] = [];
+    for (const item of dto.items) {
+      results.push(await this.processIdempotentItemV2(item, dto.device_id, dto.sync_run_id, tenantId));
+    }
+    return { sync_run_id: dto.sync_run_id, results };
+  }
+
+  private async processIdempotentItemV2(
+    item: SyncItemV2Dto,
+    deviceId: string,
+    syncRunId: string | undefined,
+    tenantId: string,
+  ): Promise<SyncItemV2Result> {
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+    try {
+      await qr.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `${tenantId}:${deviceId}:${item.operation_id}`,
+      ]);
+      const cached = await qr.query(
+        `SELECT result FROM public.sync_mutation_inbox
+          WHERE tenant_id = $1 AND device_id = $2 AND operation_id = $3`,
+        [tenantId, deviceId, item.operation_id],
+      );
+      if (cached[0]?.result) {
+        await qr.commitTransaction();
+        return cached[0].result as SyncItemV2Result;
+      }
+
+      let result: SyncItemV2Result;
+      await qr.query('SAVEPOINT sync_item_v2');
+      try {
+        result = await this.processItemV2(qr, item, tenantId);
+      } catch (error) {
+        if (!(error instanceof BadRequestException) && !this.isPermanentMutationError(error)) throw error;
+        await qr.query('ROLLBACK TO SAVEPOINT sync_item_v2');
+        result = {
+          operation_id: item.operation_id,
+          uuid: item.uuid,
+          status: 'rejected',
+          code: 'VALIDATION_FAILED',
+          retryable: false,
+          message: error instanceof BadRequestException ? error.message : 'Mutação rejeitada pelo banco',
+        };
+      }
+
+      await qr.query(
+        `INSERT INTO public.sync_mutation_inbox
+          (tenant_id, device_id, operation_id, sync_run_id, entity, entity_uuid, result)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+        [tenantId, deviceId, item.operation_id, syncRunId ?? null, item.entity, item.uuid, JSON.stringify(result)],
+      );
+      await qr.commitTransaction();
+      return result;
+    } catch {
+      await qr.rollbackTransaction();
+      return {
+        operation_id: item.operation_id,
+        uuid: item.uuid,
+        status: 'retryable',
+        code: 'TEMPORARY_FAILURE',
+        retryable: true,
+        message: 'Falha temporária ao processar mutação',
+      };
+    } finally {
+      await qr.release();
+    }
+  }
+
+  private async processItemV2(
+    qr: QueryRunner,
+    item: SyncItemV2Dto,
+    tenantId: string,
+  ): Promise<SyncItemV2Result> {
+    const policy = getSyncEntityPolicy(item.entity);
+    const table = this.quoteIdentifier(policy.table);
+    this.validatePayload(item.entity, item.operation, item.payload, policy);
+    if (item.operation === SyncOperation.UPDATE && Object.keys(item.payload).length === 0) {
+      throw new BadRequestException('payload não pode ser vazio em UPDATE');
+    }
+    const existing = await qr.query(
+      `SELECT * FROM ${table} WHERE uuid = $1 AND tenant_id = $2`,
+      [item.uuid, tenantId],
+    );
+
+    if (item.operation === SyncOperation.CREATE) {
+      if (existing.length > 0) {
+        return {
+          operation_id: item.operation_id, uuid: item.uuid, status: 'duplicate',
+          code: 'ALREADY_EXISTS', retryable: false, version: Number(existing[0].version),
+        };
+      }
+      const record = await this.buildWritableRecord(qr, item.entity, item.payload, tenantId, policy);
+      if (item.entity === SyncEntity.PEDIDOS) {
+        const sequence = await qr.query(`SELECT nextval('pedidos_numero_seq') AS numero`);
+        record['numero_pedido'] = sequence[0].numero;
+      }
+      await this.insertRecord(qr, policy.table, item.uuid, tenantId, record);
+      return {
+        operation_id: item.operation_id, uuid: item.uuid, status: 'applied',
+        code: 'APPLIED', retryable: false, version: 1,
+      };
+    }
+
+    if (!item.base_version) {
+      throw new BadRequestException('base_version é obrigatório para UPDATE e DELETE');
+    }
+    if (existing.length === 0) {
+      return {
+        operation_id: item.operation_id, uuid: item.uuid, status: 'conflict',
+        code: 'NOT_FOUND', retryable: false,
+      };
+    }
+
+    let changed: Array<{ version: number }> = [];
+    if (item.operation === SyncOperation.DELETE) {
+      changed = await qr.query(
+        `UPDATE ${table} SET deleted_at = NOW(), version = version + 1
+          WHERE uuid = $1 AND tenant_id = $2 AND version = $3 RETURNING version`,
+        [item.uuid, tenantId, item.base_version],
+      );
+    } else {
+      const record = await this.buildWritableRecord(qr, item.entity, item.payload, tenantId, policy);
+      const columns = Object.keys(record);
+      if (columns.length > 0) {
+        const assignments = columns
+          .map((column, index) => `${this.quoteIdentifier(column)} = $${index + 4}`)
+          .concat('version = version + 1')
+          .join(', ');
+        changed = await qr.query(
+          `UPDATE ${table} SET ${assignments}
+            WHERE uuid = $1 AND tenant_id = $2 AND version = $3 RETURNING version`,
+          [item.uuid, tenantId, item.base_version, ...columns.map((column) => record[column])],
+        );
+      }
+    }
+
+    if (changed.length > 0) {
+      return {
+        operation_id: item.operation_id, uuid: item.uuid, status: 'applied',
+        code: 'APPLIED', retryable: false, version: Number(changed[0].version),
+      };
+    }
+    const current = await qr.query(
+      `SELECT version FROM ${table} WHERE uuid = $1 AND tenant_id = $2`,
+      [item.uuid, tenantId],
+    );
+    return {
+      operation_id: item.operation_id, uuid: item.uuid, status: 'conflict',
+      code: 'VERSION_CONFLICT', retryable: false,
+      version: current[0]?.version == null ? undefined : Number(current[0].version),
+    };
+  }
+
+  private isPermanentMutationError(error: unknown): boolean {
+    const typed = error as { code?: string; driverError?: { code?: string } } | null;
+    const code = typed?.code ?? typed?.driverError?.code;
+    return code != null && ['22P02', '23502', '23503', '23505', '23514'].includes(code);
+  }
 
   // ── Helpers ──────────────────────────────────────────────
 
@@ -361,4 +528,16 @@ export class SyncService {
       };
     });
   }
+}
+
+export type SyncV2Status = 'applied' | 'duplicate' | 'conflict' | 'rejected' | 'retryable';
+
+export interface SyncItemV2Result {
+  operation_id: string;
+  uuid: string;
+  status: SyncV2Status;
+  code: string;
+  retryable: boolean;
+  version?: number;
+  message?: string;
 }

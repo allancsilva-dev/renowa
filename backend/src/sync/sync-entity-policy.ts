@@ -20,6 +20,7 @@ const BASE_SERVER_CONTROLLED_FIELDS = [
   'created_at',
   'updated_at',
   'deleted_at',
+  'version',
 ] as const;
 
 export const SYNC_ENTITY_POLICIES = {

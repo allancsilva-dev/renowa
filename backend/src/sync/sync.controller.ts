@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { SyncService } from './sync.service';
-import { SyncPushDto, SyncPullDto, SyncPullV2Dto, SyncEntity } from './dto/sync.dto';
+import { SyncPushDto, SyncPushV2Dto, SyncPullDto, SyncPullV2Dto, SyncEntity } from './dto/sync.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { Client } from '../clients/entities/client.entity';
@@ -49,6 +49,20 @@ export class SyncController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.syncService.pushItems(dto.items, user.tenantId);
+  }
+
+  @Post('v2')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @RequirePermission([
+    'clientes.editar',
+    'pedidos.editar',
+    'produtos.editar',
+    'fornecedores.editar',
+    'transportadoras.editar',
+  ])
+  pushV2(@Body() dto: SyncPushV2Dto, @CurrentUser() user: RequestUser) {
+    return this.syncService.pushItemsV2(dto, user.tenantId);
   }
 
   private pullV2(entity: SyncEntity, dto: SyncPullV2Dto, user: RequestUser) {

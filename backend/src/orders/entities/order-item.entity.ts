@@ -1,5 +1,5 @@
 import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
-import { BaseEntity } from '../../common/entities/base.entity';
+import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Order } from './order.entity';
 import { Product } from '../../products/entities/product.entity';
 
@@ -8,7 +8,7 @@ import { Product } from '../../products/entities/product.entity';
 @Index(['tenant_id', 'pedido_id'])
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])
-export class OrderItem extends BaseEntity {
+export class OrderItem extends VersionedBaseEntity {
   @Column({ name: 'pedido_id', type: 'int' })
   pedido_id: number;
 

@@ -1,12 +1,12 @@
 import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
-import { BaseEntity } from '../../common/entities/base.entity';
+import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
 
 @Entity('produtos')
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])
-export class Product extends BaseEntity {
+export class Product extends VersionedBaseEntity {
   @Column({ name: 'fornecedor_id', type: 'int', nullable: true })
   fornecedor_id: number | null;
 

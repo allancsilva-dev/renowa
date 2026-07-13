@@ -378,7 +378,7 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Impacto técnico:** fila travada, UI mostra pendência eterna, tráfego desperdiçado.
 - **Arquivos/módulos:** `mobile/src/storage/sync-queue.ts:30-43`, `:60-66`; `SyncService.ts:100-116`
 - **Solução proposta:** threshold de max-retry (drop ou dead-letter) e/ou `WHERE retry_count < N ORDER BY id` no dequeue.
-- **Solução aplicada:** nenhuma ainda. Delegado a `mobile-engineer`.
+- **Solução aplicada:** backend push v2 agora classifica resultado terminal/repetível com código estável e `retryable`; dead-letter, limite e backoff continuam pendentes no mobile e não foram alterados.
 - **Evidências/comandos:** leitura de `sync-queue.ts`.
 - **Riscos residuais:** nenhum.
 - **Próximo passo:** política de dead-letter.
@@ -395,7 +395,7 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Impacto técnico:** CREATE é idempotente (dano limitado), mas UPDATE aplica em dobro e apply de delta interleaves.
 - **Arquivos/módulos:** `mobile/src/screens/HomeScreen.tsx:19-48`; `SyncService` (sem mutex)
 - **Solução proposta:** lock de re-entrância dentro de `SyncService` (promise in-flight); guard por ref, não por state de closure.
-- **Solução aplicada:** nenhuma ainda. Delegado a `mobile-engineer`.
+- **Solução aplicada:** backend push v2 ganhou deduplicação durável por tenant/device/operação e concorrência otimista por registro. Mutex, ref guard e coalescing continuam pendentes no mobile e não foram alterados.
 - **Evidências/comandos:** leitura de `HomeScreen.tsx` + `SyncService.ts`.
 - **Riscos residuais:** nenhum.
 - **Próximo passo:** mutex em `SyncService`.
@@ -412,7 +412,7 @@ Origem: auditoria read-only de todo o sistema (backend, frontend, mobile, banco,
 - **Impacto técnico:** perda de edição entre dispositivos sob clock skew.
 - **Arquivos/módulos:** `mobile/src/storage/sync-queue.ts:26`; `backend/src/sync/sync.service.ts:123`, `:124-126`
 - **Solução proposta:** servidor carimba tempo de recebimento ou usa relógio lógico/monotônico; ou rejeita timestamps com skew implausível.
-- **Solução aplicada:** nenhuma ainda. Delegado a `backend-engineer` + `mobile-engineer`.
+- **Solução aplicada:** backend push v2 exige `base_version` em UPDATE/DELETE, faz escrita condicional atômica e retorna `VERSION_CONFLICT`; `client_timestamp` não integra contrato v2. Migração do cliente mobile permanece pendente; v1 continua compatível.
 - **Evidências/comandos:** leitura de ambos os arquivos.
 - **Riscos residuais:** interage com PROB-0010.
 - **Próximo passo:** rever estratégia de conflito.
