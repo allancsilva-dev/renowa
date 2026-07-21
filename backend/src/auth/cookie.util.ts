@@ -6,16 +6,21 @@ const AT_COOKIE = 'renowa_at';
 const RT_COOKIE = 'renowa_rt';
 const RT_PATH = '/api/auth';
 
+// Secure só em produção: Safari (ao contrário do Chrome) não tem exceção de
+// "localhost confiável" e descarta silenciosamente cookies Secure em http://localhost,
+// quebrando login em dev.
+const SECURE_COOKIES = process.env.NODE_ENV === 'production';
+
 export function setAuthCookies(
   res: Response,
   tokens: { accessToken: string; refreshToken: string },
 ): void {
   res.cookie(AT_COOKIE, tokens.accessToken, {
-    httpOnly: true, secure: true, sameSite: 'strict', path: '/',
+    httpOnly: true, secure: SECURE_COOKIES, sameSite: 'strict', path: '/',
     maxAge: ACCESS_TOKEN_TTL_SECONDS * 1000,
   });
   res.cookie(RT_COOKIE, tokens.refreshToken, {
-    httpOnly: true, secure: true, sameSite: 'strict', path: RT_PATH,
+    httpOnly: true, secure: SECURE_COOKIES, sameSite: 'strict', path: RT_PATH,
     maxAge: REFRESH_TOKEN_TTL_MS,
   });
 }
