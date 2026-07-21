@@ -526,8 +526,26 @@ export class FinanceService {
     totalCustoRotativo: string;
     totalComissoes: string;
     totalInadimplencia: string;
+    pedidosAbertos: number;
+    produtosAtivos: number;
+    carteira: { total: number; ativos: number; inativos: number; prospect: number };
+    positivacao: { clientesComPedidoNoMes: number; totalClientes: number };
+    vendasMensais: { mes: string; valor: string }[];
+    curvaAbc: { cliente: string; valor: string; badge: 'Prioridade' | 'Atenção' | 'Regular' }[];
   }> {
-    const [movResult, comResult, inadResult] = await Promise.all([
+    const [
+      movResult,
+      comResult,
+      inadResult,
+      pedidosAbertosResult,
+      produtosAtivosResult,
+      totalClientesResult,
+      clientesAtivosResult,
+      clientesComHistoricoResult,
+      positivacaoResult,
+      vendasMensaisRows,
+      curvaAbcRows,
+    ] = await Promise.all([
       this.movimentoRepo
         .createQueryBuilder('m')
         .select([
@@ -552,7 +570,83 @@ export class FinanceService {
         .where('i.tenant_id = :tenantId', { tenantId })
         .andWhere('i.deleted_at IS NULL')
         .getRawOne<{ total: string }>(),
+
+      this.dataSource.query(
+        `SELECT COUNT(*)::int AS total FROM pedidos
+         WHERE tenant_id = $1 AND deleted_at IS NULL AND status = 'em_aberto'`,
+        [tenantId],
+      ),
+
+      this.dataSource.query(
+        `SELECT COUNT(*)::int AS total FROM produtos
+         WHERE tenant_id = $1 AND deleted_at IS NULL`,
+        [tenantId],
+      ),
+
+      this.dataSource.query(
+        `SELECT COUNT(*)::int AS total FROM clientes
+         WHERE tenant_id = $1 AND deleted_at IS NULL`,
+        [tenantId],
+      ),
+
+      this.dataSource.query(
+        `SELECT COUNT(DISTINCT cliente_id)::int AS total FROM pedidos
+         WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'
+           AND data >= (CURRENT_DATE - INTERVAL '90 days')`,
+        [tenantId],
+      ),
+
+      this.dataSource.query(
+        `SELECT COUNT(DISTINCT cliente_id)::int AS total FROM pedidos
+         WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'`,
+        [tenantId],
+      ),
+
+      this.dataSource.query(
+        `SELECT COUNT(DISTINCT cliente_id)::int AS total FROM pedidos
+         WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'
+           AND data >= date_trunc('month', CURRENT_DATE)`,
+        [tenantId],
+      ),
+
+      this.dataSource.query(
+        `SELECT to_char(date_trunc('month', data), 'YYYY-MM') AS mes,
+                SUM(COALESCE(total_com_imposto, total_sem_imposto, 0)) AS valor
+         FROM pedidos
+         WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'
+           AND data >= date_trunc('month', CURRENT_DATE) - INTERVAL '5 months'
+         GROUP BY 1
+         ORDER BY 1`,
+        [tenantId],
+      ),
+
+      this.dataSource.query(
+        `SELECT c.razao_social AS cliente,
+                SUM(COALESCE(p.total_com_imposto, p.total_sem_imposto, 0)) AS valor
+         FROM pedidos p
+         JOIN clientes c ON c.id = p.cliente_id AND c.tenant_id = p.tenant_id
+         WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND c.deleted_at IS NULL
+           AND p.status <> 'cancelado'
+         GROUP BY c.id, c.razao_social
+         ORDER BY valor DESC
+         LIMIT 10`,
+        [tenantId],
+      ),
     ]);
+
+    const totalClientes = Number(totalClientesResult[0]?.total ?? 0);
+    const clientesAtivos = Number(clientesAtivosResult[0]?.total ?? 0);
+    const clientesComHistorico = Number(clientesComHistoricoResult[0]?.total ?? 0);
+    const clientesProspect = Math.max(totalClientes - clientesComHistorico, 0);
+    const clientesInativos = Math.max(clientesComHistorico - clientesAtivos, 0);
+
+    const vendasMensais = this.buildVendasMensais(
+      vendasMensaisRows as { mes: string; valor: string }[],
+    );
+
+    const curvaAbc = this.buildCurvaAbc(
+      curvaAbcRows as { cliente: string; valor: string }[],
+    );
 
     return {
       totalVendas: money(movResult?.vendas),
@@ -560,6 +654,49 @@ export class FinanceService {
       totalCustoRotativo: money(movResult?.custo_rotativo),
       totalComissoes: money(comResult?.total),
       totalInadimplencia: money(inadResult?.total),
+      pedidosAbertos: Number(pedidosAbertosResult[0]?.total ?? 0),
+      produtosAtivos: Number(produtosAtivosResult[0]?.total ?? 0),
+      carteira: {
+        total: totalClientes,
+        ativos: clientesAtivos,
+        inativos: clientesInativos,
+        prospect: clientesProspect,
+      },
+      positivacao: {
+        clientesComPedidoNoMes: Number(positivacaoResult[0]?.total ?? 0),
+        totalClientes,
+      },
+      vendasMensais,
+      curvaAbc,
     };
+  }
+
+  private buildVendasMensais(rows: { mes: string; valor: string }[]): { mes: string; valor: string }[] {
+    const byMonth = new Map(rows.map((r) => [r.mes, r.valor]));
+    const result: { mes: string; valor: string }[] = [];
+    const cursor = new Date();
+    cursor.setDate(1);
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(cursor.getFullYear(), cursor.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      result.push({ mes: key, valor: money(byMonth.get(key)) });
+    }
+    return result;
+  }
+
+  private buildCurvaAbc(
+    rows: { cliente: string; valor: string }[],
+  ): { cliente: string; valor: string; badge: 'Prioridade' | 'Atenção' | 'Regular' }[] {
+    const total = rows.reduce((acc, r) => acc.plus(decimal(r.valor)), decimal(0));
+    if (total.isZero()) return [];
+
+    let acumulado = decimal(0);
+    return rows.map((r) => {
+      acumulado = acumulado.plus(decimal(r.valor));
+      const pctAcumulado = acumulado.div(total).mul(100);
+      const badge: 'Prioridade' | 'Atenção' | 'Regular' =
+        pctAcumulado.lte(80) ? 'Prioridade' : pctAcumulado.lte(95) ? 'Atenção' : 'Regular';
+      return { cliente: r.cliente, valor: money(r.valor), badge };
+    });
   }
 }

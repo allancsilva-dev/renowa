@@ -16,6 +16,7 @@ import {
   Cell,
   RadialBarChart,
   RadialBar,
+  PolarAngleAxis,
 } from 'recharts';
 import {
   Users,
@@ -35,36 +36,24 @@ interface DashboardData {
   totalCustoRotativo: string;
   totalComissoes: string;
   totalInadimplencia: string;
+  pedidosAbertos: number;
+  produtosAtivos: number;
+  carteira: { total: number; ativos: number; inativos: number; prospect: number };
+  positivacao: { clientesComPedidoNoMes: number; totalClientes: number };
+  vendasMensais: { mes: string; valor: string }[];
+  curvaAbc: { cliente: string; valor: string; badge: 'Prioridade' | 'Atenção' | 'Regular' }[];
 }
 
-// ─── Dados zerados ─────────────────────────────────────────────────────────────
+const MES_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-const salesData = Array(6).fill(0).map((_, i) => ({
-  mes: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun'][i],
-  valor: 0,
-}));
+function mesLabel(mesKey: string): string {
+  const [, month] = mesKey.split('-');
+  return MES_LABELS[Number(month) - 1] ?? mesKey;
+}
 
-const totalClientes = 0;
-const pedidosAbertos = 0;
-const produtosAtivos = 0;
-
-const desempenhoData = [
-  { name: 'Atingido', value: 0, color: '#2A9D8F' },
-  { name: 'Pendente', value: 0, color: '#F4A261' },
-  { name: 'Abaixo',   value: 0, color: '#E76F51' },
-];
-
-const carteiraData = [
-  { name: 'Ativos',   value: 0, color: '#2A9D8F' },
-  { name: 'Inativos', value: 0, color: '#F4A261' },
-  { name: 'Prospect', value: 0, color: '#E76F51' },
-];
-
-const positivacaoData = [
-  { name: 'Positivação', value: 0, fill: '#2A9D8F' },
-];
-
-const abcData: { cliente: string; valor: string; badge: string }[] = [];
+function pct(part: number, total: number): number {
+  return total > 0 ? Math.round((part / total) * 100) : 0;
+}
 
 // ─── Formatação ────────────────────────────────────────────────────────────────
 
@@ -177,6 +166,30 @@ export default function Dashboard() {
   const inadimplencia = moneyForDisplay(data?.totalInadimplencia);
   const saldo = faturamento - custos - comissoes;
 
+  const totalClientes = data?.carteira.total ?? 0;
+  const pedidosAbertos = data?.pedidosAbertos ?? 0;
+  const produtosAtivos = data?.produtosAtivos ?? 0;
+
+  const salesData = (data?.vendasMensais ?? []).map((v) => ({
+    mes: mesLabel(v.mes),
+    valor: moneyForDisplay(v.valor),
+  }));
+
+  const carteira = data?.carteira ?? { total: 0, ativos: 0, inativos: 0, prospect: 0 };
+  const carteiraData = [
+    { name: 'Ativos',   value: pct(carteira.ativos, carteira.total),   color: '#2A9D8F' },
+    { name: 'Inativos', value: pct(carteira.inativos, carteira.total), color: '#F4A261' },
+    { name: 'Prospect', value: pct(carteira.prospect, carteira.total), color: '#E76F51' },
+  ];
+
+  const positivacaoPct = pct(
+    data?.positivacao.clientesComPedidoNoMes ?? 0,
+    data?.positivacao.totalClientes ?? 0,
+  );
+  const positivacaoData = [{ name: 'Positivação', value: positivacaoPct, fill: '#2A9D8F' }];
+
+  const abcData = data?.curvaAbc ?? [];
+
   const handleExport = () => {
     const csvContent =
       'data:text/csv;charset=utf-8,' +
@@ -244,13 +257,13 @@ export default function Dashboard() {
       )}
 
       {!canViewFinance && (
-        <div className='rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700'>Indicadores financeiros disponíveis somente para perfis autorizados. Demais áreas do dashboard continuam acessíveis.</div>
+        <div className='rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700'>Este dashboard está disponível somente para perfis com permissão de visualizar o financeiro.</div>
       )}
 
       {/* ── ZONA 2: Gráfico principal + Métricas + Desempenho ── */}
       <div className='grid grid-cols-12 gap-4'>
-        {/* Col 1: Evolução de Venda (~50%) */}
-        <Card className='col-span-12 lg:col-span-6'>
+        {/* Col 1: Evolução de Venda (~65%) */}
+        <Card className='col-span-12 lg:col-span-8'>
           <CardHeader title='Evolução de Venda' />
           <div className='px-5 py-4'>
             <ResponsiveContainer width='100%' height={220}>
@@ -292,70 +305,13 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Col 2: 3 Métricas (~20%) */}
-        <Card className='col-span-12 lg:col-span-3'>
+        {/* Col 2: 3 Métricas (~35%) */}
+        <Card className='col-span-12 lg:col-span-4'>
           <CardHeader title='Resumo' />
           <div className='px-5'>
             <MetricRow label='Faturamento' value={loading ? '—' : fmt(faturamento)} caption='Vendas registradas' />
             <MetricRow label='Custos' value={loading ? '—' : fmt(custos)} caption='Fixos e rotativos' />
             <MetricRow label='Comissões' value={loading ? '—' : fmt(comissoes)} caption='Total acumulado' />
-          </div>
-        </Card>
-
-        {/* Col 3: Desempenho Mensal (~30%) */}
-        <Card className='col-span-12 lg:col-span-3'>
-          <CardHeader title='Desempenho Mensal' />
-          <div className='flex flex-col items-center px-5 py-4 gap-3'>
-            <ResponsiveContainer width='100%' height={160}>
-              <PieChart>
-                <Pie
-                  data={desempenhoData}
-                  cx='50%'
-                  cy='50%'
-                  innerRadius={48}
-                  outerRadius={72}
-                  paddingAngle={2}
-                  dataKey='value'
-                  startAngle={90}
-                  endAngle={-270}
-                >
-                  {desempenhoData.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value) => [`${Number(value ?? 0)}%`, '']}
-                  contentStyle={{ borderRadius: '8px', fontSize: '12px', border: '1px solid #e2e8f0' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-
-            {/* Legenda */}
-            <div className='w-full space-y-1'>
-              {desempenhoData.map((d) => (
-                <div key={d.name} className='flex items-center justify-between text-xs'>
-                  <div className='flex items-center gap-1.5'>
-                    <span className='h-2.5 w-2.5 rounded-full' style={{ backgroundColor: d.color }} />
-                    <span className='text-slate-500'>{d.name}</span>
-                  </div>
-                  <span className='font-semibold text-slate-700'>{d.value}%</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Barra de progresso de meta */}
-            <div className='w-full'>
-              <div className='flex justify-between text-xs text-slate-500 mb-1'>
-                <span>Meta</span>
-                <span className='font-semibold text-slate-700'>0%</span>
-              </div>
-              <div className='h-2 w-full rounded-full bg-slate-100'>
-                <div
-                  className='h-2 rounded-full'
-                  style={{ width: '0%', backgroundColor: '#2A9D8F' }}
-                />
-              </div>
-            </div>
           </div>
         </Card>
       </div>
@@ -365,21 +321,21 @@ export default function Dashboard() {
         <KpiCard
           title='Total de Clientes'
           value={String(totalClientes)}
-          subtitle='Sem dados ainda'
+          subtitle={totalClientes > 0 ? 'Carteira cadastrada' : 'Sem dados ainda'}
           icon={Users}
           iconBg='#2A9D8F'
         />
         <KpiCard
           title='Pedidos em Aberto'
           value={String(pedidosAbertos)}
-          subtitle='Sem dados ainda'
+          subtitle={pedidosAbertos > 0 ? 'Aguardando conclusão' : 'Sem dados ainda'}
           icon={FileText}
           iconBg='#2A9D8F'
         />
         <KpiCard
           title='Produtos Ativos'
           value={String(produtosAtivos)}
-          subtitle='Sem dados ainda'
+          subtitle={produtosAtivos > 0 ? 'Catálogo ativo' : 'Sem dados ainda'}
           icon={Package}
           iconBg='#2A9D8F'
         />
@@ -451,6 +407,7 @@ export default function Dashboard() {
                 endAngle={0}
                 data={positivacaoData}
               >
+                <PolarAngleAxis type='number' domain={[0, 100]} angleAxisId={0} tick={false} />
                 <RadialBar
                   dataKey='value'
                   cornerRadius={6}
@@ -461,8 +418,10 @@ export default function Dashboard() {
             </ResponsiveContainer>
 
             <div className='text-center -mt-8'>
-              <p className='text-4xl font-bold text-slate-900'>0%</p>
-              <p className='mt-1 text-sm font-semibold text-slate-400'>Sem dados</p>
+              <p className='text-4xl font-bold text-slate-900'>{positivacaoPct}%</p>
+              <p className='mt-1 text-sm font-semibold text-slate-400'>
+                {data ? `${data.positivacao.clientesComPedidoNoMes} de ${data.positivacao.totalClientes} clientes` : 'Sem dados'}
+              </p>
               <p className='text-xs text-slate-400'>Taxa de positivação mensal</p>
             </div>
           </div>
@@ -499,7 +458,7 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className='py-2.5 text-right text-xs font-semibold text-slate-900 whitespace-nowrap'>
-                        {row.valor}
+                        {fmt(moneyForDisplay(row.valor))}
                       </td>
                       <td className='py-2.5 text-right'>
                         <span
