@@ -545,17 +545,17 @@ export class FinanceService {
       positivacaoResult,
       vendasMensaisRows,
       curvaAbcRows,
+      totalVendasPedidosResult,
     ] = await Promise.all([
       this.movimentoRepo
         .createQueryBuilder('m')
         .select([
-          "SUM(CASE WHEN m.tipo = 'Venda' THEN m.valor ELSE 0 END) AS vendas",
           "SUM(CASE WHEN m.tipo = 'Custo Fixo' THEN m.valor ELSE 0 END) AS custo_fixo",
           "SUM(CASE WHEN m.tipo = 'Custo Rotativo' THEN m.valor ELSE 0 END) AS custo_rotativo",
         ])
         .where('m.tenant_id = :tenantId', { tenantId })
         .andWhere('m.deleted_at IS NULL')
-        .getRawOne<{ vendas: string; custo_fixo: string; custo_rotativo: string }>(),
+        .getRawOne<{ custo_fixo: string; custo_rotativo: string }>(),
 
       this.comissaoRepo
         .createQueryBuilder('c')
@@ -632,6 +632,13 @@ export class FinanceService {
          LIMIT 10`,
         [tenantId],
       ),
+
+      this.dataSource.query(
+        `SELECT SUM(COALESCE(total_com_imposto, total_sem_imposto, 0)) AS total
+         FROM pedidos
+         WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'`,
+        [tenantId],
+      ),
     ]);
 
     const totalClientes = Number(totalClientesResult[0]?.total ?? 0);
@@ -649,7 +656,7 @@ export class FinanceService {
     );
 
     return {
-      totalVendas: money(movResult?.vendas),
+      totalVendas: money(totalVendasPedidosResult[0]?.total),
       totalCustoFixo: money(movResult?.custo_fixo),
       totalCustoRotativo: money(movResult?.custo_rotativo),
       totalComissoes: money(comResult?.total),
