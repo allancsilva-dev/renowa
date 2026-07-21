@@ -2,7 +2,7 @@
 
 Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs `BACKLOG-NNNN`. Referência cruzada com [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) por ID.
 
-**Estado atual (2026-07-12): 5 itens não fechados.** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
+**Estado atual (2026-07-21, pós revisão do Dashboard/Financeiro): 13 itens não fechados (ABERTO/EM_ANDAMENTO/PARCIALMENTE_RESOLVIDO/FECHADO_COM_RESSALVA).** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
 
 ## Formato de entrada
 
@@ -129,3 +129,92 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Saldo:** estratégia operacional de rotação de segredos, contrato/teste de soft-deleted no sync e smoke tests reais com PostgreSQL/Redis. Docker daemon local estava desligado durante a tentativa operacional.
 - **Resolvido fora deste backlog:** PROB-0040 fechado em 2026-07-12; optimistic concurrency aplicada às edições web. Mobile/sync permanece em PROB-0022/BACKLOG-0005.
 - **Relacionado:** PROB-0037, PROB-0038, PROB-0039, PROB-0041, PROB-0032
+
+### BACKLOG-0010 — Implementar edição de itens de pedido depois de criado
+- **Prioridade:** P0
+- **Área:** backend / frontend
+- **Motivo:** correção desta rodada (PROB-0046) resolveu "pedido nasce sem itens" na criação, mas o backend só expõe `PATCH /pedidos/:uuid/status` — não existe endpoint para alterar itens (produto, quantidade, preço, desconto) de um pedido já criado. Usuário que errar um item no cadastro não tem caminho de correção pela UI.
+- **Dependências:** decidir contrato do endpoint de update de itens (substituir lista inteira vs. patch por item; interação com optimistic concurrency de `Order`, ver PROB-0040); confirmar com o dono do produto a fórmula de cálculo de `total_item` (ver ressalva de PROB-0046) antes ou junto desta implementação.
+- **Critério de aceite:** endpoint backend de update de itens de pedido (respeitando tenant, ownership de vendedor de PROB-0044 e versionamento otimista); tela `PedidoDetalhe.tsx` permite editar itens; testes cobrindo sucesso, conflito de versão e vendedor não-dono.
+- **Risco se ficar pendente:** erro de cadastro em pedido só é corrigível recriando o pedido (ou via acesso direto ao banco) — atrito operacional e risco de dado incorreto persistir em produção.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0046, PROB-0044, PROB-0040
+
+### BACKLOG-0011 — Clique-through autenticado real das telas novas (Fornecedores, criação de pedido com itens)
+- **Prioridade:** P1
+- **Área:** frontend / backend
+- **Motivo:** PROB-0045 (Fornecedores) e PROB-0046 (criação de pedido com itens) foram verificados nesta rodada só por build/lint e leitura de código — o banco de dev local está vazio e não há endpoint de auto-registro, então não foi possível logar como usuário real e percorrer os fluxos ponta a ponta no navegador.
+- **Dependências:** ambiente de desenvolvimento com usuário/tenant de teste seedado (ou endpoint de auto-registro habilitado só em dev).
+- **Critério de aceite:** login real na tela `Fornecedores` com criar/editar/remover fornecedor confirmado visualmente; criação de pedido com itens em `PedidoForm.tsx` gerando pedido com produto/valor corretos, conferido em `PedidoDetalhe.tsx`; total por item conferido contra a fórmula assumida (ou corrigido, se o negócio apontar fórmula diferente).
+- **Risco se ficar pendente:** telas novas podem ter bugs de integração (contrato de API, formatação, estado) que build/lint/testes unitários não capturam; risco maior concentrado no cálculo de `total_item` de pedidos, ainda não validado com o negócio.
+- **Status:** FECHADO_COM_RESSALVA
+- **Atualizado em:** 2026-07-21
+- **Solução aplicada:** clique-through real feito no Safari (via osascript) com usuário admin seedado localmente (`backend/scripts/create-admin.ts`) e permissões seedadas manualmente a partir de `0000_baseline.sql:1496-1520` (banco de dev estava vazio — ver BACKLOG-0012). CRUD de fornecedor confirmado visualmente (criar/editar/remover, campo `razao_social`+`cnpj` com máscara). Criação de pedido com itens confirmada (cliente+produto+quantidade+preço), total client-side conferiu com o total do backend no cenário testado, detalhe do pedido e troca de status funcionando. Nesse processo foram encontrados e corrigidos 3 bugs novos que só um navegador real revela — ver PROB-0049/0050/0051.
+- **Saldo:** a fórmula de `total_item` (PROB-0046) continua **não confirmada com o dono do produto** — o teste manual só provou que cliente e servidor concordam entre si, não que a fórmula está correta para o negócio.
+- **Relacionado:** PROB-0045, PROB-0046, PROB-0049, PROB-0050, PROB-0051, BACKLOG-0012
+
+### BACKLOG-0012 — Seed do catálogo de `permissions` em ambiente de desenvolvimento local
+- **Prioridade:** P1
+- **Área:** backend / infra
+- **Motivo:** em dev o backend roda com `synchronize:true` (TypeORM cria schema a partir das entities) e nunca roda os arquivos `.sql` de `backend/src/database/migrations/`, que são o único lugar onde o catálogo de `permissions` é semeado (`INSERT INTO permissions`, ver `0000_baseline.sql:1496-1520`). Confirmado em 2026-07-21: banco `renowa-dev-postgres` local recém-criado tinha 0 linhas em `usuarios` e também 0 em `permissions`, deixando o painel "Permissões" de um papel (`RolesPage.tsx`) sempre vazio até o INSERT ser rodado manualmente contra o banco. Qualquer dev novo rodando local do zero vai bater nisso.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** script ou npm-script (ex.: `scripts/seed-permissions.ts`, no mesmo padrão de `backend/scripts/create-admin.ts`) que popula o catálogo de `permissions` em dev sem depender do migration runner; documentado no fluxo de setup local (README ou doc de onboarding).
+- **Risco se ficar pendente:** todo onboarding de dev novo exige descobrir e rodar manualmente o INSERT da migration baseline; tela de permissões aparenta quebrada em qualquer ambiente dev recém-criado.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0042, BACKLOG-0004
+
+### BACKLOG-0013 — Cobertura de teste unitário para `ResponseInterceptor`
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** PROB-0050 mostrou que a heurística "já embrulhado, não re-envolver" do `ResponseInterceptor` colide com qualquer entidade que tenha uma coluna de domínio chamada `data` (ex.: `Pedido`, `FinanceMovement`), e não existe `response.interceptor.spec.ts` cobrindo esse comportamento.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** teste unitário cobrindo — objeto simples é envolvido em `{data}`; objeto com `data`+`meta` (shape de `PaginatedResponse<T>`) não é re-envolvido; objeto com `data` sozinho (ex.: entidade `Pedido`/`FinanceMovement`) é envolvido; `null`/`undefined` passam sem alteração; objeto com `error` passa sem alteração; objeto com `results` (resposta de sync) passa sem alteração.
+- **Risco se ficar pendente:** regressão futura na heurística do interceptor só será pega em teste manual, como aconteceu com PROB-0050.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0050, BUG-0009
+
+### BACKLOG-0014 — Auditar outros usos de `optimisticUpdate`/`optimisticSoftDelete` quanto a retorno sem relações carregadas
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** PROB-0051 mostrou que `optimisticUpdate` devolve só a linha crua da tabela (via `UPDATE ... RETURNING *`), sem nenhuma relação — `orders.service.ts#updateStatus` retornava isso direto ao frontend, quebrando a tela porque o contrato esperado (mesmo shape de `findOne`) não era respeitado. Não foi verificado se outros métodos de escrita no backend, fora de `orders.service.ts`, têm o mesmo problema.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** grep por `optimisticUpdate(`/`optimisticSoftDelete(` em todo o backend; para cada uso, confirmar se o retorno é consumido esperando relações carregadas e, se for, aplicar o mesmo padrão de recarregar via `findOne` (ou equivalente) antes de responder.
+- **Risco se ficar pendente:** mesma classe de bug (tela quebra com dado parcial após PATCH/DELETE bem-sucedido) pode existir em outros módulos (financeiro, comissões, parceiros, inadimplência) sem ter sido descoberta ainda.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0051, PROB-0040, BUG-0010
+
+### BACKLOG-0015 — Resetar estado do formulário "Nova Comissão" ao reabrir (Financeiro)
+- **Prioridade:** P3
+- **Área:** frontend
+- **Motivo:** encontrado no teste manual de 2026-07-21 (continuação): o componente `ComissaoAlune` em `frontend/src/pages/Financeiro.tsx` abre o modal "Nova Comissão" com `onClick={() => setShowForm(true)}`, sem chamar `setForm(EMPTY)` antes — diferente de `Produtos.tsx` (`openDialog()`) e `Fornecedores.tsx` (`openCreateDialog()`), que resetam o form explicitamente antes de abrir. Se o usuário abrir "Nova Comissão", cancelar sem salvar, e abrir de novo, os campos do lançamento anterior continuam preenchidos. Não é bug de dado (nada é salvo incorretamente) — é só inconsistência de UX. Não corrigido nesta sessão (baixa severidade, fora do escopo do fix aplicado).
+- **Dependências:** nenhuma.
+- **Critério de aceite:** botão "Nova Comissão" reseta `form` para o estado vazio antes de `setShowForm(true)`, seguindo o mesmo padrão de `openDialog()`/`openCreateDialog()` usado em `Produtos.tsx`/`Fornecedores.tsx`.
+- **Risco se ficar pendente:** confusão de UX (campo com valor "fantasma" de um cadastro cancelado); nenhum risco de integridade de dado.
+- **Status:** ABERTO
+- **Relacionado:** —
+
+### BACKLOG-0016 — Consolidar helper de formatação de data (`fmtDate` de `Financeiro.tsx` duplicado do `formatDate` de `lib/format.ts`)
+- **Prioridade:** P3
+- **Área:** frontend
+- **Motivo:** PROB-0054/BUG-0012 corrigiram o shift de timezone (data exibida 1 dia a menos) em `Pedidos.tsx`/`PedidoDetalhe.tsx` criando `formatDate` em `frontend/src/lib/format.ts`, usando a mesma técnica (`new Date(value + 'T00:00:00')`) que já existia, duplicada, como helper local `fmtDate` dentro de `frontend/src/pages/Financeiro.tsx:11`. Essa duplicação é exatamente o motivo pelo qual o mesmo bug de timezone pôde existir despercebido numa terceira tela (Pedidos) depois de já ter sido corrigido numa primeira (Financeiro) — não corrigido nesta sessão por ser um refactor de baixo risco, fora do escopo do bugfix pontual.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** `fmtDate` de `Financeiro.tsx` removido e substituído pelas chamadas a `formatDate` de `lib/format.ts`; nenhuma outra tela do frontend reimplementa a mesma lógica de formatação de data.
+- **Risco se ficar pendente:** próxima tela nova que exibir uma data `YYYY-MM-DD` sem usar `lib/format.ts` pode reintroduzir o mesmo bug de timezone de PROB-0050/PROB-0054 pela quarta vez.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0054, BUG-0012
+
+### BACKLOG-0017 — Cobertura de teste automatizado para `getDashboard` (Financeiro) cobrindo cenários de dado real que só o smoke test manual revelou
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** a reescrita do Dashboard (PROB-0055) trocou todo o mock hardcoded por queries SQL reais em `FinanceService.getDashboard`, e um smoke test manual (não teste automatizado) encontrou 3 bugs de dado real (BUG-0013, BUG-0014, BUG-0015) que dificilmente seriam pegos por um teste unitário com dataset sintético pequeno — em especial o caso de `SUM(...)` agregando `NULL` para um cliente sem valor e invertendo `ORDER BY ... DESC` (`NULLS FIRST` do Postgres). Não existe teste dedicado a `getDashboard` cobrindo: pedido com `total_com_imposto` nulo (só `total_sem_imposto` preenchido); cliente na Curva ABC sem nenhum pedido com valor agregável concorrendo com cliente com valor real; e o cálculo de positivação/carteira com heurísticas de 90 dias/mês corrente.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** teste de integração ou unitário (com fixture de dados) para `FinanceService.getDashboard` cobrindo pelo menos os 3 cenários acima, mais um cenário de tenant sem nenhum pedido/cliente (retorno vazio/zerado sem erro).
+- **Risco se ficar pendente:** regressão futura nas queries de `getDashboard` (ex.: alguém reintroduzir `SUM(total_com_imposto)` sem `COALESCE`, ou remover o `, 0` final) só seria descoberta em um novo smoke test manual, não no CI.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0055, BUG-0013, BUG-0014, BUG-0015
+# MetaRenowa P0 (21/07/2026)
+
+- Implementado: contrato server-side de cálculo, migration dos campos, criação/edição transacional, integração de cadastros e PDF de validação.
+- Validado: smoke real autenticado com PostgreSQL, criação/edição/reabertura e PDFs de 1, 10 e 70 itens.
+- Infraestrutura pendente: sanear o baseline de `schema_migrations` no banco dev legado; o runner completo encontra tabelas preexistentes ao tentar aplicar `001_initial_schema.sql`.
+- P1 preservado: Sintegra, aceite/assinatura digital, envio externo e regras financeiras avançadas. Detalhes em `docs/MetaRenowa.md`.

@@ -2,7 +2,7 @@
 
 Visão de alto nível do funcionamento do sistema. Mantido pelo `docs-reporter`. Atualizar conforme o sistema evolui. Fatos verificados; suposições marcadas como tal.
 
-_Última atualização: 2026-07-08 (após auditoria completa do sistema — ver [REVIEW_REPORTS/2026-07-08_full_system_audit.md](REVIEW_REPORTS/2026-07-08_full_system_audit.md))._
+_Última atualização: 2026-07-21 (seção "Fluxo de autenticação" corrigida — descrevia o fluxo ZonaDevAuth/JWKS pré-migração; ver [PROBLEM_LEDGER.md#PROB-0052](PROBLEM_LEDGER.md). Demais seções seguem como estavam desde a auditoria completa de 2026-07-08 — ver [REVIEW_REPORTS/2026-07-08_full_system_audit.md](REVIEW_REPORTS/2026-07-08_full_system_audit.md))._
 
 ## Stack real
 
@@ -23,9 +23,10 @@ SaaS multi-tenant. Tenant #1 = Renowa Representações. Ecossistema ZonaDev: **Z
 
 ## Fluxo de autenticação
 
-- **Web:** cookie HTTP-only emitido pelo ZonaDevAuth. Token RS256 validado via JWKS com `jose` (não passport-jwt).
-- **Mobile:** JWT HS256 (30 dias, `RENOWA_JWT_SECRET`) gerado em `POST /api/auth/mobile-session`.
-- `senha_hash` **não existe** na tabela `usuarios` — autenticação é exclusiva do ZonaDevAuth.
+- **Auth nativa (desde o commit `d3934e2`, "feat(auth): add native backend authentication").** ZonaDevAuth/JWKS foi totalmente substituído para o fluxo web — confirmado em 2026-07-21 (`grep -rln "ZonaDev\|jose" backend/src/auth backend/src/main.ts` → sem ocorrência).
+- **Web:** login por `email`+`senha` (`NativeAuthService.login`, `backend/src/auth/native-auth.service.ts`); senha com hash local (`PasswordService`). Servidor emite par de tokens HS256 próprios — access token (`AccessTokenService`) e refresh token (`RefreshTokenService`, com rotação e detecção de reuse) — em cookies `httpOnly` (`renowa_at` e `renowa_rt`, `backend/src/auth/cookie.util.ts`). `sameSite: 'strict'`; `secure` é condicional a `NODE_ENV === 'production'` (não fixo — Safari em `http://localhost` descarta cookies `Secure` silenciosamente; ver [PROB-0049](PROBLEM_LEDGER.md)). Logout, troca de senha, mudança de papel e anonimização LGPD invalidam tokens via `access_token_version` (ver PROB-0031/PROB-0032/BACKLOG-0009).
+- **Mobile:** `POST /api/auth/mobile-session` também recebe `email`+`senha` (`MobileSessionService.createSessionFromCredentials`, mesmo hash de senha do fluxo web) e devolve um JWT HS256 (30 dias, `RENOWA_JWT_SECRET`) — não usa cookie.
+- `senha_hash` **existe** em `usuarios` desde a migração para auth nativa (era ausente antes, quando a autenticação dependia só do ZonaDevAuth) — usado tanto pelo login web quanto pela criação de sessão mobile, ambos por `email`+`senha`.
 
 ## Fluxo multi-tenant
 
@@ -89,3 +90,6 @@ Representação comercial: usuários registram clientes e pedidos. `pedidos` usa
 **LGPD:** sem erasure, sem trilha de auditoria, PII em cleartext no mobile — [PROB-0030..0032](PROBLEM_LEDGER.md).
 
 - _Suposição: cobertura de testes das regras críticas (isolamento tenant, ciclo de sync) ainda não auditada — validar com `test-engineer`._
+# Pedido comercial e validação
+
+O módulo de pedidos calcula quantidades, descontos, IPI e totais exclusivamente no backend. Criação e `PUT /pedidos/:uuid` persistem cabeçalho e itens em uma transação com concorrência otimista. A aplicação web oferece criação/edição completa e gera um PDF A4 retrato a partir da versão persistida mais recente. O contrato e as evidências estão em `docs/MetaRenowa.md`.
