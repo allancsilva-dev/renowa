@@ -49,7 +49,16 @@
       "Bash(nslookup -type=A renowa.nexostech.com.br 8.8.8.8)",
       "Bash(openssl rand *)",
       "Bash(echo \"RENOWA_AT_SECRET=$\\(openssl rand -base64 32\\)\")",
-      "Bash(echo \"RENOWA_JWT_SECRET=$\\(openssl rand -base64 32\\)\")"
+      "Bash(echo \"RENOWA_JWT_SECRET=$\\(openssl rand -base64 32\\)\")",
+      "Bash(npm -v)",
+      "Bash(brew list *)",
+      "Bash(grep -rln \"renowa-dev-postgres\\\\|5433\" --include=\"*.yml\" --include=\"*.yaml\" --include=\"*.md\" --include=\"*.sh\" --include=\"*.json\" -not -path \"*/node_modules/*\" .)",
+      "Bash(grep -rniE \"demo@|seed|admin@renowa|senha.{0,3}demo|credenciais de teste\" --include=\"*.md\" .)",
+      "Bash(docker exec *)",
+      "Bash(fc -ln -2000)",
+      "Bash(lsof -iTCP:3000 -sTCP:LISTEN -n -P)",
+      "Bash(lsof -iTCP:5173 -sTCP:LISTEN -n -P)",
+      "Bash(xargs -I{} echo {})"
     ]
   },
   "hooks": {
