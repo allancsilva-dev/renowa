@@ -260,9 +260,12 @@ A autenticação é delegada ao serviço externo **ZonaDev Auth** (`auth.zonadev
 
 - **Node.js** >= 20.x
 - **npm** >= 10.x (o projeto usa npm workspaces)
-- **PostgreSQL** >= 15
+- **PostgreSQL** >= 15 (local via Docker ou instalação nativa)
+- **Docker** (opcional, mas recomendado para subir o Postgres local rapidamente)
 - **Expo CLI** (para mobile): `npm install -g expo-cli`
-- Acesso ao **ZonaDev Auth** (`auth.zonadev.tech`) — necessário para login no frontend e no mobile
+- **Redis** — só é obrigatório em produção (rate limiting compartilhado); em dev o throttler cai automaticamente para storage em memória se `REDIS_URL` não estiver definida
+
+> A autenticação é **nativa** (e-mail/senha com hash argon2, JWT HS256 para cookie web e sessão mobile — ver `backend/src/auth`). Não há dependência de um serviço externo de auth para rodar ou logar localmente; as variáveis `ZONADEV_JWKS_URL`/`VITE_AUTH_URL`/`VITE_AUTH_AUD` que aparecem em versões antigas de `.env.example` não são lidas pelo código atual e podem ser ignoradas.
 
 ---
 
@@ -284,36 +287,36 @@ NODE_ENV=development
 PORT=3000
 
 # PostgreSQL
-DATABASE_URL=postgresql://usuario:senha@localhost:5432/renowa
-
-# ZonaDev Auth — validação RS256 via JWKS
-ZONADEV_JWKS_URL=https://auth.zonadev.tech/.well-known/jwks.json
-ZONADEV_EXPECTED_ISS=auth.zonadev.tech
-ZONADEV_EXPECTED_AUD=renowa.zonadev.tech
-
-# JWT HS256 interno para sessões mobile (30 dias)
-RENOWA_JWT_SECRET=change-me-to-a-strong-random-secret
+DATABASE_URL=postgresql://renowa:devpassword@localhost:5433/renowa
 
 # CORS — origens permitidas (separar por vírgula se múltiplas)
 CORS_ORIGIN=http://localhost:5173
+
+# Auth nativa — access token web (JWT HS256, 15 min, cookie renowa_at)
+RENOWA_AT_SECRET=troque-por-segredo-forte-256-bits
+
+# Segredo para sessões mobile (JWT HS256, 30 dias)
+RENOWA_JWT_SECRET=troque-por-outro-segredo-forte-256-bits
+
+# Opcional em dev — só é exigida em produção (throttling compartilhado)
+# REDIS_URL=redis://localhost:6379/0
 ```
+
+> Em `NODE_ENV != production` o TypeORM roda com `synchronize: true`, ou seja, o schema é criado/atualizado automaticamente a partir das entities — não é preciso rodar migrations manualmente em dev.
 
 #### Frontend (`frontend/.env`)
 
 ```env
 VITE_API_URL=http://localhost:3000/api
-VITE_AUTH_URL=https://auth.zonadev.tech
-VITE_AUTH_AUD=renowa.zonadev.tech
 ```
 
 #### Mobile (`mobile/.env` / `app.json > extra`)
 
 ```env
 EXPO_PUBLIC_API_URL=http://localhost:3000/api
-EXPO_PUBLIC_AUTH_URL=https://auth.zonadev.tech
 ```
 
-> O `app.json` do mobile também contém as URLs em `extra.apiUrl` e `extra.authUrl` para compatibilidade com builds nativos.
+> O `app.json` do mobile também contém a URL em `extra.apiUrl` para compatibilidade com builds nativos.
 
 ---
 
@@ -324,6 +327,22 @@ EXPO_PUBLIC_AUTH_URL=https://auth.zonadev.tech
 ```bash
 npm install
 ```
+
+### Subir o PostgreSQL local (Docker)
+
+Se você não tem um PostgreSQL rodando localmente, suba um container dedicado ao ambiente de dev (persistente — não precisa recriar a cada sessão):
+
+```bash
+docker run -d --name renowa-dev-postgres \
+  --restart unless-stopped \
+  -e POSTGRES_DB=renowa \
+  -e POSTGRES_USER=renowa \
+  -e POSTGRES_PASSWORD=devpassword \
+  -p 5433:5432 \
+  postgres:15-alpine
+```
+
+A porta `5433` (em vez de `5432`) evita conflito com um PostgreSQL nativo já instalado na máquina. Ajuste `DATABASE_URL` no `backend/.env` de acordo com a porta/senha escolhidas. Com `--restart unless-stopped`, o container volta a subir sozinho quando o Docker Desktop reinicia; os dados ficam persistidos enquanto o container não for removido (`docker rm`).
 
 ### Executar todas as aplicações em paralelo
 
