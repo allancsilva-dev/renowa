@@ -44,12 +44,27 @@ export class OrderItem extends VersionedBaseEntity {
   @Column({ name: 'qtd_unitaria', type: 'decimal', precision: 10, scale: 3, nullable: true })
   qtd_unitaria: string | null;
 
-  @Column({ name: 'preco_unitario', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'qtd_total', type: 'decimal', precision: 18, scale: 3, nullable: true })
+  qtd_total: string | null;
+
+  @Column({ name: 'preco_unitario', type: 'decimal', precision: 18, scale: 2, nullable: true })
   preco_unitario: string | null;
 
   @Column({ name: 'desconto_perc', type: 'decimal', precision: 5, scale: 2, nullable: true })
   desconto_perc: string | null;
 
-  @Column({ name: 'total_item', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'valor_com_desconto', type: 'decimal', precision: 18, scale: 2, nullable: true })
+  valor_com_desconto: string | null;
+
+  @Column({ name: 'ipi_perc', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  ipi_perc: string | null;
+
+  @Column({ name: 'valor_com_imposto', type: 'decimal', precision: 18, scale: 2, nullable: true })
+  valor_com_imposto: string | null;
+
+  @Column({ name: 'total_item', type: 'decimal', precision: 18, scale: 2, nullable: true })
   total_item: string | null;
+
+  @Column({ name: 'total_com_imposto', type: 'decimal', precision: 18, scale: 2, nullable: true })
+  total_com_imposto: string | null;
 }

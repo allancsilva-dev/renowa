@@ -40,6 +40,7 @@ export class ProductsService {
     tenantId: string,
     pagination: PaginationDto,
     search?: string,
+    fornecedorUuid?: string,
   ): Promise<PaginatedResponse<Product>> {
     const { page = 1, limit = 20 } = pagination;
 
@@ -55,6 +56,8 @@ export class ProductsService {
         { s: `%${search}%` },
       );
     }
+
+    if (fornecedorUuid) qb.andWhere('f.uuid = :fornecedorUuid', { fornecedorUuid });
 
     const [data, total] = await qb
       .orderBy('p.descricao', 'ASC')
@@ -79,6 +82,18 @@ export class ProductsService {
     const { fornecedor_uuid: _f, uuid: _u, preco_base, ...rest } = dto;
     Object.assign(product, rest);
     if (preco_base !== undefined) product.preco_base = money(preco_base);
+    if (Object.prototype.hasOwnProperty.call(dto, 'fornecedor_uuid')) {
+      if (!dto.fornecedor_uuid) {
+        product.fornecedor_id = null;
+      } else {
+        const rows = await this.dataSource.query(
+          `SELECT id FROM fornecedores WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+          [dto.fornecedor_uuid, tenantId],
+        ) as Array<{ id: number }>;
+        if (!rows[0]) throw new NotFoundException('Fornecedor não encontrado.');
+        product.fornecedor_id = rows[0].id;
+      }
+    }
     return this.productRepo.save(product);
   }
 

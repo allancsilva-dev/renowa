@@ -74,10 +74,10 @@ export class Order extends VersionedBaseEntity {
   @Column({ name: 'status', type: 'varchar', default: 'em_aberto' })
   status: string;
 
-  @Column({ name: 'total_sem_imposto', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'total_sem_imposto', type: 'decimal', precision: 18, scale: 2, nullable: true })
   total_sem_imposto: string | null;
 
-  @Column({ name: 'total_com_imposto', type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ name: 'total_com_imposto', type: 'decimal', precision: 18, scale: 2, nullable: true })
   total_com_imposto: string | null;
 
   @Column({ name: 'pgt', type: 'varchar', nullable: true })
@@ -91,6 +91,9 @@ export class Order extends VersionedBaseEntity {
 
   @Column({ name: 'observacao', type: 'text', nullable: true })
   observacao: string | null;
+
+  @Column({ name: 'tipo_faturamento', type: 'varchar', nullable: true })
+  tipo_faturamento: string | null;
 
   @OneToMany(() => OrderItem, (item) => item.pedido, { cascade: true })
   itens: OrderItem[];

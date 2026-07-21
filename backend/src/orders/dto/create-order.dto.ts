@@ -1,13 +1,16 @@
 import {
-  IsString,
-  IsOptional,
-  IsDateString,
+  ArrayMinSize,
   IsArray,
-  ValidateNested,
+  IsDateString,
+  IsDefined,
+  IsInt,
   IsNumber,
-  IsPositive,
-  Min,
+  IsOptional,
+  IsString,
   IsUUID,
+  Max,
+  Min,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -16,39 +19,41 @@ export class CreateOrderItemDto {
   uuid: string;
 
   @IsOptional() @IsUUID('4') produto_uuid?: string;
-  @IsOptional() @IsString() codigo_manual?: string;
-  @IsOptional() @IsString() descricao_manual?: string;
-  @IsOptional() @IsNumber() @Min(0) qtd_caixas?: number;
-  @IsOptional() @IsNumber() @Min(0) qtd_unitaria?: number;
-  @IsOptional() @IsNumber() @IsPositive() preco_unitario?: number;
-  @IsOptional() @IsNumber() @Min(0) desconto_perc?: number;
-  @IsOptional() @IsNumber() @Min(0) total_item?: number;
+  @IsOptional() @IsString() codigo_manual?: string | null;
+  @IsOptional() @IsString() descricao_manual?: string | null;
+  @IsDefined() @IsNumber() @Min(0) qtd_caixas: number;
+  @IsDefined() @IsNumber() @Min(0) qtd_unitaria: number;
+  @IsDefined() @IsNumber() @Min(0) preco_unitario: number;
+  @IsOptional() @IsNumber() @Min(0) @Max(100) desconto_perc?: number;
+  @IsOptional() @IsNumber() @Min(0) @Max(100) ipi_perc?: number;
 }
 
 export class CreateOrderDto {
   @IsUUID('4')
   uuid: string;
 
-  @IsOptional() @IsUUID('4') cliente_uuid?: string;
-  @IsOptional() @IsUUID('4') vendedor_uuid?: string;
-  @IsOptional() @IsUUID('4') fornecedor_uuid?: string;
-  @IsOptional() @IsUUID('4') transportadora_uuid?: string;
+  @IsDefined() @IsUUID('4') cliente_uuid: string;
+  @IsOptional() @IsUUID('4') vendedor_uuid?: string | null;
+  @IsDefined() @IsUUID('4') fornecedor_uuid: string;
+  @IsOptional() @IsUUID('4') transportadora_uuid?: string | null;
 
-  @IsOptional() @IsDateString() data?: string;
-
-  /** 'em_aberto' | 'concluido' | 'cancelado' */
+  @IsOptional() @IsDateString() data?: string | null;
   @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() pgt?: string | null;
+  @IsOptional() @IsString() prazo?: string | null;
+  @IsOptional() @IsString() local_entrega?: string | null;
+  @IsOptional() @IsString() observacao?: string | null;
+  @IsOptional() @IsString() tipo_faturamento?: string | null;
 
-  @IsOptional() @IsNumber() @Min(0) total_sem_imposto?: number;
-  @IsOptional() @IsNumber() @Min(0) total_com_imposto?: number;
-  @IsOptional() @IsString() pgt?: string;
-  @IsOptional() @IsString() prazo?: string;
-  @IsOptional() @IsString() local_entrega?: string;
-  @IsOptional() @IsString() observacao?: string;
-
-  @IsOptional()
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)
-  itens?: CreateOrderItemDto[];
+  itens: CreateOrderItemDto[];
+}
+
+export class UpdateOrderDto extends CreateOrderDto {
+  @IsInt()
+  @Min(1)
+  version: number;
 }
