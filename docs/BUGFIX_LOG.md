@@ -219,3 +219,16 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Resultado:** PASS
 - **Ressalvas:** sem commit nesta sessão; nenhum teste automatizado (snapshot/visual) cobre a escala do gauge — regressão futura (ex.: remoção acidental do `PolarAngleAxis`) só seria pega visualmente, não por teste.
 - **Commit:** pendente
+
+### BUG-0016 — KPI "Faturamento" do Dashboard passa a somar `pedidos` reais em vez de lançamentos financeiros manuais tipo 'Venda'
+- **Problema relacionado:** PROB-0056
+- **Data:** 2026-07-21
+- **Área:** backend
+- **Sintoma:** card "Resumo" do Dashboard mostrava "Faturamento" = `R$ 0` enquanto "Evolução de Venda" e "Curva ABC de Clientes", na mesma tela, mostravam uma venda real de R$ 5.834,00.
+- **Causa raiz:** `getDashboard` calculava `totalVendas` a partir de `SUM(CASE WHEN m.tipo = 'Venda' ...)` sobre `financeiro_movimentacao` (lançamentos manuais), enquanto os demais widgets de venda somam direto de `pedidos`. Nenhum fluxo do sistema cria automaticamente um lançamento tipo 'Venda' ao fechar um pedido, então o KPI ficava sempre zerado com dado real de pedido.
+- **Correção aplicada:** nova query somando `SUM(COALESCE(total_com_imposto, total_sem_imposto, 0))` de `pedidos` (`WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'`), adicionada ao mesmo `Promise.all` de `getDashboard`; `totalVendas` do retorno passou a usar esse resultado. `SUM(CASE WHEN m.tipo = 'Venda' ...)` removido da query de `movimentoRepo` por estar morto (a query segue alimentando `totalCustoFixo`/`totalCustoRotativo`, corretos e fora do escopo deste bug).
+- **Arquivos alterados:** `backend/src/finance/finance.service.ts` (`getDashboard`)
+- **Testes/validações executadas:** smoke test manual real via Safari (osascript) contra Postgres local, logado como `admin@renowa.local` no tenant `94defbdd-3361-4481-a869-56d0e82d5c6d` — antes do fix, `GET /api/financeiro/dashboard` retornava `"totalVendas":"0.00"`; depois do fix (hot-reload do `start:dev`), retornou `"totalVendas":"5834.00"`, batendo com `vendasMensais`/`curvaAbc`. Confirmado visualmente por reload real da tela no Safari. **Typecheck e suíte automatizada do backend não foram executados nesta sessão** (ambiente sem `node`/`npm` disponível para este agente).
+- **Resultado:** PASS_COM_RESSALVA
+- **Ressalvas:** sem commit nesta sessão; validação restrita a smoke test manual (request/response real + screenshot), sem `tsc`/Jest reexecutados por este agente; não existe teste automatizado dedicado a este cenário em `getDashboard` (ver BACKLOG-0017); a troca de fonte de dado do KPI (pedidos em vez de lançamento manual) é uma decisão de negócio implícita que precisa confirmação do usuário/PO (ver BACKLOG-0018).
+- **Commit:** pendente

@@ -206,12 +206,24 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 ### BACKLOG-0017 — Cobertura de teste automatizado para `getDashboard` (Financeiro) cobrindo cenários de dado real que só o smoke test manual revelou
 - **Prioridade:** P2
 - **Área:** backend
-- **Motivo:** a reescrita do Dashboard (PROB-0055) trocou todo o mock hardcoded por queries SQL reais em `FinanceService.getDashboard`, e um smoke test manual (não teste automatizado) encontrou 3 bugs de dado real (BUG-0013, BUG-0014, BUG-0015) que dificilmente seriam pegos por um teste unitário com dataset sintético pequeno — em especial o caso de `SUM(...)` agregando `NULL` para um cliente sem valor e invertendo `ORDER BY ... DESC` (`NULLS FIRST` do Postgres). Não existe teste dedicado a `getDashboard` cobrindo: pedido com `total_com_imposto` nulo (só `total_sem_imposto` preenchido); cliente na Curva ABC sem nenhum pedido com valor agregável concorrendo com cliente com valor real; e o cálculo de positivação/carteira com heurísticas de 90 dias/mês corrente.
+- **Motivo:** a reescrita do Dashboard (PROB-0055) trocou todo o mock hardcoded por queries SQL reais em `FinanceService.getDashboard`, e um smoke test manual (não teste automatizado) encontrou 3 bugs de dado real (BUG-0013, BUG-0014, BUG-0015) que dificilmente seriam pegos por um teste unitário com dataset sintético pequeno — em especial o caso de `SUM(...)` agregando `NULL` para um cliente sem valor e invertendo `ORDER BY ... DESC` (`NULLS FIRST` do Postgres). Não existe teste dedicado a `getDashboard` cobrindo: pedido com `total_com_imposto` nulo (só `total_sem_imposto` preenchido); cliente na Curva ABC sem nenhum pedido com valor agregável concorrendo com cliente com valor real; e o cálculo de positivação/carteira com heurísticas de 90 dias/mês corrente. **Atualização 2026-07-21:** um novo smoke test de regressão encontrou mais um cenário sem cobertura — KPI `totalVendas` calculado a partir da tabela errada (`financeiro_movimentacao` em vez de `pedidos`), sempre zerado com dado real (PROB-0056/BUG-0016). Critério de aceite abaixo estendido para incluir esse cenário.
 - **Dependências:** nenhuma.
-- **Critério de aceite:** teste de integração ou unitário (com fixture de dados) para `FinanceService.getDashboard` cobrindo pelo menos os 3 cenários acima, mais um cenário de tenant sem nenhum pedido/cliente (retorno vazio/zerado sem erro).
-- **Risco se ficar pendente:** regressão futura nas queries de `getDashboard` (ex.: alguém reintroduzir `SUM(total_com_imposto)` sem `COALESCE`, ou remover o `, 0` final) só seria descoberta em um novo smoke test manual, não no CI.
+- **Critério de aceite:** teste de integração ou unitário (com fixture de dados) para `FinanceService.getDashboard` cobrindo pelo menos os 3 cenários originais, mais um cenário de tenant sem nenhum pedido/cliente (retorno vazio/zerado sem erro), mais um cenário de regressão para `totalVendas` (pedido real não-cancelado deve refletir no KPI, sem depender de lançamento manual em `financeiro_movimentacao`).
+- **Risco se ficar pendente:** regressão futura nas queries de `getDashboard` (ex.: alguém reintroduzir `SUM(total_com_imposto)` sem `COALESCE`, remover o `, 0` final, ou voltar a ler `totalVendas` de `financeiro_movimentacao`) só seria descoberta em um novo smoke test manual, não no CI.
 - **Status:** ABERTO
-- **Relacionado:** PROB-0055, BUG-0013, BUG-0014, BUG-0015
+- **Relacionado:** PROB-0055, PROB-0056, BUG-0013, BUG-0014, BUG-0015, BUG-0016, BACKLOG-0018
+
+---
+
+### BACKLOG-0018 — Confirmar decisão de negócio: fonte de verdade do KPI "Faturamento" do Dashboard (pedidos vs. lançamento financeiro manual)
+- **Prioridade:** P1
+- **Área:** backend / produto
+- **Motivo:** BUG-0016 (PROB-0056) corrigiu o KPI "Faturamento" do Dashboard, que estava sempre `R$ 0`, trocando sua fonte de `financeiro_movimentacao` (lançamentos manuais tipo 'Venda', nunca criados automaticamente pelo sistema) para `pedidos` reais não-cancelados — mesma fonte já usada por "Evolução de Venda"/"Curva ABC de Clientes". Essa troca resolve a inconsistência visual (dois números de venda diferentes na mesma tela), mas embute uma decisão de negócio que não foi formalmente confirmada com o usuário/PO: que "Faturamento" deve refletir pedidos faturados, e não bookkeeping manual do módulo Financeiro. Se a intenção de negócio for a oposta (KPI deveria refletir lançamentos manuais, e faltaria criar automaticamente um lançamento tipo 'Venda' ao fechar pedido), a correção aplicada estaria resolvendo o sintoma errado.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** usuário/PO confirma por escrito qual é a fonte de verdade correta para "Faturamento". Se confirmado "pedidos" (fonte já aplicada nesta sessão): documentar a decisão em `SYSTEM_OVERVIEW.md`. Se confirmado "lançamento manual": reverter BUG-0016 e/ou implementar criação automática de lançamento `financeiro_movimentacao` tipo 'Venda' ao fechar um pedido (mudança de código adicional, fora do escopo deste agente).
+- **Risco se ficar pendente:** o fix de BUG-0016 pode ser revertido por desconhecimento em uma revisão futura, ou o "Saldo" do Dashboard (`saldo = faturamento - custos - comissoes`) voltar a ficar sistematicamente incorreto.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0056, BUG-0016, BACKLOG-0017
 # MetaRenowa P0 (21/07/2026)
 
 - Implementado: contrato server-side de cálculo, migration dos campos, criação/edição transacional, integração de cadastros e PDF de validação.

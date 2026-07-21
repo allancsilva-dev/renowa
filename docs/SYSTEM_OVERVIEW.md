@@ -2,7 +2,7 @@
 
 Visão de alto nível do funcionamento do sistema. Mantido pelo `docs-reporter`. Atualizar conforme o sistema evolui. Fatos verificados; suposições marcadas como tal.
 
-_Última atualização: 2026-07-21 (seção "Fluxo de autenticação" corrigida — descrevia o fluxo ZonaDevAuth/JWKS pré-migração; ver [PROBLEM_LEDGER.md#PROB-0052](PROBLEM_LEDGER.md). Demais seções seguem como estavam desde a auditoria completa de 2026-07-08 — ver [REVIEW_REPORTS/2026-07-08_full_system_audit.md](REVIEW_REPORTS/2026-07-08_full_system_audit.md))._
+_Última atualização: 2026-07-21 (seção "Limitações conhecidas" ganhou nota sobre as duas fontes de dado de "venda" no Financeiro, achado do smoke test de regressão do Dashboard — ver [PROBLEM_LEDGER.md#PROB-0056](PROBLEM_LEDGER.md). Seção "Fluxo de autenticação" já havia sido corrigida antes nesta mesma data — descrevia o fluxo ZonaDevAuth/JWKS pré-migração; ver [PROBLEM_LEDGER.md#PROB-0052](PROBLEM_LEDGER.md). Demais seções seguem como estavam desde a auditoria completa de 2026-07-08 — ver [REVIEW_REPORTS/2026-07-08_full_system_audit.md](REVIEW_REPORTS/2026-07-08_full_system_audit.md))._
 
 ## Stack real
 
@@ -71,6 +71,7 @@ Representação comercial: usuários registram clientes e pedidos. `pedidos` usa
 - Cursor de sync por **offset** (CHANGELOG #13) — sujeito a pular/repetir item sob escrita concorrente. Migração planejada para cursor por `updated_at` na v2.0. Ver [BACKLOG-0001](BACKLOG.md).
 - Dois modelos de permissão coexistem (`role_permissions` string-role vs `tenant_role_permissions` tenant-escopado) — não reconciliado ([PROB-0034](PROBLEM_LEDGER.md)).
 - Schema de produção vem só das migrations, mas dev usa `synchronize` → **divergência dev↔prod** ([PROB-0004](PROBLEM_LEDGER.md)).
+- Duas fontes de dado para "venda" no módulo Financeiro, sem reconciliação automática: a tabela `pedidos` (venda real do fluxo comercial) e a tabela `financeiro_movimentacao` (lançamentos manuais livres, tipos `'Custo Fixo' | 'Custo Rotativo' | 'Venda'`, criados só pela tela Financeiro). Nenhum fluxo do sistema cria automaticamente um lançamento `financeiro_movimentacao` tipo `'Venda'` ao fechar um pedido. O KPI "Faturamento" do Dashboard passou a somar `pedidos` (2026-07-21, ver [PROB-0056](PROBLEM_LEDGER.md)/BUG-0016) para bater com "Evolução de Venda"/"Curva ABC de Clientes", que já usavam `pedidos` — mas essa é uma decisão de negócio ainda **não confirmada formalmente** com o usuário/PO ([BACKLOG-0018](BACKLOG.md)). A tabela `financeiro_movimentacao` continua existindo e sendo editável manualmente pela tela Financeiro, só deixou de alimentar esse KPI específico.
 
 ## Pontos frágeis atuais (auditoria 2026-07-08)
 
