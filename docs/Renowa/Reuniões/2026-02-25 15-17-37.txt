@@ -1,0 +1,317 @@
+(Transcribed by TurboScribe.ai. Go Unlimited to remove this message.)
+
+Então, tecnicamente a primeira tela é o login, é um aplicativo que vai servir só para a empresa, não vai ter terceiros, é só interno, com app conversando mesmo sem internet Então você consegue registrar, depois que ele ficar online ele sobe as informações, é isso que você quer, né? Tá, a primeira tela, pelo que eu vi, o design que você quer é os botões do lado esquerdo e do restante, por exemplo, parecido com esse aqui, né? Do lado direito aqui e aqui, sei lá, os dados estatísticos. Pode ser. É, eu não sei, é você que decide como vai ser.
+
+É só uma visualização, aqui as tabelas que você vai falar agora, os botões, e aqui, ou você pode colocar aqui, por cima ou embaixo, aí é você que decide. Lado esquerdo, né? Então, inicialmente, ou não. Lado esquerdo é melhor, tá.
+
+Primeira tela, a estatística dos botões do lado esquerdo vão ser quais que você precisa. Porra, não era isso que eu tinha aqui. Pode ser, depois é um imprint também.
+
+Mas, o que eu digo, inicial, imprint. A princípio, os primeiros aí tem que ser clientes. Aí tem que ter, no caso, tem que falar de clientes, né? Então, pera, é cliente? É cliente, né? Porque esse clientes é a aba do cadastro dos clientes, certo? É que a gente pode fazer da seguinte forma, ou faz dois botões, um cliente e um novo cliente, ou a gente, tipo, por exemplo, clicou no cliente, vai aparecer aqui, e aqui embaixo tem o novo.
+
+Pode ser. É, fica o novo aqui do ladinho direito. Isso, o novo lá direito ali.
+
+É, entendeu? Assim não. Aí economiza um pouco de... Isso aqui de... O que a gente faz aqui é diferente. A gente já coloca aqui a venda, mas vem aqui em pedidos.
+
+Quando você vem em pedidos, a gente já abre de clientes. Incluir pedido, aí no caso, incluir clientes. Ficaria mais ou menos assim, entendeu? Aí, se você quer que escreva, então, incluir clientes.
+
+É, né? Incluir clientes. A gente sempre tinha falado isso, tá? Incluir clientes. Tá.
+
+Tá. Aí seria clientes, e o segundo botão seria... Aqui você falou que não mudaria, mas o segundo é? Transportes. Transportes.
+
+Eu não sei exatamente o que é, mas a gente já chega lá. Tá. Depois, transportes.
+
+Aí, essa é a parte do financeiro, né? Financeiro. Ok. E aí, próximo.
+
+Então, mas é a parte inicial, né? Depois a gente pode colocar o financeiro. Como que a gente pode fazer? A gente pode colocar dentro do financeiro os botões para você acessar, né? Sim, que fica na parte de cima. Isso, esses três botões.
+
+E tem que ter a aba pedidos, né? Acho que a primeira é pedidos, depois clientes. Ou clientes, depois pedidos. Tá.
+
+Então, primeiro é clientes. Primeirão. Primeiro é clientes, depois pedidos.
+
+Fazer assim. Isso. Aqui é o nome, tá? A pessoa que está alugada.
+
+Pode colocar fotinho. Tá. Aí, pedido financeiro.
+
+É isso. Primeiro, né? Tá. Então, vamos fazer o seguinte.
+
+Vai aqui no clientes. Na aba clientes. Do lado direito tem um incluir.
+
+Na parte de cima ali. E aí, você queria exatamente quais os campos. Ou você quer que seja... Ou você tem alguma planilha com os campos necessários.
+
+Então, qualquer ideia, né? Essa planilha. Tá no pedidos, né? No clientes. No clientes, pelo menos.
+
+No clientes, é montar uma ficha cadastral. Então, isso. Você tem uma planilha que tenha o que precisa.
+
+Alguma coisa assim. Que aí, já fica mais fácil que a gente corta a conversa. Então, aí, você só fala o que você quer mudar.
+
+Em vez da fala inteira. Tá mandando no WhatsApp, tudo? Essa parte aqui do vendedor, você corta, né? Mas, para cadastro. No caso do cliente de cadastro, é. Ação social.
+
+Endereço. Completinho. CNPJ.
+
+E-mail. Transporte. E o transporte vai puxar o cadastro do transporte que vai ter aquela... Tem a outra adenha lá, tá? Tá.
+
+Então, você tem... Você mandou no WhatsApp mais ou menos os campos, né? Sim. Então, a gente... Vamos pular já para outra aqui. Que é o pedido.
+
+É o pedidos. Que aí, a gente vai fazer um quadradinho aqui. E o pedido vai ser a mesma coisa que eu vou te mandar aqui.
+
+E depois, quando você for fazer, a gente sempre tem que fazer as funções dos cálculos, né? O sistema calcular automaticamente. Tá. Mandei também.
+
+Tá. Por que que eu te mandei o Excel? Pode ser para não... Mais fácil, né? Pode ser. Tá.
+
+Aí, o pedidos... Vai ter algum botão... Extra. Precisa. Tem um botão extra que precisa do meu cliente lá.
+
+Que é para puxar o cadastro do Sintegra. Para vincular com o Sintegra. Desculpa, que eu acho que é R$30,00 por segurança, né? Sintegra.
+
+Sintegra.com.br Que aí seria para verificar a situação do cliente? Não. Quando você se vincula com o Sintegra, ele puxa os dados cadastrais completos. Ah, não.
+
+Tá. Ah, você quer o botão para ver os dados cadastrais. Para puxar junto.
+
+Porque eu tenho que digitar todos, entendeu? Sim, tá. Entendi. Então... Com o Sintegra... Para... Ô Renan, é só isso aí.
+
+Tá? Não vou pegar o ursinho, não. Vamos ver se a gente acha mais barato. Mas para a gente, vamos dar um... Um desconto, acho que vai vir.
+
+Ô Renan, tira aquele ursinho fora. A Tati achou ele muito pequeno. Sintegra.com.br Você não quer isso, meu pedido.
+
+Não. É... Espera aí. Papel pedidos.
+
+Esses são os campos que precisa? É. Rádio social, eletria, Sintegra. Transporte, local, observação, inscrição estadual. Só que esse aí, quando você coloca, puxa, se integra, ele já puxa tudo, né? Você não puxa o transporte.
+
+Aí o transporte vai puxar daquele cadastro que a gente vai fazer o crédito. Então, mas é que, tipo assim, na hora de criar o aplicativo, você tem que colocar o campo pra preencher corretamente, entendeu? Mas eu entendi como é que vai funcionar. Agora, a única questão... Beleza, pedidos é isso aqui.
+
+Só que vai ter algum botão extra, alguma coisa que você quer... Dois pedidos? É, dois pedidos. Então, no cliente, ele vai se integrar com... Aí no pedido, olha, mais ou menos assim, tá vendo? Aqui é bom... Criar pedido, orçamento... Criar orçamento, tá vendo? No pedido sim, aqui, criar orçamento. Aí o que é legal nesse sistema? Tem o quê? Isso aqui, ó. Todos os pedidos que a gente invitar já ficam aqui incluídos.
+
+Então, se eu quiser abrir esse aqui, que foi faturado e enviado, ele abre o orçamento. Entendeu? Então, por exemplo, além de ter o botão aqui, a tela principal vai ter criar orçamento e os pedidos antigos, certo? Pra pesquisar, o pedido também tem... Isso. Não, esse aqui é o pedido.
+
+Ele abre aqui, e aqui você coloca qual cliente que você quer. Isso aqui é uma coisa que a gente quer também. Você vai colocar o nome, razão social ou o CNPJ.
+
+Aí ele vai puxar o cliente e vai selecionar... Aí ele vai puxar o dado automático. Dados, produtos... Ó, redução. Você tá vendo? Você clicou.
+
+Quando você clicou, automaticamente ele já preenche os dados do cliente. Aí fica... Olha, ele já preencheu, e aqui depois começa a que coisa interna do sistema deles. Mas os dados do cliente já preenchem.
+
+Porque esse pedido do nosso sistema que a gente vai virar é pra ele não ter que ficar digitando no Excel. Sim, claro. Aí tem o número do pedido, data de emissão, tipo de pedido, vendedor, contato do cliente, condicional de pagamento, valor do prédio, transportadora, alastreamento... Vocês fazem entrega também? Não, esse aqui é pro entregador.
+
+Ah, tem pessoal lá. Então tem que colocar. Vai entrar basicamente o que eu te passei na planilha, que é isso aqui.
+
+Quando for digitar o pedido, o que vai entrar? Uma coisa que aqui não tem hoje, que é o número sequencial do pedido. Então, número do pedido, ok, vai entrar. As opções de prazo de pagamento.
+
+Aí você pode deixar pra preencher manual, não tem problema. O transporte vai puxar daquela outra aba, então também não tem problema. Uma coisa que a gente vai precisar é, no caso, o código, pra deixar digital e manual.
+
+A descrição do produto, deixar manual. Aí vem o campo, quantidade de caixas e quantidade unitária. Que a gente também preenche manual.
+
+A partir daí, o preço também a gente coloca manual e vai calculando automático. Desconto. Desconto vai ter que ter o campinho.
+
+30%, você coloca 30%. Não, beleza. É que eu tô falando, repetindo também, pra deixar gravada alguma informação, caso eu esqueça, né.
+
+Já tô gravando aqui, tá funcionando. Aí no final do orçamento, quando você digitar o orçamento, tem que ter o campinho lá. Girar PDF.
+
+Pra transformar esse orçamento já em PDF. É, e aí, no caso, eu vou precisar de um modelo do seu PDF com Renova, que eu consiga incluir já no sistema. Um exemplo, como se fosse isso aqui, tá vendo? Isso, isso.
+
+Aí, no caso, é esse aqui que você... Esse é o PDF? Esse hoje eu faço o PDF dele, entendeu? Só que aí ele sai como se fosse um Excel mesmo, né. Só que a ideia é o quê? É fazer como se fosse... Não, assim, ó, no caso. Eu inseri aqui, editar.
+
+Aqui as grades, ele sai. Pronto, é o PDF. Sim, sim, mas hoje ele ainda sai com linhas, certo? Então, por exemplo, tem orçamento que a gente recebe que não tem as linhas.
+
+Deixa eu ver se tem alguma aqui. Pra você entender. Ó, o nosso sai assim, ó. Certo? Ah, tá.
+
+Igual é o do Mercos também, que sai assim. Tá vendo? Você queria como? Então. Não tem problema ser assim também.
+
+Também porque o nosso não puxa direto algumas coisas, pode ser assim. Então é isso aqui. Ou você conseguir fazer sem as linhas.
+
+Tipo assim. Não, eu consigo, só preciso de informações. Por exemplo, aqui.
+
+Não tem nenhum da fase aí não, né amor? Não tem nenhum da fase. Que é do futuro. Tem, mas se você tirar... Não, mas isso ali é parecido também.
+
+Tá vendo aí? Sai assim da fase. Que é da... Ah, tá. Sem as linhas divisórias.
+
+Entendi. Isso aqui é sem as linhas divisórias. Dá pra fazer? Dá pra fazer.
+
+Beleza? Aí embaixo aqui é a mesma fita, ó. Que eu te falei. Tem que ter aqui... O valor que fica. No caso, com imposto e sem imposto, calculando.
+
+Mas não tem esse negócio de fazer. Que é só cálculo matemático. Não, então.
+
+Sim. De qualquer forma, vou fazer o primeiro teste. Aí a gente vai editando conforme for necessário.
+
+Mas eu quero exatamente o máximo de informação possível pra não ter que ficar... Beleza. Aí o pedido... Volta lá no pedido de novo, por favor. Não, não.
+
+No aplicativo. Ah, do... Porque... Beleza, aí... Mas... Ah, você adiciona o produto aqui. Tá.
+
+Nosso pedido tem que ser assim. Entendeu? Aqui são vários sistemas, tem que usar. Tô vendo.
+
+Que bizarro. É que cada um tem um produto diferente. Cada um é de uma empresa diferente.
+
+Cada um tem um jeito de digitar diferente. Então, o ideal pra gente, por exemplo, é usar o PEDEX. Esse PEDEX é o quê? É o sistema dessa entrevista que a gente usa aqui.
+
+Ah, é de uma empresa só. Então, eu tô indo arrumar uma entrevista. PEDEX Unique.
+
+Ah, tá bom. Poxa. Não é? Você vai ter que... Só apertar o... Ah, pode ser.
+
+Só pra fazer. É por isso que eu não gosto de programa hoje em dia. Então, ó. Tá chato, irmão.
+
+Então. Ó. Aqui... A gente já tem que ser permitido sincronizar os dados da empresa. É, traz os dados da empresa.
+
+Os produtinhos. É, por exemplo. Vou digitar um pedido.
+
+Vamos dizer que eu vou colocar esse cliente aqui, ó. Tá vendo que ele já preencheu tudo? Beleza, você selecionou o cliente. É. Sim. Itens.
+
+Chave. Itens. Aqui eu tenho que digitar o código do produto.
+
+Se você não tem o código, como é que você faz? Você pode pesquisar pela descrição aqui na rotina. Ah, tá. É as duas opções.
+
+Só que no caso do nosso não vai, pro ponto que a gente não vai ter cadastrado os produtos. É uma coisa que dá pra colocar, né? É muita coisa, não tem como. Teria que vincular pro sistema das empresas.
+
+Não tem como. Cada empresa tem mais de 10 mil produtos. Vocês vendem uns 10 mil? Eu acho que não.
+
+Ó. Não é mais fácil colocar só os que vocês usam? Não, porque cada... Por exemplo, ó. Pra simples aqui, ó. Tem 2 mil itens no sistema. Só que às vezes, além de mudar de preço, ele muda o código. Então, não tem como ficar ali meio entrando.
+
+Tinha que ser vinculado. Tá. Então, ó. Vamos dizer que eu coloco o código aqui.
+
+Na hora que eu coloquei o código, esse descrição dele é travada, porque eu não posso mexer. Sim. Então, no nosso teria que ser aberto, porque eu tenho que escrever a descrição do produto.
+
+Certo? Aí vem aqui. A quantidade na Itália. Né? E vem aqui o valor.
+
+Entendeu? Então, quando eu colocar um produto, vamos ver. Na lupa. Vou colocar esse aqui, ó. Aí ele veio.
+
+A foto. A foto tá ali, né? O preço de tabela, a quantidade e a quantidade de caixas. Uhum.
+
+Esse é um pouco complexo, né? Porque não vai ter a foto, a quantidade você vai ter que colocar. Não. O nosso é basicamente isso.
+
+Aberto, né? Manual, aberto. Tá. Aberto.
+
+Tipo, deixa eu ver. Pedido, emissão, situação. Tá, você não vai precisar fazer nada disso, né? O que pode se fazer é fazer igual cultura.
+
+Colocar na principal. Qual que é na principal? Na... De cabeçalho. Isso.
+
+Colocar depois aí de pedidos. Colocar produtos. E na aba produtos a gente consegue fazer um pré-cadastro, por exemplo, por empresa.
+
+Então, um exemplo, vai. Uhum. Eu quero salvar essa tinta.
+
+Essa tinta vai ficar amarrada somente a empresa X quando eu cadastrar. Então, se eu quiser digitar o pedido da empresa X, eu vou lá. Na hora que eu clicar na empresa, por exemplo.
+
+Vou digitar o pedido. Comecei o pedido. A empresa que eu vou colocar é essa aqui, importudo.
+
+Aí clico aqui no direcional aqui da empresa. Pesquisar, empresa, importudo. Coloquei.
+
+Aí na importudo vai aparecer os produtos que eu tenho salvo já, que eu cadastrei. E os outros. Que vai ficar limpo, que eu posso cadastrar ou não.
+
+Ah, tá. Um campo pra você cadastrar mais produtos. É. Dá pra fazer.
+
+Só que aí, como você falou, você vai cadastrar com o tempo na mão. Então, um exemplo. Vou digitar um pedido.
+
+Aí tem 10 itens que saem frequentemente. Eu deixo salvo já. A descrição pelo menos, entendeu? Aí o preço eu vou mudando.
+
+O Futura faz muito isso, né amor? O Futura que é assim, né? Que a gente cadastra manualmente. E com o tempo a gente vai mudando. Isso.
+
+Ajuda. Ajuda muito. Ah, com surpresa.
+
+Porque, por exemplo. Hoje o cliente, você passa o restante do ano ali. Se ele não dá menos dados, vai o ano inteiro.
+
+Não é nem isso. Às vezes, por exemplo, você pega a empresa que a gente trabalha. Essa aqui, ó. Essa aqui é difícil ela trazer coisa nova.
+
+Então, são 100 itens que tem de um catálogo. Esse 100 itens é frequente. Dá uma diferença de preço.
+
+Em princípio, o cliente quer reposição de item, né? Não tem mais, irmão. É você que pode provar, usar o sistema. Então.
+
+O que for necessário pra você. Eu acho que é isso. Aí você pode colocar no produto.
+
+Aí vai lá. Produtos. Novo produto.
+
+Novo produto. Ok. Vincula a uma empresa.
+
+As empresas. Aí você pode ter o campo empresas aí também, né? Mas aí o certo seria o campo empresas dentro do produto. Dentro do produto.
+
+Porque aí a gente pesquisar, sei lá. Toys. Aí vai aparecer os produtos das toys.
+
+Então é um campo dentro de produtos. Calma aí. Deixa eu... Né? Que eu gosto de desenhar.
+
+Aqui tem um fluxograma. Eu sou um cara organizado. Produto.
+
+Novo produto. Escolhe a empresa. Empresa.
+
+E aí sim. Cadastro. Vincula.
+
+Beleza. Pronto. Então agora a gente tem mais um botão.
+
+Produtos. Transporte. Tá.
+
+E o que é transporte? Transporte é o cadastro das transportadoras. Então o cliente vende o transporte. É a transportadora.
+
+Do cliente. São as 35 que você tem hoje. Não, isso é importador.
+
+Transporte é isso aqui. Transporte. É. Tá.
+
+Direitinho. Transportador é isso aqui. O cliente compra com a gente.
+
+Tem empresa que leva a mercadoria direto para o cliente. E tem empresa que o cliente direciona o transporte dele para levar a telemercadoria. Então, por exemplo, o cliente comprou comigo.
+
+Aí eu tenho que entregar no transportador. Aí ele fala, Renan, eu quero que use a Big Trans. A Big Trans, CNPJ, telefone.
+
+Só que no caso do sistema vai ter que ter igual os dados que eu coloquei do cliente, que é CNPJ, nome que é a razão social, telefone, endereço. Endereço. Tá.
+
+Beleza. Então, transporte. É, BX.
+
+É. Literalmente, a empresa que vai levar o produto para o cliente. Eu estava pensando em outra coisa. Você pensou no importador, né? É. Tá.
+
+E o... Agora sim. Agora vai a parte completa. É. Essa é a parte que vai ser um tempinho aí para você me explicar bem.
+
+Um minutinho. É, tá acabando a minha bateria. Será que o carnal de vocês serve? Vamos ver se vai.
+
+Acho que vai. Tá atrás de você aí, né? É belo? É. Acho que vai. Não, acho que é mais que o outro tabelo.
+
+Não, é mais fino. Não. Da linha é igual, né? Não, não, não.
+
+Você se azedou, né? Tem 20 minutos ainda. É. Na tabela você coloca 28%. E... Demoção é final.
+
+Então, o que eu faço? não pode ser mais do que 20% do pedido. Tá. Vamos lá.
+
+Tem um... O pisca também, né? O pisca também. Mesmo porque o pisca não pode ser mais do que 20%. Não vale a pena.
+
+Eu vou deixar esse trabalho para o computador. Você só vai falar. Fechou? E aí o computador vai anotar.
+
+Em vez de anotar, senão vai demorar muito tempo. Financeiro. Você tem alguma... Alguma coisa aí que mostre? Como é que você faz? O que você quer? Ou é da sua cabeça mesmo? Eu criei uma orientação na minha cabeça.
+
+Então... Espera aí. Deixa eu ver como eu faço. Talvez assim.
+
+Já. Então. A princípio... Primeiro eu vou ter que fazer por parte.
+
+É mais fácil. Eu preciso que a gente coloque... É... Você quer que eu te mande a minha planilha para você ver como é vinculada? É mais fácil? Pode mandar. É o zero aqui das vendas.
+
+Só para você entender como é que ela funciona. Porque o que acontece, ó. Eu vou fazer aqui. Hoje eu tenho duas planilhas para fazer esse serviço.
+
+Queria que fosse só uma, né? Mas para ficar esse monte de jaba aberta é ruim. Então... É assim, ó. Eu tenho uma planilha que eu anoto. Eu deixo anotado, por exemplo.
+
+O pedido aqui dentro. Quando eu clico no cliente, por exemplo. É... Um gráfico.
+
+A data que ela apontou. A data do faturamento. Quem que é o fornecedor.
+
+E a data que ela anotou. O número do pedido. O número da nota.
+
+O quanto ela comprou. E o quanto foi faturado. E o quanto isso me gera de comissão.
+
+Tá. Então vamos... Compra o faturamento. Fornecedor.
+
+Pedido. NFE. Valor.
+
+E comissão. A comissão tem uma porcentagem fixa? Ou você... Muda? Esse é o ponto. Tem que ser... Muda.
+
+Tem que ser aberto. Tem que ser aberto a calculação. Mas... Você pode deixar... A gente pode configurar também.
+
+Como... Um básico. Você muda na mão. Sim, sim.
+
+Para ficar um pouco mais fácil. Mais fácil, sim. Mas aí a gente vê depois, tá? Aí aqui... Esse é um tipo de planilha.
+
+Essa é a planilha que eu uso. É... Interna do cliente. Porque aí no cliente eu consigo saber o que ele comprou em tudo.
+
+E o quanto ele comprou no ano. O cliente. E eu tenho a planilha que eu uso para o financeiro em geral.
+
+Que é das empresas. Porque aí cada empresa... Por que que eu montei separado? Porque na hora de receber a comissão. É uma empresa que me paga de todos os clientes.
+
+Então se eu fizer só para o cliente ficar indo de um em um. Ver o que ele comprou. É pior.
+
+Então eu preencho as duas. Eu consigo saber. Em uma o que o cliente comprou no ano inteiro.
+
+E em outra. O que a empresa vendeu. Durante o mês a mês.
+
+Então pega aqui para mim. Vou dar aí. Então... Ah! Pera aí.
+
+Só um minuto.
+
+(Transcribed by TurboScribe.ai. Go Unlimited to remove this message.)
