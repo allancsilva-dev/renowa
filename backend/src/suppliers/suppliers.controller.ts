@@ -1,13 +1,11 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { SuppliersService } from './suppliers.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
-import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { IsCnpj } from '../common/validators/brazilian-document.validators';
 
@@ -19,12 +17,10 @@ class CreateSupplierDto {
 
 /** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */
 @Controller('fornecedores')
-@UseGuards(RolesGuard)
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
   @Post()
-  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   @RequirePermission('fornecedores.criar')
   async create(@Body() dto: CreateSupplierDto, @CurrentUser() user: RequestUser) {
     return this.suppliersService.create(dto, user.tenantId);
@@ -43,7 +39,6 @@ export class SuppliersController {
   }
 
   @Patch(':uuid')
-  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   @RequirePermission('fornecedores.editar')
   async update(
     @Param('uuid') uuid: string,
@@ -54,7 +49,6 @@ export class SuppliersController {
   }
 
   @Delete(':uuid')
-  @Roles('ADMIN', 'GESTAO')
   @RequirePermission('fornecedores.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {

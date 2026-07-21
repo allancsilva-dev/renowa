@@ -1,13 +1,11 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, UseGuards,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { TransportService } from './transport.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
-import { RolesGuard } from '../common/guards/roles.guard';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { IsCnpj } from '../common/validators/brazilian-document.validators';
 
@@ -21,12 +19,10 @@ class CreateTransportDto {
 
 /** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */
 @Controller('transportadoras')
-@UseGuards(RolesGuard)
 export class TransportController {
   constructor(private readonly transportService: TransportService) {}
 
   @Post()
-  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   @RequirePermission('transportadoras.criar')
   async create(@Body() dto: CreateTransportDto, @CurrentUser() user: RequestUser) {
     return this.transportService.create(dto, user.tenantId);
@@ -49,7 +45,6 @@ export class TransportController {
   }
 
   @Patch(':uuid')
-  @Roles('ADMIN', 'VENDEDOR', 'GESTAO')
   @RequirePermission('transportadoras.editar')
   async update(
     @Param('uuid') uuid: string,
@@ -60,7 +55,6 @@ export class TransportController {
   }
 
   @Delete(':uuid')
-  @Roles('ADMIN', 'GESTAO')
   @RequirePermission('transportadoras.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser): Promise<void> {

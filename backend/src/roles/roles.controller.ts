@@ -11,6 +11,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { RolesService } from './roles.service';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -22,11 +23,13 @@ export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
   @Get()
+  @RequirePermission('usuarios.gerenciar')
   async list(@CurrentUser() user: RequestUser) {
     return this.rolesService.listRoles(user.tenantId);
   }
 
   @Post()
+  @RequirePermission('usuarios.gerenciar')
   async create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateRoleDto,
@@ -35,6 +38,7 @@ export class RolesController {
   }
 
   @Patch(':id')
+  @RequirePermission('usuarios.gerenciar')
   async update(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -44,6 +48,7 @@ export class RolesController {
   }
 
   @Delete(':id')
+  @RequirePermission('usuarios.gerenciar')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @CurrentUser() user: RequestUser,
@@ -53,6 +58,7 @@ export class RolesController {
   }
 
   @Patch(':id/permissions')
+  @RequirePermission('usuarios.gerenciar')
   async updatePermissions(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,

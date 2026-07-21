@@ -21,13 +21,13 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @RequirePermission('users.manage')
+  @RequirePermission('usuarios.gerenciar')
   async list(@CurrentUser() user: RequestUser) {
     return this.usersService.listTenantUsers(user.tenantId, user);
   }
 
   @Post()
-  @RequirePermission('users.manage')
+  @RequirePermission('usuarios.gerenciar')
   async create(
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateUserDto,
@@ -36,7 +36,7 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @RequirePermission('users.manage')
+  @RequirePermission('usuarios.gerenciar')
   async update(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
