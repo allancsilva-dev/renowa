@@ -120,6 +120,17 @@ export const apiClient = {
       body: body instanceof FormData ? body : JSON.stringify(body),
     }),
 
+  put: <T>(url: string, body?: unknown, options: ApiRequestOptions = {}) =>
+    request<T>(url, {
+      ...options,
+      method: 'PUT',
+      headers: {
+        ...normalizeHeaders(options.headers),
+        ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      },
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
+
   delete: <T>(url: string, options: ApiRequestOptions = {}) =>
     request<T>(url, { ...options, method: 'DELETE' }),
 };

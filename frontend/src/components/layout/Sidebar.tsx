@@ -8,16 +8,18 @@ import {
   DollarSign,
   Settings,
   LogOut,
+  Building2,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 const mainNavItems = [
-  { to: '/dashboard',  label: 'Dashboard',    icon: LayoutDashboard },
-  { to: '/clientes',   label: 'Clientes',      icon: Users },
-  { to: '/pedidos',    label: 'Pedidos',       icon: FileText },
-  { to: '/produtos',   label: 'Produtos',      icon: Package },
-  { to: '/transporte', label: 'Transporte',    icon: Truck },
-  { to: '/financeiro', label: 'Financeiro',    icon: DollarSign },
+  { to: '/dashboard',     label: 'Dashboard',    icon: LayoutDashboard },
+  { to: '/clientes',      label: 'Clientes',     icon: Users },
+  { to: '/pedidos',       label: 'Pedidos',      icon: FileText },
+  { to: '/produtos',      label: 'Produtos',     icon: Package },
+  { to: '/fornecedores',  label: 'Fornecedores', icon: Building2 },
+  { to: '/transporte',    label: 'Transporte',   icon: Truck },
+  { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign },
 ];
 
 function getInitials(email: string): string {

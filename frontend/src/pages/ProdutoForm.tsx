@@ -1,19 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import type { ApiResponse, Product } from '@/types';
+import type { ApiResponse, Product, Supplier } from '@/types';
+import { fetchSuppliers } from '@/services/suppliers.service';
 import { withGeneratedUuid } from '@/lib/entityPayload';
 
 type FormFields = {
   codigo: string;
   descricao: string;
   preco_base: string;
+  fornecedor_uuid: string;
 };
 
 const empty: FormFields = {
   codigo: '',
   descricao: '',
   preco_base: '',
+  fornecedor_uuid: '',
 };
 
 function toFields(p: Product): FormFields {
@@ -21,6 +24,7 @@ function toFields(p: Product): FormFields {
     codigo: p.codigo ?? '',
     descricao: p.descricao,
     preco_base: p.preco_base != null ? String(p.preco_base) : '',
+    fornecedor_uuid: p.fornecedor?.uuid ?? '',
   };
 }
 
@@ -33,6 +37,12 @@ export default function ProdutoForm() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
   const [error, setError] = useState<string | null>(null);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  useEffect(() => {
+    fetchSuppliers({ page: 1, limit: 200 }).then((result) => setSuppliers(result.data))
+      .catch(() => setError('Erro ao carregar fornecedores.'));
+  }, []);
 
   useEffect(() => {
     if (!uuid) return;
@@ -64,6 +74,7 @@ export default function ProdutoForm() {
       codigo: form.codigo.trim() || null,
       descricao: form.descricao.trim(),
       preco_base: form.preco_base !== '' ? Number(form.preco_base) : null,
+      fornecedor_uuid: form.fornecedor_uuid || null,
     };
 
     try {
@@ -106,6 +117,13 @@ export default function ProdutoForm() {
               {error}
             </div>
           )}
+
+          <div className='flex flex-col gap-1'>
+            <label htmlFor='produto-fornecedor' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Fornecedor</label>
+            <select id='produto-fornecedor' name='fornecedor_uuid' value={form.fornecedor_uuid} onChange={(event) => setForm((current) => ({ ...current, fornecedor_uuid: event.target.value }))} className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'>
+              <option value=''>Sem fornecedor</option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
+            </select>
+          </div>
 
           <div className='flex flex-col gap-1'>
             <label htmlFor='produto-codigo' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>

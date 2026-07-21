@@ -12,6 +12,8 @@ const Pedidos = lazy(() => import('@/pages/Pedidos'));
 const PedidoForm = lazy(() => import('@/pages/PedidoForm'));
 const Produtos = lazy(() => import('@/pages/Produtos'));
 const ProdutoForm = lazy(() => import('@/pages/ProdutoForm'));
+const Fornecedores = lazy(() => import('@/pages/Fornecedores'));
+const PedidoDetalhe = lazy(() => import('@/pages/PedidoDetalhe'));
 const Transporte = lazy(() => import('@/pages/Transporte'));
 const Financeiro = lazy(() => import('@/pages/Financeiro'));
 const Configuracoes = lazy(() => import('@/pages/Configuracoes'));
@@ -63,6 +65,8 @@ export default function App() {
           >
             <Route index element={<Pedidos />} />
             <Route path='novo' element={<PedidoForm />} />
+            <Route path=':uuid/editar' element={<PedidoForm />} />
+            <Route path=':uuid' element={<PedidoDetalhe />} />
           </Route>
 
           <Route
@@ -76,6 +80,17 @@ export default function App() {
             <Route index element={<Produtos />} />
             <Route path='novo' element={<ProdutoForm />} />
             <Route path=':uuid/editar' element={<ProdutoForm />} />
+          </Route>
+
+          <Route
+            path='fornecedores'
+            element={(
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            )}
+          >
+            <Route index element={<Fornecedores />} />
           </Route>
 
           <Route

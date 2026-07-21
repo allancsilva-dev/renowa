@@ -1,21 +1,11 @@
 import { useState, useCallback } from 'react';
-import { Plus } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import api from '@/lib/apiClient';
 import Dialog from '@/components/ui/Dialog';
 import { withGeneratedUuid } from '@/lib/entityPayload';
-import type { PaginatedResponse } from '@/types';
-
-interface Transport {
-  uuid: string;
-  razao_social: string;
-  nome_fantasia: string | null;
-  cnpj: string | null;
-  telefone: string | null;
-  email: string | null;
-  is_active: boolean;
-}
+import type { PaginatedResponse, Transport } from '@/types';
 
 interface NovaTransportadoraForm {
   razao_social: string;
@@ -54,6 +44,7 @@ export default function Transporte() {
   const [form, setForm] = useState<NovaTransportadoraForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [editingUuid, setEditingUuid] = useState<string | null>(null);
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
@@ -67,7 +58,11 @@ export default function Transporte() {
     { key: 'razao_social', header: 'Razão Social', cell: (row: Transport) => row.razao_social },
     { key: 'cnpj', header: 'CNPJ', cell: (row: Transport) => row.cnpj ?? '—' },
     { key: 'telefone', header: 'Telefone', cell: (row: Transport) => row.telefone ?? '—' },
-    { key: 'email', header: 'E-mail', cell: (row: Transport) => row.email ?? '—' },
+    { key: 'endereco', header: 'Endereço', cell: (row: Transport) => row.endereco_completo ?? '—' },
+    { key: 'acoes', header: 'Ações', cell: (row: Transport) => <div className='flex gap-1'>
+      <button type='button' aria-label={`Editar ${row.razao_social}`} onClick={() => { setEditingUuid(row.uuid); setForm({ razao_social: row.razao_social, cnpj: row.cnpj ?? '', telefone: row.telefone ?? '', endereco_completo: row.endereco_completo ?? '' }); setFormError(null); setIsOpen(true); }} className='rounded-md p-2 text-slate-600 hover:bg-slate-100'><Pencil className='h-4 w-4' /></button>
+      <button type='button' aria-label={`Excluir ${row.razao_social}`} onClick={() => void handleDelete(row)} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700'><Trash2 className='h-4 w-4' /></button>
+    </div> },
   ];
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -90,12 +85,14 @@ export default function Transporte() {
     setSaving(true);
     setFormError(null);
     try {
-      await api.post('/transportadoras', withGeneratedUuid({
+      const payload = {
         razao_social: form.razao_social,
         cnpj: form.cnpj || null,
         telefone: form.telefone || null,
         endereco_completo: form.endereco_completo || null,
-      }));
+      };
+      if (editingUuid) await api.patch(`/transportadoras/${editingUuid}`, payload);
+      else await api.post('/transportadoras', withGeneratedUuid(payload));
       setIsOpen(false);
       setForm(emptyForm);
       reload();
@@ -106,11 +103,17 @@ export default function Transporte() {
     }
   }
 
+  async function handleDelete(transport: Transport) {
+    if (!window.confirm(`Excluir a transportadora “${transport.razao_social}”?`)) return;
+    try { await api.delete(`/transportadoras/${transport.uuid}`); reload(); }
+    catch { setFormError('Não foi possível excluir a transportadora.'); }
+  }
+
   return (
     <div className='space-y-4'>
       <div className='flex justify-end'>
         <button
-          onClick={() => { setIsOpen(true); setForm(emptyForm); setFormError(null); }}
+          onClick={() => { setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); }}
           className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
         >
           <Plus className='h-4 w-4' />
@@ -131,7 +134,7 @@ export default function Transporte() {
 
       {/* Modal */}
       {isOpen && (
-        <Dialog open title='Nova Transportadora' onClose={() => setIsOpen(false)} className='max-w-md'>
+        <Dialog open title={editingUuid ? 'Editar Transportadora' : 'Nova Transportadora'} onClose={() => setIsOpen(false)} className='max-w-md'>
             <form onSubmit={handleSubmit} className='space-y-4'>
               {formError && (
                 <div role='alert' className='rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700'>

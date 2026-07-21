@@ -36,6 +36,7 @@ export interface Client {
   local_entrega: string | null;
   observacao: string | null;
   transportadora_id: number | null;
+  transportadora?: Transport | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,13 +49,20 @@ export interface OrderItem {
   uuid: string;
   pedido_id: number;
   produto_id: number | null;
+  /** Presente somente quando a API resolve o join (ex.: GET /pedidos/:uuid). */
+  produto?: Product | null;
   codigo_manual: string | null;
   descricao_manual: string | null;
   qtd_caixas: string | null;
   qtd_unitaria: string | null;
+  qtd_total: string | null;
   preco_unitario: string | null;
   desconto_perc: string | null;
+  valor_com_desconto: string | null;
+  ipi_perc: string | null;
+  valor_com_imposto: string | null;
   total_item: string | null;
+  total_com_imposto: string | null;
 }
 
 export interface Order {
@@ -65,6 +73,11 @@ export interface Order {
   vendedor_id: number | null;
   fornecedor_id: number | null;
   transportadora_id: number | null;
+  /** Presente somente quando a API resolve o join (ex.: GET /pedidos/:uuid). */
+  cliente?: Client | null;
+  vendedor?: { uuid: string; nome: string; email: string } | null;
+  fornecedor?: Supplier | null;
+  transportadora?: Transport | null;
   data: string | null;
   status: OrderStatus;
   total_sem_imposto: string | null;
@@ -73,6 +86,7 @@ export interface Order {
   prazo: string | null;
   local_entrega: string | null;
   observacao: string | null;
+  tipo_faturamento: string | null;
   itens: OrderItem[];
   created_at: string;
   updated_at: string;
@@ -86,6 +100,26 @@ export interface Product {
   codigo: string | null;
   descricao: string;
   preco_base: string | null;
+  fornecedor?: Supplier | null;
+}
+
+export interface Transport {
+  uuid: string;
+  razao_social: string;
+  cnpj: string | null;
+  telefone: string | null;
+  endereco_completo: string | null;
+}
+
+// ─── Fornecedores ────────────────────────────────────────────────────────────
+
+export interface Supplier {
+  id: number;
+  uuid: string;
+  razao_social: string;
+  cnpj: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Financeiro ──────────────────────────────────────────────────────────────

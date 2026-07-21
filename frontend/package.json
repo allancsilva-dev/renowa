@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
+    "@react-pdf/renderer": "^4.5.1",
     "clsx": "^2.1.1",
     "decimal.js": "^10.6.0",
     "lucide-react": "^0.469.0",

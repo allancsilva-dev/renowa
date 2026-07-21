@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import type { ApiResponse, Client } from '@/types';
+import type { ApiResponse, Client, PaginatedResponse, Transport } from '@/types';
 import { withGeneratedUuid } from '@/lib/entityPayload';
+import { maskCnpj } from '@/lib/format';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -16,6 +17,9 @@ type FormFields = {
   email: string;
   tel: string;
   contato: string;
+  inscricao_estadual: string;
+  suframa: string;
+  transportadora_uuid: string;
   cep: string;
   endereco: string;
   bairro: string;
@@ -33,6 +37,9 @@ const empty: FormFields = {
   email: '',
   tel: '',
   contato: '',
+  inscricao_estadual: '',
+  suframa: '',
+  transportadora_uuid: '',
   cep: '',
   endereco: '',
   bairro: '',
@@ -51,6 +58,9 @@ function toFields(c: Client): FormFields {
     email: c.email ?? '',
     tel: c.tel ?? '',
     contato: c.contato ?? '',
+    inscricao_estadual: c.inscricao_estadual ?? '',
+    suframa: c.suframa ?? '',
+    transportadora_uuid: c.transportadora?.uuid ?? '',
     cep: c.cep ?? '',
     endereco: c.endereco ?? '',
     bairro: c.bairro ?? '',
@@ -64,15 +74,6 @@ function toFields(c: Client): FormFields {
 }
 
 // ─── Funções de máscara ─────────────────────────────────────────────────────
-
-function maskCnpj(value: string): string {
-  const d = value.replace(/\D/g, '').slice(0, 14);
-  return d
-    .replace(/^(\d{2})(\d)/, '$1.$2')
-    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
-}
 
 function maskCep(value: string): string {
   const d = value.replace(/\D/g, '').slice(0, 8);
@@ -99,6 +100,13 @@ export default function ClienteForm() {
   const [fetching, setFetching] = useState(isEdit);
   const [cepLoading, setCepLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transports, setTransports] = useState<Transport[]>([]);
+
+  useEffect(() => {
+    api.get<PaginatedResponse<Transport>>('/transportadoras', { params: { page: 1, limit: 200 } })
+      .then((response) => setTransports(response.data.data))
+      .catch(() => setError('Não foi possível carregar as transportadoras.'));
+  }, []);
 
   useEffect(() => {
     if (!uuid) return;
@@ -293,6 +301,14 @@ export default function ClienteForm() {
                   className={inputClass}
                 />
               </div>
+              <div className='flex flex-col gap-1'>
+                <label htmlFor='inscricao_estadual' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Inscrição estadual</label>
+                <input id='inscricao_estadual' name='inscricao_estadual' value={form.inscricao_estadual} onChange={handleChange} className={inputClass} />
+              </div>
+              <div className='flex flex-col gap-1'>
+                <label htmlFor='suframa' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>SUFRAMA</label>
+                <input id='suframa' name='suframa' value={form.suframa} onChange={handleChange} className={inputClass} />
+              </div>
             </div>
           </div>
 
@@ -394,6 +410,13 @@ export default function ClienteForm() {
               <div className='flex flex-col gap-1'>
                 <label htmlFor='local_entrega' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Local de entrega</label>
                 <input id='local_entrega' type='text' name='local_entrega' value={form.local_entrega} onChange={handleChange} className={inputClass} />
+              </div>
+              <div className='flex flex-col gap-1'>
+                <label htmlFor='transportadora_uuid' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Transportadora</label>
+                <select id='transportadora_uuid' name='transportadora_uuid' value={form.transportadora_uuid} onChange={handleChange} className={inputClass}>
+                  <option value=''>Sem transportadora</option>
+                  {transports.map((transport) => <option key={transport.uuid} value={transport.uuid}>{transport.razao_social}</option>)}
+                </select>
               </div>
             </div>
           </div>
