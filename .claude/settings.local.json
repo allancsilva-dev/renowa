@@ -58,7 +58,17 @@
       "Bash(fc -ln -2000)",
       "Bash(lsof -iTCP:3000 -sTCP:LISTEN -n -P)",
       "Bash(lsof -iTCP:5173 -sTCP:LISTEN -n -P)",
-      "Bash(xargs -I{} echo {})"
+      "Bash(xargs -I{} echo {})",
+      "Bash(lsof -iTCP -sTCP:LISTEN -P -n)",
+      "Skill(run)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/api/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173)",
+      "Bash(curl -s -c /tmp/renowa_cookies.txt -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@renowa.local\",\"senha\":\"Admin@12345!\"}')",
+      "Bash(curl -s -o /tmp/resp.json -w \"HTTP:%{http_code}\\\\n\" -c /tmp/renowa_cookies.txt -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@renowa.local\",\"senha\":\"Admin@12345!\"}')",
+      "Read(//tmp/**)",
+      "Bash(xargs ls)"
     ]
   },
   "hooks": {
