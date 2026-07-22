@@ -54,6 +54,19 @@ describe('AuthController', () => {
     expect(result).toMatchObject({ permissions: ['pedidos.ver'] });
   });
 
+  // Etapa 4: o bypass hardcoded pra role.name==='admin' foi removido — admin
+  // agora depende de tenant_role_permissions igual qualquer outra role.
+  it('no longer fabricates the full permission list for local admin role', async () => {
+    const result = await controller.me(
+      { sub: 'user-a', email: 'a@b.c', roles: ['admin'], tenantId: 'tenant-a' } as any,
+      { localUser: { tenantId: 'tenant-a', roleId: 9, role: { name: 'admin' } } } as any,
+    );
+
+    expect(permissions.listEffectiveForRole).toHaveBeenCalledWith('tenant-a', 9);
+    expect(permissions.listAllSlugs).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ permissions: ['pedidos.ver'] });
+  });
+
   it('creates a mobile session through the unified auth controller', async () => {
     const result = await controller.createMobileSession({
       email: 'mobile@renowa.com',

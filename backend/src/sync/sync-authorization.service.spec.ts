@@ -49,14 +49,21 @@ describe('SyncAuthorizationService', () => {
     ], user as never, { ...localUser, role: { name: 'viewer' } } as never)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it.each([
-    [{ ...user, roles: ['SUPERADMIN'] }, undefined],
-    [user, { ...localUser, role: { name: 'admin' } }],
-  ])('allows privileged identity without querying permissions', async (requestUser, requestLocalUser) => {
+  it('allows SUPERADMIN without querying permissions', async () => {
     await expect(service.assertCanPush([
       { entity: SyncEntity.PRODUTOS, operation: SyncOperation.DELETE },
-    ], requestUser as never, requestLocalUser as never)).resolves.toBeUndefined();
+    ], { ...user, roles: ['SUPERADMIN'] } as never, undefined)).resolves.toBeUndefined();
     expect(permissions.listEffectiveForRole).not.toHaveBeenCalled();
+  });
+
+  // Etapa 4: o bypass hardcoded pra role.name==='admin' foi removido — admin
+  // agora depende de tenant_role_permissions igual qualquer outra role.
+  it('no longer bypasses local admin role — depende de tenant_role_permissions', async () => {
+    permissions.listEffectiveForRole.mockResolvedValue(['produtos.deletar']);
+    await expect(service.assertCanPush([
+      { entity: SyncEntity.PRODUTOS, operation: SyncOperation.DELETE },
+    ], user as never, { ...localUser, role: { name: 'admin' } } as never)).resolves.toBeUndefined();
+    expect(permissions.listEffectiveForRole).toHaveBeenCalledWith('tenant-a', 7);
   });
 
   it.each([

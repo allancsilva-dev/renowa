@@ -22,7 +22,6 @@ export class SyncAuthorizationService {
     if (!localUser || localUser.tenantId !== user.tenantId || !localUser.active) {
       throw new ForbiddenException('Acesso ao sync negado');
     }
-    if (localUser.role?.name === 'admin') return;
     if (!localUser.roleId) throw new ForbiddenException('Acesso ao sync negado');
 
     const granted = new Set(await this.permissionsService.listEffectiveForRole(

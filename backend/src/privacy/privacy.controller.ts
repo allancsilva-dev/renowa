@@ -1,14 +1,12 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { CreateLgpdRequestDto, DenyLgpdRequestDto, ReviewLgpdRequestDto } from './dto/create-lgpd-request.dto';
 import { PrivacyService } from './privacy.service';
 
 @Controller('admin/privacy/requests')
-@UseGuards(RolesGuard)
-@Roles('ADMIN')
+@RequirePermission('privacidade.gerenciar')
 export class PrivacyController {
   constructor(private readonly privacy: PrivacyService) {}
   @Get() list(@CurrentUser() user: RequestUser) { return this.privacy.list(user.tenantId); }

@@ -87,7 +87,7 @@ export class AuthController {
     const localUser = req.localUser;
     let permissions: string[] = [];
 
-    if (roles?.includes('SUPERADMIN') || localUser?.role?.name === 'admin') {
+    if (roles?.includes('SUPERADMIN')) {
       permissions = await this.permissionsService.listAllSlugs();
     } else if (localUser?.roleId) {
       permissions = await this.permissionsService.listEffectiveForRole(

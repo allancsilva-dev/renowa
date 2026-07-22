@@ -41,10 +41,6 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException('Local user context not found');
     }
 
-    if (localUser.role?.name === 'admin') {
-      return true;
-    }
-
     if (!localUser.roleId) {
       return false;
     }

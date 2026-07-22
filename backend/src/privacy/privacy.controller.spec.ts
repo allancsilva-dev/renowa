@@ -1,8 +1,8 @@
-import { ROLES_KEY } from '../common/decorators/roles.decorator';
+import { REQUIRED_PERMISSION_KEY } from '../common/decorators/require-permission.decorator';
 import { PrivacyController } from './privacy.controller';
 
 describe('PrivacyController authorization', () => {
-  it('requires ADMIN role for every privacy endpoint', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, PrivacyController)).toEqual(['ADMIN']);
+  it('requires privacidade.gerenciar for every privacy endpoint', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSION_KEY, PrivacyController)).toEqual('privacidade.gerenciar');
   });
 });

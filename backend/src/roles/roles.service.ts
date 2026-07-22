@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -55,6 +56,7 @@ export class RolesService {
     name: string;
     description: string | null;
     active: boolean;
+    isSystem: boolean;
     permissions: string[];
   }>> {
     const roles = await this.tenantRoleRepo.find({
@@ -68,6 +70,7 @@ export class RolesService {
         name: role.name,
         description: role.description,
         active: role.active,
+        isSystem: role.isSystem,
         permissions: await this.listRolePermissionSlugs(tenantId, role.id),
       })),
     );
@@ -83,6 +86,7 @@ export class RolesService {
     name: string;
     description: string | null;
     active: boolean;
+    isSystem: boolean;
     permissions: string[];
   }> {
     const name = this.normalizeName(dto.name);
@@ -112,6 +116,7 @@ export class RolesService {
       name: saved.name,
       description: saved.description,
       active: saved.active,
+      isSystem: saved.isSystem,
       permissions: await this.listRolePermissionSlugs(tenantId, saved.id),
     };
   }
@@ -125,6 +130,7 @@ export class RolesService {
     name: string;
     description: string | null;
     active: boolean;
+    isSystem: boolean;
     permissions: string[];
   }> {
     const role = await this.findTenantRoleOrFail(tenantId, roleUuid);
@@ -133,6 +139,10 @@ export class RolesService {
       const nextName = this.normalizeName(dto.name);
 
       if (nextName !== role.name) {
+        if (role.isSystem) {
+          throw new ForbiddenException('Role de sistema não pode ser renomeada');
+        }
+
         const conflict = await this.tenantRoleRepo.findOne({
           where: { tenantId, name: nextName, active: true },
         });
@@ -156,12 +166,18 @@ export class RolesService {
       name: saved.name,
       description: saved.description,
       active: saved.active,
+      isSystem: saved.isSystem,
       permissions: await this.listRolePermissionSlugs(tenantId, saved.id),
     };
   }
 
   async deleteRole(tenantId: string, roleUuid: string): Promise<void> {
     const role = await this.findTenantRoleOrFail(tenantId, roleUuid);
+
+    if (role.isSystem) {
+      throw new ForbiddenException('Role de sistema não pode ser excluída');
+    }
+
     role.active = false;
     await this.tenantRoleRepo.save(role);
     await this.tenantRoleRepo.softDelete({ id: role.id });
@@ -176,9 +192,15 @@ export class RolesService {
     name: string;
     description: string | null;
     active: boolean;
+    isSystem: boolean;
     permissions: string[];
   }> {
     const role = await this.findTenantRoleOrFail(tenantId, roleUuid);
+
+    if (role.isSystem) {
+      throw new ForbiddenException('Permissões de uma role de sistema não podem ser editadas');
+    }
+
     const normalized = Array.from(new Set(permissionSlugs.map((slug) => slug.trim())));
 
     if (normalized.length > 0) {
@@ -216,6 +238,7 @@ export class RolesService {
       name: role.name,
       description: role.description,
       active: role.active,
+      isSystem: role.isSystem,
       permissions: await this.listRolePermissionSlugs(tenantId, role.id),
     };
   }

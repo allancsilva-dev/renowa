@@ -1,8 +1,8 @@
-import { ROLES_KEY } from '../common/decorators/roles.decorator';
+import { REQUIRED_PERMISSION_KEY } from '../common/decorators/require-permission.decorator';
 import { AuditController } from './audit.controller';
 
 describe('AuditController authorization', () => {
-  it('requires ADMIN role', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, AuditController)).toEqual(['ADMIN']);
+  it('requires auditoria.ver', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSION_KEY, AuditController)).toEqual('auditoria.ver');
   });
 });

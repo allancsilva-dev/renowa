@@ -53,15 +53,28 @@ describe('PermissionGuard', () => {
     expect(listEffectiveForRole).not.toHaveBeenCalled();
   });
 
-  it('bypasses permission lookup for local admin role', async () => {
-    const listEffectiveForRole = jest.fn();
+  // Etapa 4: o bypass hardcoded pra role.name==='admin' foi removido — admin
+  // só passa porque a Etapa 2/3 garantem que tenant_role_permissions tem
+  // todo o catálogo pra ele, igual qualquer outra role.
+  it('no longer bypasses local admin role — depende de tenant_role_permissions', async () => {
+    const listEffectiveForRole = jest.fn().mockResolvedValue([]);
+    const guard = guardFor('usuarios.gerenciar', listEffectiveForRole);
+    const localUser = { tenantId: 'tenant-a', roleId: 1, role: { name: 'admin' } };
+
+    await expect(
+      guard.canActivate(context({ tenantId: 'tenant-a', roles: ['admin'] }, localUser)),
+    ).resolves.toBe(false);
+    expect(listEffectiveForRole).toHaveBeenCalledWith('tenant-a', 1);
+  });
+
+  it('allows admin when tenant_role_permissions grants the required slug', async () => {
+    const listEffectiveForRole = jest.fn().mockResolvedValue(['usuarios.gerenciar']);
     const guard = guardFor('usuarios.gerenciar', listEffectiveForRole);
     const localUser = { tenantId: 'tenant-a', roleId: 1, role: { name: 'admin' } };
 
     await expect(
       guard.canActivate(context({ tenantId: 'tenant-a', roles: ['admin'] }, localUser)),
     ).resolves.toBe(true);
-    expect(listEffectiveForRole).not.toHaveBeenCalled();
   });
 
   it('throws when a permission is required but there is no local user context', async () => {

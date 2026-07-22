@@ -1,14 +1,12 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { Roles } from '../common/decorators/roles.decorator';
-import { RolesGuard } from '../common/guards/roles.guard';
+import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { AuditService } from './audit.service';
 import { ListAuditEventsDto } from './dto/list-audit-events.dto';
 
 @Controller('admin/audit')
-@UseGuards(RolesGuard)
-@Roles('ADMIN')
+@RequirePermission('auditoria.ver')
 export class AuditController {
   constructor(private readonly audit: AuditService) {}
 
