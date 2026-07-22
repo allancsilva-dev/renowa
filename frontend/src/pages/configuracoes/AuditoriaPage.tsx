@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable from '@/components/tables/DataTable';
-import apiClient from '@/lib/apiClient';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { getApiErrorMessage } from '@/lib/errors';
-import { normalizeListResponse } from '@/lib/pagination';
 import { fetchAuditEvents, type AuditAction, type PiiAuditEvent } from '@/services/audit.service';
 import type { PaginatedResponse } from '@/types';
 
@@ -39,9 +38,8 @@ export default function AuditoriaPage() {
 
   useEffect(() => { void load(1); }, [load]);
   useEffect(() => {
-    apiClient.get<unknown>('/users', { params: { page: 1, limit: 1000 } })
-      .then((response) => {
-        const users = normalizeListResponse<{ authUserId: string; name: string; email: string }>(response.data, 1, 1000).items;
+    fetchAllPages<{ authUserId: string; name: string; email: string }>('/users')
+      .then((users) => {
         setActorNames(new Map(users.map((user) => [user.authUserId, user.name || user.email])));
       })
       .catch(() => setActorNames(new Map()));

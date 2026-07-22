@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
 import type { ApiResponse, Product, Supplier } from '@/types';
-import { fetchSuppliers } from '@/services/suppliers.service';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { withGeneratedUuid } from '@/lib/entityPayload';
 
 type FormFields = {
@@ -40,7 +40,7 @@ export default function ProdutoForm() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   useEffect(() => {
-    fetchSuppliers({ page: 1, limit: 200 }).then((result) => setSuppliers(result.data))
+    fetchAllPages<Supplier>('/fornecedores').then(setSuppliers)
       .catch(() => setError('Erro ao carregar fornecedores.'));
   }, []);
 

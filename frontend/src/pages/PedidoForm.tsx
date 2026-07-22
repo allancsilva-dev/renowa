@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
-import api from '@/lib/apiClient';
-import { fetchClients } from '@/services/clients.service';
-import { fetchProducts } from '@/services/products.service';
-import { fetchSuppliers } from '@/services/suppliers.service';
+import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchOrder, saveOrder } from '@/services/orders.service';
-import type { ApiResponse, Client, Order, OrderStatus, Product, Supplier, Transport } from '@/types';
+import type { Client, Order, OrderStatus, Product, Supplier, Transport } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { moneyForDisplay } from '@/lib/decimal';
 import { previewItem, previewOrder } from '@/lib/orderCalculation';
@@ -82,15 +79,15 @@ export default function PedidoForm() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetchClients({ page: 1, limit: 200 }),
-      fetchSuppliers({ page: 1, limit: 200 }),
-      api.get<{ data: Transport[] }>('/transportadoras', { params: { page: 1, limit: 200 } }),
-      canChooseVendor ? api.get<ApiResponse<TenantUser[]>>('/users').catch(() => null) : Promise.resolve(null),
+      fetchAllPages<Client>('/clientes'),
+      fetchAllPages<Supplier>('/fornecedores'),
+      fetchAllPages<Transport>('/transportadoras'),
+      canChooseVendor ? fetchAllPages<TenantUser>('/users').catch(() => null) : Promise.resolve(null),
       uuid ? fetchOrder(uuid) : Promise.resolve(null),
-    ]).then(([clientResult, supplierResult, transportResult, userResult, order]) => {
+    ]).then(([clients, suppliers, transports, vendorUsers, order]) => {
       if (!active) return;
-      setClients(clientResult.data); setSuppliers(supplierResult.data); setTransports(transportResult.data.data);
-      setUsers(userResult?.data.data.filter((entry) => entry.active) ?? []);
+      setClients(clients); setSuppliers(suppliers); setTransports(transports);
+      setUsers(vendorUsers?.filter((entry) => entry.active) ?? []);
       if (order) {
         const mapped = orderToForm(order); setHeader(mapped.header); setItems(mapped.items.length ? mapped.items : [newItem()]);
         setVersion(order.version); setClientSearch(order.cliente?.razao_social ?? '');
@@ -103,8 +100,8 @@ export default function PedidoForm() {
   useEffect(() => {
     if (!header.fornecedor_uuid) { setProducts([]); return; }
     let active = true;
-    fetchProducts({ page: 1, limit: 300, fornecedor_uuid: header.fornecedor_uuid })
-      .then((result) => { if (active) setProducts(result.data); })
+    fetchAllPages<Product>('/produtos', { fornecedor_uuid: header.fornecedor_uuid })
+      .then((products) => { if (active) setProducts(products); })
       .catch((reason) => { if (active) setError(getApiErrorMessage(reason)); });
     return () => { active = false; };
   }, [header.fornecedor_uuid]);

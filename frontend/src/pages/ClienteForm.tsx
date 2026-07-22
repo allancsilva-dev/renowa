@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import type { ApiResponse, Client, PaginatedResponse, Transport } from '@/types';
+import { fetchAllPages } from '@/lib/fetchAllPages';
+import type { ApiResponse, Client, Transport } from '@/types';
 import { withGeneratedUuid } from '@/lib/entityPayload';
 import { maskCnpj } from '@/lib/format';
 
@@ -103,8 +104,7 @@ export default function ClienteForm() {
   const [transports, setTransports] = useState<Transport[]>([]);
 
   useEffect(() => {
-    api.get<PaginatedResponse<Transport>>('/transportadoras', { params: { page: 1, limit: 200 } })
-      .then((response) => setTransports(response.data.data))
+    fetchAllPages<Transport>('/transportadoras').then(setTransports)
       .catch(() => setError('Não foi possível carregar as transportadoras.'));
   }, []);
 
