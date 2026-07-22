@@ -4,6 +4,8 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 
 **Estado atual (2026-07-22, após overhaul de RBAC — ver PROBLEM_LEDGER.md#PROB-0058): 16 itens não fechados (14 ABERTO, 1 PARCIALMENTE_RESOLVIDO — BACKLOG-0009, 1 FECHADO_COM_RESSALVA — BACKLOG-0011; contagem exata por status, corrigindo texto anterior que citava 13).** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
 
+**Atualização 2026-07-22 (pós "Fluxo Comercial Completo"):** 3 itens novos adicionados (BACKLOG-0021 a BACKLOG-0023), todos originados da crítica de design pós-implementação (`.impeccable/critique/2026-07-22T17-30-23Z__edidodetalhe-financeiro-fornecedores-asynccombobox.md`, score 23/40) e adiados por decisão explícita do usuário para uma rodada futura — ver [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) seção "Implementação Fluxo Comercial Completo" para o contexto completo da entrega.
+
 ## Formato de entrada
 
 ```
@@ -246,6 +248,36 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Risco se ficar pendente:** usuário admin não consegue corrigir o nome de um perfil de acesso criado com erro de digitação sem recriar a role do zero (perdendo o histórico e tendo que reatribuir permissões e usuários).
 - **Status:** ABERTO
 - **Relacionado:** PROB-0058
+
+### BACKLOG-0021 — Trocar o fornecedor no cabeçalho de um pedido apaga silenciosamente todos os itens já lançados
+- **Prioridade:** P1
+- **Área:** frontend
+- **Motivo:** encontrado na crítica de design pós-implementação do "Fluxo Comercial Completo" (P2, adiada por decisão do usuário — só os 3 P1 de consistência visual do Financeiro foram corrigidos nesta rodada). Confirmado por leitura de código: `frontend/src/pages/PedidoForm.tsx:247` executa `setItems([newItem()])` no `onChange` do `<select>` de fornecedor, sem nenhuma confirmação nem aviso ao usuário — qualquer troca de fornecedor no cabeçalho, mesmo acidental, descarta todos os itens (produto/quantidade/preço/desconto) já preenchidos na tela, sem possibilidade de desfazer.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** trocar o fornecedor com itens já lançados exige confirmação explícita do usuário (ex.: modal "Trocar o fornecedor vai limpar os N itens já lançados. Continuar?") antes de executar `setItems([newItem()])`; se o usuário cancelar, o fornecedor anterior permanece selecionado e os itens são preservados.
+- **Risco se ficar pendente:** perda de dado em campo sem aviso — persona "representante não-técnico sob pressão" (ver `PRODUCT.md`) tem alta chance de perder um pedido inteiro já digitado por trocar o fornecedor sem querer ou para corrigir um erro de digitação no nome, não esperando que isso apague os itens.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0059, PROB-0060 (achados da mesma implementação, sem relação direta de causa)
+
+### BACKLOG-0022 — "Liberar pedido" é irreversível mas não pede confirmação; ícone `Unlock` comunica o oposto do efeito real
+- **Prioridade:** P1
+- **Área:** frontend
+- **Motivo:** encontrado na crítica de design pós-implementação do "Fluxo Comercial Completo" (P1, adiada por decisão do usuário — escolhido corrigir nesta rodada só os 3 P1 de consistência visual do Financeiro). Confirmado por leitura de código: o botão "Liberar pedido" existe em `frontend/src/pages/PedidoForm.tsx:213-216` e `frontend/src/pages/PedidoDetalhe.tsx:128-131`, ambos chamando `handleLiberar()` direto no `onClick`, sem nenhum `window.confirm`/modal antes de disparar `liberarOrder`. A ação é irreversível — liberar um pedido trava permanentemente a edição comercial/itens (`isPedidoLocked`, `frontend/src/lib/orderPermissions.ts`). Os dois botões usam o ícone `Unlock` (lucide-react) — que visualmente comunica "destravar", o oposto semântico do efeito real (a ação trava o pedido, não destrava).
+- **Dependências:** nenhuma.
+- **Critério de aceite:** clique em "Liberar pedido" exige confirmação explícita (modal do design system, não `window.confirm` — ver BACKLOG-0023) informando que a ação é irreversível e trava a edição; ícone trocado por um que comunique "travar/lacrar" (ex.: `Lock` ou `CheckCircle`) em vez de `Unlock`, nos dois arquivos.
+- **Risco se ficar pendente:** usuário libera um pedido por engano (clique acidental, ou por interpretar o ícone `Unlock` como "destravar para editar") e perde a capacidade de corrigir itens/dados comerciais sem nenhum aviso prévio — atrito operacional e risco de pedido incorreto seguir para faturamento.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0023
+
+### BACKLOG-0023 — Ações destrutivas usam `window.confirm()`/`confirm()` nativo do navegador em vez do `Dialog` acessível do design system
+- **Prioridade:** P2
+- **Área:** frontend
+- **Motivo:** encontrado na crítica de design pós-implementação do "Fluxo Comercial Completo" (mesmo P1 de BACKLOG-0022, adiado pela mesma decisão do usuário). Confirmado por grep no código atual — 7 pontos usam o `confirm()`/`window.confirm()` nativo do navegador em vez do componente `Dialog` do design system já usado em outras partes do app: `frontend/src/pages/Fornecedores.tsx:29` (remover fornecedor), `frontend/src/pages/PedidoDetalhe.tsx:59` (cancelar pedido), `frontend/src/pages/FaturamentoDetalhe.tsx:97` (excluir nota fiscal, módulo novo desta implementação), `frontend/src/pages/Transporte.tsx:107` (excluir transportadora), `frontend/src/pages/configuracoes/RolesPage.tsx:161` (desativar perfil de acesso), `frontend/src/pages/Financeiro.tsx:886` (remover custo) e `frontend/src/pages/Financeiro.tsx:1041` (remover registro/inadimplência). `window.confirm`/`confirm()` nativo é inconsistente visualmente com o resto do app e tem suporte pior a leitor de tela do que um `Dialog` acessível controlado pela aplicação.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** os 7 call sites listados passam a usar um componente `Dialog`/`AlertDialog` do design system (com foco gerenciado e texto lido corretamente por leitor de tela) em vez de `window.confirm()`/`confirm()` nativo, mantendo o mesmo texto de confirmação já existente em cada um.
+- **Risco se ficar pendente:** inconsistência visual entre módulos do app e pior suporte a acessibilidade (leitor de tela) nas 7 ações destrutivas listadas; nenhum risco de integridade de dado (a confirmação em si já existe, só o componente usado para ela é inconsistente).
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0022
 
 # MetaRenowa P0 (21/07/2026)
 

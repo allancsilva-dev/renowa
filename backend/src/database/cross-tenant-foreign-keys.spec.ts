@@ -8,6 +8,7 @@ import { Inadimplencia } from '../finance/entities/inadimplencia.entity';
 import { Parceiro } from '../finance/entities/parceiro.entity';
 import { OrderItem } from '../orders/entities/order-item.entity';
 import { Order } from '../orders/entities/order.entity';
+import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { Product } from '../products/entities/product.entity';
 import { LocalUser } from '../rbac/entities/local-user.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
@@ -65,6 +66,7 @@ describe('PROB-0011 cross-tenant foreign keys', () => {
       entities: [
         Order,
         OrderItem,
+        NotaFiscal,
         Client,
         Product,
         Supplier,

@@ -13,9 +13,12 @@ const PedidoForm = lazy(() => import('@/pages/PedidoForm'));
 const Produtos = lazy(() => import('@/pages/Produtos'));
 const ProdutoForm = lazy(() => import('@/pages/ProdutoForm'));
 const Fornecedores = lazy(() => import('@/pages/Fornecedores'));
+const FornecedorForm = lazy(() => import('@/pages/FornecedorForm'));
 const PedidoDetalhe = lazy(() => import('@/pages/PedidoDetalhe'));
 const Transporte = lazy(() => import('@/pages/Transporte'));
 const Financeiro = lazy(() => import('@/pages/Financeiro'));
+const Faturamento = lazy(() => import('@/pages/Faturamento'));
+const FaturamentoDetalhe = lazy(() => import('@/pages/FaturamentoDetalhe'));
 const Configuracoes = lazy(() => import('@/pages/Configuracoes'));
 const ConfiguracoesHome = lazy(() => import('@/pages/configuracoes/ConfiguracoesHome'));
 const UsuariosPage = lazy(() => import('@/pages/configuracoes/UsuariosPage'));
@@ -91,6 +94,8 @@ export default function App() {
             )}
           >
             <Route index element={<Fornecedores />} />
+            <Route path='novo' element={<FornecedorForm />} />
+            <Route path=':uuid/editar' element={<FornecedorForm />} />
           </Route>
 
           <Route
@@ -113,6 +118,18 @@ export default function App() {
             )}
           >
             <Route index element={<Financeiro />} />
+          </Route>
+
+          <Route
+            path='faturamento'
+            element={(
+              <ProtectedRoute permission='faturamento.ver'>
+                <AppShell />
+              </ProtectedRoute>
+            )}
+          >
+            <Route index element={<Faturamento />} />
+            <Route path=':uuid' element={<FaturamentoDetalhe />} />
           </Route>
 
           <Route

@@ -66,6 +66,16 @@ export class OrdersController {
     return this.ordersService.updateStatus(uuid, dto.status, dto.version, user);
   }
 
+  @Patch(':uuid/liberar')
+  @RequirePermission('pedidos.liberar')
+  async liberar(
+    @Param('uuid') uuid: string,
+    @Body() dto: VersionDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.ordersService.liberar(uuid, dto.version, user);
+  }
+
   @Delete(':uuid')
   @RequirePermission('pedidos.deletar')
   @HttpCode(HttpStatus.NO_CONTENT)

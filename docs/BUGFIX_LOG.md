@@ -246,3 +246,16 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Resultado:** PASS_COM_RESSALVA
 - **Ressalvas:** smoke visual em Safari com stack no ar ainda **PENDENTE** — nenhuma verificação em runtime de que uma lista real com >100 registros passou a aparecer completa no dropdown, nem de que as options vazias renderizam como esperado (ver BACKLOG-0019); a solução faz N requests sequenciais por dropdown (uma por página de 100) — aceitável para os volumes atuais, mas cresce linearmente com o tamanho da lista.
 - **Commits:** `4addfc9` (paginação completa + teste) e `d37b8e3` (dropdowns vazios)
+
+### BUG-0018 — `SuppliersService.findAll` não filtrava `deleted_at IS NULL`; fornecedores soft-deletados vazavam na listagem
+- **Problema relacionado:** —
+- **Data:** 2026-07-22
+- **Área:** backend
+- **Sintoma:** encontrado incidentalmente durante a implementação do "Fluxo Comercial Completo" (Fase 3), não relacionado ao escopo da feature — `GET /fornecedores` podia retornar fornecedores já removidos (soft delete), diferente do padrão usado pelas demais listagens do sistema.
+- **Causa raiz:** `backend/src/suppliers/suppliers.service.ts` (`findAll`) montava a query sem a cláusula `.andWhere('s.deleted_at IS NULL')` que o restante do backend usa por convenção em toda listagem sobre entidade com soft delete.
+- **Correção aplicada:** adicionada a cláusula `.andWhere('s.deleted_at IS NULL')` na query de `findAll`, mesmo padrão já usado nas demais listagens do backend.
+- **Arquivos alterados:** `backend/src/suppliers/suppliers.service.ts:30`
+- **Testes/validações executadas:** reportado pelo implementador como parte da suíte completa do backend (236 testes) rodada ao final da Fase 3 — 100% verde. **Não reexecutado de forma independente por este agente** (`docs-reporter` não tem acesso a `node`/`npm` nesta sessão).
+- **Resultado:** PASS_COM_RESSALVA
+- **Ressalvas:** validação da suíte completa não reverificada de forma independente por este agente. Confirmado via `git status` no momento deste registro: toda a implementação do "Fluxo Comercial Completo" (incluindo este fix) está **no working tree, sem nenhum commit** — `backend/src/suppliers/suppliers.service.ts` aparece como modificado e não staged.
+- **Commit:** pendente

@@ -1,19 +1,13 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { SuppliersService } from './suppliers.service';
+import { CreateSupplierDto } from './dto/create-supplier.dto';
+import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
-import { IsCnpj } from '../common/validators/brazilian-document.validators';
-
-class CreateSupplierDto {
-  @IsUUID('4') uuid: string;
-  @IsNotEmpty() @IsString() razao_social: string;
-  @IsOptional() @IsString() @IsCnpj() cnpj?: string;
-}
 
 /** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */
 @Controller('fornecedores')
@@ -28,8 +22,12 @@ export class SuppliersController {
 
   @Get()
   @RequirePermission('fornecedores.ver')
-  async findAll(@Query() pagination: PaginationDto, @CurrentUser() user: RequestUser) {
-    return this.suppliersService.findAll(user.tenantId, pagination);
+  async findAll(
+    @Query() pagination: PaginationDto,
+    @Query('search') search: string,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.suppliersService.findAll(user.tenantId, pagination, search);
   }
 
   @Get(':uuid')
@@ -42,7 +40,7 @@ export class SuppliersController {
   @RequirePermission('fornecedores.editar')
   async update(
     @Param('uuid') uuid: string,
-    @Body() dto: Partial<CreateSupplierDto>,
+    @Body() dto: UpdateSupplierDto,
     @CurrentUser() user: RequestUser,
   ) {
     return this.suppliersService.update(uuid, dto, user.tenantId);

@@ -9,10 +9,19 @@ import {
   Settings,
   LogOut,
   Building2,
+  Receipt,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
-const mainNavItems = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  /** Quando presente, o item só aparece se o usuário tiver essa permissão (ou for admin). */
+  permission?: string;
+}
+
+const mainNavItems: NavItem[] = [
   { to: '/dashboard',     label: 'Dashboard',    icon: LayoutDashboard },
   { to: '/clientes',      label: 'Clientes',     icon: Users },
   { to: '/pedidos',       label: 'Pedidos',      icon: FileText },
@@ -20,6 +29,7 @@ const mainNavItems = [
   { to: '/fornecedores',  label: 'Fornecedores', icon: Building2 },
   { to: '/transporte',    label: 'Transporte',   icon: Truck },
   { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign },
+  { to: '/faturamento',   label: 'Faturamento',  icon: Receipt, permission: 'faturamento.ver' },
 ];
 
 function getInitials(email: string): string {
@@ -76,7 +86,7 @@ export default function Sidebar() {
       {/* Navegação principal */}
       <nav className='flex-1 overflow-y-auto px-3 py-2'>
         <ul className='space-y-0.5'>
-          {mainNavItems.map(({ to, label, icon: Icon }) => (
+          {mainNavItems.filter(({ permission }) => !permission || hasPermission(permission)).map(({ to, label, icon: Icon }) => (
             <li key={to}>
               <NavLink
                 to={to}

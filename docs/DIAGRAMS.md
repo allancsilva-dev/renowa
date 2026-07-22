@@ -61,7 +61,7 @@ sequenceDiagram
 
 ## 5. Diagrama de módulos (sugerido)
 
-- **backend:** `auth`, `sync`, domínio (usuários/clientes/pedidos), `common` (interceptor/subscriber/base.entity).
+- **backend:** `auth`, `sync`, domínio (usuários/clientes/fornecedores/pedidos/produtos), `finance` (movimentações/comissões/parceiros/dashboard), `faturamento` (novo, 2026-07-22 — notas fiscais), `consultas` (novo, 2026-07-22 — CNPJ via BrasilAPI), `common` (interceptor/subscriber/base.entity). Ver [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md) para o ciclo comercial completo (pedidos → faturamento → comissão → caixa).
 - **frontend:** rotas → AppShell → Sidebar; store auth; camada de serviço axios.
 - **mobile:** App → SyncService → ApiService → sync-queue (SQLite) → database.
 

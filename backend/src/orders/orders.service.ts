@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { Order } from './entities/order.entity';
@@ -165,6 +165,9 @@ export class OrdersService {
         const ownId = await this.resolveUuid(manager, 'usuarios', user.sub, user.tenantId, true);
         if (order.vendedor_id !== ownId) throw new NotFoundException(`Pedido ${uuid} não encontrado.`);
       }
+      if (order.status !== 'em_aberto') {
+        throw new ConflictException(`Pedido ${uuid} não pode ser editado pois não está em aberto.`);
+      }
 
       const refs = await this.resolveHeader(manager, dto, user);
       const existingItems = await itemRepo.find({ withDeleted: true, where: { pedido_id: order.id, tenant_id: user.tenantId } });
@@ -256,9 +259,44 @@ export class OrdersService {
     return order;
   }
 
+  /**
+   * Liberação vira endpoint dedicado (`liberar`); `parcialmente_faturado`/
+   * `faturado` derivam exclusivamente do faturamento (nunca setados manualmente).
+   * Único valor aceito aqui é 'cancelado' — e só quando não há notas fiscais
+   * ativas vinculadas ao pedido.
+   */
   async updateStatus(uuid: string, status: string, version: number, user: RequestUser): Promise<Order> {
+    if (status !== 'cancelado') {
+      throw new BadRequestException(
+        "Transição de status inválida. Use PATCH /pedidos/:uuid/liberar para liberar o pedido; este endpoint só cancela.",
+      );
+    }
+
+    const order = await this.findOne(uuid, user);
+
+    const notaCountRows = await this.dataSource.query(
+      `SELECT COUNT(*)::int AS total FROM notas_fiscais WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`,
+      [user.tenantId, order.id],
+    ) as Array<{ total: number }>;
+    if (Number(notaCountRows[0]?.total ?? 0) > 0) {
+      throw new ConflictException('Pedido possui notas fiscais ativas e não pode ser cancelado.');
+    }
+
     await optimisticUpdate({ repository: this.orderRepo, uuid, tenantId: user.tenantId,
       expectedVersion: version, resource: 'order', notFoundMessage: `Pedido ${uuid} não encontrado.`, patch: { status },
+      extraWhere: this.isVendorOnly(user) ? this.vendorOwnershipWhere(user) : undefined });
+    return this.findOne(uuid, user);
+  }
+
+  /** Libera o pedido para faturamento — só a partir de 'em_aberto'. */
+  async liberar(uuid: string, version: number, user: RequestUser): Promise<Order> {
+    const order = await this.findOne(uuid, user);
+    if (order.status !== 'em_aberto') {
+      throw new ConflictException('Pedido só pode ser liberado quando está em aberto.');
+    }
+
+    await optimisticUpdate({ repository: this.orderRepo, uuid, tenantId: user.tenantId,
+      expectedVersion: version, resource: 'order', notFoundMessage: `Pedido ${uuid} não encontrado.`, patch: { status: 'liberado' },
       extraWhere: this.isVendorOnly(user) ? this.vendorOwnershipWhere(user) : undefined });
     return this.findOne(uuid, user);
   }

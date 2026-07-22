@@ -70,7 +70,12 @@ export class Order extends VersionedBaseEntity {
   @Column({ name: 'data', type: 'date', nullable: true })
   data: string | null;
 
-  /** 'em_aberto' | 'concluido' | 'cancelado' */
+  /**
+   * 'em_aberto' | 'liberado' | 'parcialmente_faturado' | 'faturado' | 'cancelado'.
+   * 'parcialmente_faturado'/'faturado' são derivados exclusivamente pelo
+   * faturamento (soma de notas fiscais ativas) — nunca setados manualmente.
+   * CHECK (pedidos_status_check, migration 0027) trava os 5 valores no banco.
+   */
   @Column({ name: 'status', type: 'varchar', default: 'em_aberto' })
   status: string;
 

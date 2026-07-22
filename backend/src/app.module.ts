@@ -24,6 +24,8 @@ import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { AuditModule } from './audit/audit.module';
 import { PrivacyModule } from './privacy/privacy.module';
+import { ConsultasModule } from './consultas/consultas.module';
+import { FaturamentoModule } from './faturamento/faturamento.module';
 import { RedisThrottlerStorage } from './common/throttling/redis-throttler.storage';
 
 @Module({
@@ -80,6 +82,8 @@ import { RedisThrottlerStorage } from './common/throttling/redis-throttler.stora
     PermissionsModule,
     AuditModule,
     PrivacyModule,
+    ConsultasModule,
+    FaturamentoModule,
   ],
   providers: [
     // Guard global — JwtAuthGuard roda antes do Interceptor (fluxo correto)

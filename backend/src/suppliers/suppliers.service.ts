@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Supplier } from './entities/supplier.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
+import { CreateSupplierDto } from './dto/create-supplier.dto';
+import { UpdateSupplierDto } from './dto/update-supplier.dto';
 
 @Injectable()
 export class SuppliersService {
@@ -11,19 +13,32 @@ export class SuppliersService {
     private readonly supplierRepo: Repository<Supplier>,
   ) {}
 
-  async create(dto: { uuid: string; razao_social: string; cnpj?: string }, tenantId: string): Promise<Supplier> {
+  async create(dto: CreateSupplierDto, tenantId: string): Promise<Supplier> {
     const s = this.supplierRepo.create({ ...dto, tenant_id: tenantId });
     return this.supplierRepo.save(s);
   }
 
-  async findAll(tenantId: string, pagination: PaginationDto): Promise<PaginatedResponse<Supplier>> {
+  async findAll(
+    tenantId: string,
+    pagination: PaginationDto,
+    search?: string,
+  ): Promise<PaginatedResponse<Supplier>> {
     const { page = 1, limit = 20 } = pagination;
-    const [data, total] = await this.supplierRepo.findAndCount({
-      where: { tenant_id: tenantId },
-      order: { razao_social: 'ASC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.supplierRepo
+      .createQueryBuilder('s')
+      .where('s.tenant_id = :tenantId', { tenantId })
+      .andWhere('s.deleted_at IS NULL');
+
+    if (search) {
+      qb.andWhere('(s.razao_social ILIKE :s OR s.cnpj ILIKE :s)', { s: `%${search}%` });
+    }
+
+    const [data, total] = await qb
+      .orderBy('s.razao_social', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
@@ -33,9 +48,10 @@ export class SuppliersService {
     return s;
   }
 
-  async update(uuid: string, dto: Record<string, unknown>, tenantId: string): Promise<Supplier> {
+  async update(uuid: string, dto: UpdateSupplierDto, tenantId: string): Promise<Supplier> {
     const s = await this.findOne(uuid, tenantId);
-    Object.assign(s, dto);
+    const { uuid: _u, ...rest } = dto;
+    Object.assign(s, rest);
     return this.supplierRepo.save(s);
   }
 

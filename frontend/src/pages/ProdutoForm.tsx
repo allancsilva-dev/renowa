@@ -1,15 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
 import type { ApiResponse, Product, Supplier } from '@/types';
-import { fetchAllPages } from '@/lib/fetchAllPages';
 import { withGeneratedUuid } from '@/lib/entityPayload';
+import { getApiErrorMessage } from '@/lib/errors';
+import { fetchSuppliers } from '@/services/suppliers.service';
+import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
 
 type FormFields = {
   codigo: string;
   descricao: string;
   preco_base: string;
   fornecedor_uuid: string;
+  fornecedor_label: string;
 };
 
 const empty: FormFields = {
@@ -17,6 +20,7 @@ const empty: FormFields = {
   descricao: '',
   preco_base: '',
   fornecedor_uuid: '',
+  fornecedor_label: '',
 };
 
 function toFields(p: Product): FormFields {
@@ -25,7 +29,19 @@ function toFields(p: Product): FormFields {
     descricao: p.descricao,
     preco_base: p.preco_base != null ? String(p.preco_base) : '',
     fornecedor_uuid: p.fornecedor?.uuid ?? '',
+    fornecedor_label: p.fornecedor?.razao_social ?? '',
   };
+}
+
+function supplierFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
+  return fetchSuppliers({ search, page, limit: 20 }).then((result) => ({
+    options: result.data.map((supplier: Supplier) => ({
+      value: supplier.uuid,
+      label: supplier.razao_social,
+      description: supplier.cnpj ?? undefined,
+    })),
+    hasMore: result.meta.page < result.meta.totalPages,
+  }));
 }
 
 export default function ProdutoForm() {
@@ -37,12 +53,6 @@ export default function ProdutoForm() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
   const [error, setError] = useState<string | null>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-
-  useEffect(() => {
-    fetchAllPages<Supplier>('/fornecedores').then(setSuppliers)
-      .catch(() => setError('Erro ao carregar fornecedores.'));
-  }, []);
 
   useEffect(() => {
     if (!uuid) return;
@@ -56,6 +66,8 @@ export default function ProdutoForm() {
       .finally(() => setFetching(false));
   }, [uuid]);
 
+  const fetchSupplierOptions = useCallback(supplierFetcher, []);
+
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -67,6 +79,10 @@ export default function ProdutoForm() {
       setError('Descrição é obrigatória.');
       return;
     }
+    if (!form.fornecedor_uuid) {
+      setError('Selecione o fornecedor do produto.');
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -74,7 +90,7 @@ export default function ProdutoForm() {
       codigo: form.codigo.trim() || null,
       descricao: form.descricao.trim(),
       preco_base: form.preco_base !== '' ? Number(form.preco_base) : null,
-      fornecedor_uuid: form.fornecedor_uuid || null,
+      fornecedor_uuid: form.fornecedor_uuid,
     };
 
     try {
@@ -84,8 +100,8 @@ export default function ProdutoForm() {
         await api.post('/produtos', withGeneratedUuid(payload));
       }
       navigate('/produtos');
-    } catch {
-      setError('Erro ao salvar produto. Tente novamente.');
+    } catch (err) {
+      setError(getApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -119,10 +135,25 @@ export default function ProdutoForm() {
           )}
 
           <div className='flex flex-col gap-1'>
-            <label htmlFor='produto-fornecedor' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Fornecedor</label>
-            <select id='produto-fornecedor' name='fornecedor_uuid' value={form.fornecedor_uuid} onChange={(event) => setForm((current) => ({ ...current, fornecedor_uuid: event.target.value }))} className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'>
-              <option value=''>Sem fornecedor</option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
-            </select>
+            <label htmlFor='produto-fornecedor' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+              Fornecedor <span className='text-red-500'>*</span>
+            </label>
+            <AsyncCombobox
+              id='produto-fornecedor'
+              ariaLabel='Fornecedor'
+              required
+              value={form.fornecedor_uuid || null}
+              displayValue={form.fornecedor_label}
+              onChange={(value, option) => setForm((current) => ({
+                ...current,
+                fornecedor_uuid: value ?? '',
+                fornecedor_label: option?.label ?? '',
+              }))}
+              fetcher={fetchSupplierOptions}
+              placeholder='Buscar fornecedor por nome ou CNPJ...'
+              emptyMessage='Nenhum fornecedor encontrado.'
+              errorMessage='Não foi possível carregar os fornecedores.'
+            />
           </div>
 
           <div className='flex flex-col gap-1'>

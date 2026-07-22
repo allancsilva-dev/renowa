@@ -4,21 +4,9 @@ import { Plus } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { fetchOrders } from '@/services/orders.service';
-import type { Order, OrderStatus } from '@/types';
+import { orderStatusLabel, orderStatusColor, type Order, type OrderStatus } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
 import { formatDate } from '@/lib/format';
-
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  em_aberto: 'Em Aberto',
-  concluido: 'Concluído',
-  cancelado:  'Cancelado',
-};
-
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  em_aberto: 'bg-blue-100 text-blue-700',
-  concluido: 'bg-green-100 text-green-700',
-  cancelado:  'bg-red-100 text-red-700',
-};
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -66,8 +54,8 @@ export default function Pedidos() {
       key: 'status',
       header: 'Status',
       cell: (row: Order) => (
-        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[row.status]}`}>
-          {STATUS_LABELS[row.status]}
+        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${orderStatusColor[row.status]}`}>
+          {orderStatusLabel[row.status]}
         </span>
       ),
     },
@@ -103,8 +91,8 @@ export default function Pedidos() {
           className='rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40'
         >
           <option value=''>Todos os status</option>
-          {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+          {(Object.keys(orderStatusLabel) as OrderStatus[]).map((s) => (
+            <option key={s} value={s}>{orderStatusLabel[s]}</option>
           ))}
         </select>
 

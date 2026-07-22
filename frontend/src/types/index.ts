@@ -24,6 +24,8 @@ export interface Client {
   email: string | null;
   tel: string | null;
   endereco: string | null;
+  numero: string | null;
+  complemento: string | null;
   bairro: string | null;
   cidade: string | null;
   uf: string | null;
@@ -41,9 +43,23 @@ export interface Client {
   updated_at: string;
 }
 
+/** Resposta normalizada da consulta de CNPJ (BrasilAPI) — `inscricao_estadual` é sempre `null`. */
+export interface CnpjLookupResult {
+  razao_social: string | null;
+  endereco: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  cep: string | null;
+  telefone: string | null;
+  inscricao_estadual: null;
+}
+
 // ─── Pedidos ─────────────────────────────────────────────────────────────────
 
-export type OrderStatus = 'em_aberto' | 'concluido' | 'cancelado';
+export type OrderStatus = 'em_aberto' | 'liberado' | 'parcialmente_faturado' | 'faturado' | 'cancelado';
 
 export interface OrderItem {
   uuid: string;
@@ -118,6 +134,15 @@ export interface Supplier {
   uuid: string;
   razao_social: string;
   cnpj: string | null;
+  endereco: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  cidade: string | null;
+  uf: string | null;
+  cep: string | null;
+  telefone: string | null;
+  inscricao_estadual: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -179,6 +204,17 @@ export type ClientFormData = z.infer<typeof clientSchema>;
 
 export const orderStatusLabel: Record<OrderStatus, string> = {
   em_aberto: 'Em Aberto',
-  concluido: 'Concluído',
+  liberado: 'Liberado',
+  parcialmente_faturado: 'Parcialmente Faturado',
+  faturado: 'Faturado',
   cancelado: 'Cancelado',
+};
+
+/** Cores de badge por status — usado em Pedidos, PedidoDetalhe e PedidoForm (fonte única, sem duplicação). */
+export const orderStatusColor: Record<OrderStatus, string> = {
+  em_aberto: 'bg-blue-100 text-blue-700',
+  liberado: 'bg-teal-100 text-teal-700',
+  parcialmente_faturado: 'bg-orange-100 text-orange-700',
+  faturado: 'bg-green-100 text-green-700',
+  cancelado: 'bg-red-100 text-red-700',
 };

@@ -2,6 +2,8 @@ import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Client } from '../../clients/entities/client.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
+import { Order } from '../../orders/entities/order.entity';
+import { NotaFiscal } from '../../faturamento/entities/nota-fiscal.entity';
 
 /**
  * valor_comissao: snapshot imutável calculado no lançamento.
@@ -43,12 +45,38 @@ export class Commission extends VersionedBaseEntity {
   @Column({ name: 'numero_nfe', type: 'varchar', nullable: true })
   numero_nfe: string | null;
 
+  /** Vínculo com o pedido de origem (comissão nascida do faturamento). Nullable — comissões legadas não têm. */
+  @Column({ name: 'pedido_id', type: 'int', nullable: true })
+  pedido_id: number | null;
+
+  @ManyToOne(() => Order, { nullable: true })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'pedido_id', referencedColumnName: 'id' },
+  ])
+  pedido: Order | null;
+
+  /** Vínculo 1:1 com a nota fiscal que originou esta comissão. Nullable — comissões legadas não têm. */
+  @Column({ name: 'nota_fiscal_id', type: 'int', nullable: true })
+  nota_fiscal_id: number | null;
+
+  @ManyToOne(() => NotaFiscal, { nullable: true })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'nota_fiscal_id', referencedColumnName: 'id' },
+  ])
+  notaFiscal: NotaFiscal | null;
+
   // Datas
   @Column({ name: 'data_pedido', type: 'date', nullable: true })
   data_pedido: string | null;
 
   @Column({ name: 'data_faturamento', type: 'date', nullable: true })
   data_faturamento: string | null;
+
+  /** Data em que a comissão foi efetivamente paga — só entra no caixa quando preenchida e status='pago'. */
+  @Column({ name: 'data_pagamento', type: 'date', nullable: true })
+  data_pagamento: string | null;
 
   // Valores
   @Column({ name: 'valor_pedido', type: 'decimal', precision: 12, scale: 2, nullable: true })

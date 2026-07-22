@@ -16,8 +16,15 @@ export async function fetchOrder(uuid: string): Promise<Order> {
   return data.data;
 }
 
+/** Único status aceito por este endpoint é 'cancelado' — liberação usa `liberarOrder`. */
 export async function updateOrderStatus(uuid: string, status: OrderStatus, version: number): Promise<Order> {
   const { data } = await api.patch<ApiResponse<Order>>(`/pedidos/${uuid}/status`, { status, version });
+  return data.data;
+}
+
+/** Libera o pedido (`em_aberto` → `liberado`) — requer permissão `pedidos.liberar`. */
+export async function liberarOrder(uuid: string, version: number): Promise<Order> {
+  const { data } = await api.patch<ApiResponse<Order>>(`/pedidos/${uuid}/liberar`, { version });
   return data.data;
 }
 

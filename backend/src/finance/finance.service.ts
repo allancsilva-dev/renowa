@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import { FinanceMovement } from './entities/finance-movement.entity';
 import { Commission } from './entities/commission.entity';
 import { Inadimplencia } from './entities/inadimplencia.entity';
@@ -131,6 +131,7 @@ export class FinanceService {
     receitas: string;
     custos: string;
     saldo: string;
+    faturamentoBruto: string;
     lancamentos: FinanceMovement[];
   }> {
     const lancamentos = await this.movimentoRepo
@@ -142,23 +143,35 @@ export class FinanceService {
       .orderBy('m.data', 'ASC')
       .getMany();
 
-    // Comissões pagas no mês como receitas (entrada)
+    // Caixa: só comissões efetivamente PAGAS, agrupadas por data_pagamento
+    // (nunca data_faturamento — faturar não é o mesmo que receber).
     const comissoesResult = await this.comissaoRepo
       .createQueryBuilder('c')
       .select('SUM(c.valor_comissao) AS total')
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.deleted_at IS NULL')
-      .andWhere('c.data_faturamento IS NOT NULL')
-      .andWhere('EXTRACT(MONTH FROM c.data_faturamento) = :mes', { mes })
-      .andWhere('EXTRACT(YEAR FROM c.data_faturamento) = :ano', { ano })
+      .andWhere("c.status = 'pago'")
+      .andWhere('c.data_pagamento IS NOT NULL')
+      .andWhere('EXTRACT(MONTH FROM c.data_pagamento) = :mes', { mes })
+      .andWhere('EXTRACT(YEAR FROM c.data_pagamento) = :ano', { ano })
       .getRawOne<{ total: string }>();
 
+    // Faturamento bruto: soma de notas_fiscais.valor (nunca entra no caixa,
+    // é só indicador de volume faturado no período por data de emissão).
+    const notasResult = await this.dataSource.query(
+      `SELECT COALESCE(SUM(n.valor), 0) AS total FROM notas_fiscais n
+       WHERE n.tenant_id = $1 AND n.deleted_at IS NULL
+         AND EXTRACT(MONTH FROM n.data_emissao) = $2 AND EXTRACT(YEAR FROM n.data_emissao) = $3`,
+      [tenantId, mes, ano],
+    ) as Array<{ total: string }>;
+
     const receitas = money(comissoesResult?.total);
+    const faturamentoBruto = money(notasResult[0]?.total);
     const custos = sumMoney(lancamentos
       .filter((l) => l.tipo === 'Custo Fixo' || l.tipo === 'Custo Rotativo')
       .map((l) => l.valor));
 
-    return { receitas, custos, saldo: money(decimal(receitas).minus(custos)), lancamentos };
+    return { receitas, custos, saldo: money(decimal(receitas).minus(custos)), faturamentoBruto, lancamentos };
   }
 
   // ── Comissões ─────────────────────────────────────────────
@@ -211,6 +224,56 @@ export class FinanceService {
       resource: 'commission',
       notFoundMessage: 'Comissão ' + uuid + ' não encontrada.',
       patch,
+    });
+  }
+
+  /**
+   * Informa o percentual de comissão sobre a nota (ou, para comissões legadas
+   * sem nota vinculada, sobre valor_faturado/valor_pedido). Exige status
+   * 'pendente' — não é possível reinformar percentual de comissão já faturada.
+   */
+  async informarPercentual(uuid: string, percComissao: string, version: number, tenantId: string): Promise<Commission> {
+    const commission = await this.comissaoRepo.findOne({
+      where: { uuid, tenant_id: tenantId, deleted_at: IsNull() },
+      relations: ['notaFiscal'],
+    });
+    if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
+    if (commission.status !== 'pendente') {
+      throw new ConflictException('Comissão precisa estar pendente para informar o percentual.');
+    }
+
+    const base = commission.notaFiscal?.valor ?? commission.valor_faturado ?? commission.valor_pedido ?? '0';
+    const valorComissao = percentageOf(base, percComissao);
+
+    return optimisticUpdate({
+      repository: this.comissaoRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'commission',
+      notFoundMessage: `Comissão ${uuid} não encontrada.`,
+      patch: { perc_comissao: decimal(percComissao).toFixed(2), valor_comissao: valorComissao, status: 'faturado' },
+    });
+  }
+
+  /** Registra o pagamento efetivo da comissão. Exige status 'faturado' + data de pagamento. */
+  async registrarPagamento(uuid: string, dataPagamento: string, version: number, tenantId: string): Promise<Commission> {
+    if (!dataPagamento) throw new BadRequestException('Data de pagamento é obrigatória.');
+
+    const commission = await this.comissaoRepo.findOne({ where: { uuid, tenant_id: tenantId, deleted_at: IsNull() } });
+    if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
+    if (commission.status !== 'faturado') {
+      throw new ConflictException('Comissão precisa estar faturada para registrar o pagamento.');
+    }
+
+    return optimisticUpdate({
+      repository: this.comissaoRepo,
+      uuid,
+      tenantId,
+      expectedVersion: version,
+      resource: 'commission',
+      notFoundMessage: `Comissão ${uuid} não encontrada.`,
+      patch: { data_pagamento: dataPagamento, status: 'pago' },
     });
   }
 

@@ -1,39 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileDown, Pencil } from 'lucide-react';
+import { ArrowLeft, FileDown, Pencil, Unlock, XCircle } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
-import { fetchOrder, updateOrderStatus } from '@/services/orders.service';
-import type { Order, OrderStatus } from '@/types';
+import { fetchOrder, liberarOrder, updateOrderStatus } from '@/services/orders.service';
+import { orderStatusLabel, orderStatusColor, type Order } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
 import { getApiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/format';
+import { useAuth } from '@/hooks/useAuth';
+import { canCancelarPedido, canLiberarPedido } from '@/lib/orderPermissions';
 import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
-
-const STATUS_LABELS: Record<OrderStatus, string> = {
-  em_aberto: 'Em Aberto',
-  concluido: 'Concluído',
-  cancelado:  'Cancelado',
-};
-
-const STATUS_COLORS: Record<OrderStatus, string> = {
-  em_aberto: 'bg-blue-100 text-blue-700',
-  concluido: 'bg-green-100 text-green-700',
-  cancelado:  'bg-red-100 text-red-700',
-};
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function PedidoDetalhe() {
   const { uuid } = useParams<{ uuid: string }>();
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [statusValue, setStatusValue] = useState<OrderStatus>('em_aberto');
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -43,22 +33,34 @@ export default function PedidoDetalhe() {
     setLoading(true);
     setError(null);
     fetchOrder(uuid)
-      .then((data) => {
-        setOrder(data);
-        setStatusValue(data.status);
-      })
+      .then(setOrder)
       .catch((err) => setError(getApiErrorMessage(err)))
       .finally(() => setLoading(false));
   }, [uuid]);
 
   useEffect(() => { load(); }, [load]);
 
-  async function handleStatusUpdate() {
+  async function handleLiberar() {
     if (!order || !uuid) return;
     setStatusSaving(true);
     setStatusError(null);
     try {
-      const updated = await updateOrderStatus(uuid, statusValue, order.version);
+      const updated = await liberarOrder(uuid, order.version);
+      setOrder(updated);
+    } catch (err) {
+      setStatusError(getApiErrorMessage(err));
+    } finally {
+      setStatusSaving(false);
+    }
+  }
+
+  async function handleCancelar() {
+    if (!order || !uuid) return;
+    if (!window.confirm('Cancelar este pedido? Essa ação não pode ser desfeita.')) return;
+    setStatusSaving(true);
+    setStatusError(null);
+    try {
+      const updated = await updateOrderStatus(uuid, 'cancelado', order.version);
       setOrder(updated);
     } catch (err) {
       setStatusError(getApiErrorMessage(err));
@@ -96,6 +98,9 @@ export default function PedidoDetalhe() {
     return <ErrorState title='Não foi possível carregar o pedido' description={error ?? undefined} onRetry={load} />;
   }
 
+  const canLiberar = canLiberarPedido(hasPermission, order.status);
+  const canCancelar = canCancelarPedido(hasPermission, order.status);
+
   return (
     <div className='max-w-4xl mx-auto space-y-4'>
       <button
@@ -117,8 +122,28 @@ export default function PedidoDetalhe() {
               {order.cliente?.razao_social ?? (order.cliente_id != null ? `Cliente ID ${order.cliente_id}` : 'Sem cliente')}
             </p>
           </div>
-          <div className='flex flex-wrap items-center gap-2'><button type='button' onClick={() => navigate(`/pedidos/${order.uuid}/editar`)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button><button type='button' onClick={generatePdf} disabled={pdfLoading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : 'Gerar PDF para validação'}</button><span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[order.status]}`}>{STATUS_LABELS[order.status]}</span></div>
+          <div className='flex flex-wrap items-center gap-2'>
+            <button type='button' onClick={() => navigate(`/pedidos/${order.uuid}/editar`)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button>
+            <button type='button' onClick={generatePdf} disabled={pdfLoading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : 'Gerar PDF para validação'}</button>
+            {canLiberar && (
+              <button type='button' onClick={handleLiberar} disabled={statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
+                <Unlock className='h-4 w-4' />{statusSaving ? 'Liberando...' : 'Liberar pedido'}
+              </button>
+            )}
+            {canCancelar && (
+              <button type='button' onClick={handleCancelar} disabled={statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg border border-red-300 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60'>
+                <XCircle className='h-4 w-4' />{statusSaving ? 'Cancelando...' : 'Cancelar pedido'}
+              </button>
+            )}
+            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${orderStatusColor[order.status]}`}>{orderStatusLabel[order.status]}</span>
+          </div>
         </div>
+
+        {statusError && (
+          <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>
+            {statusError}
+          </div>
+        )}
 
         <div className='grid grid-cols-1 gap-4 sm:grid-cols-3 text-sm'>
           <div>
@@ -141,34 +166,6 @@ export default function PedidoDetalhe() {
             <p className='text-sm text-slate-800 whitespace-pre-wrap'>{order.observacao}</p>
           </div>
         )}
-
-        <div className='border-t border-slate-100 pt-4'>
-          <p className='text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2'>Atualizar status</p>
-          {statusError && (
-            <div role='alert' className='mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>
-              {statusError}
-            </div>
-          )}
-          <div className='flex flex-wrap items-center gap-3'>
-            <select
-              value={statusValue}
-              onChange={(e) => setStatusValue(e.target.value as OrderStatus)}
-              className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
-            >
-              {(Object.keys(STATUS_LABELS) as OrderStatus[]).map((s) => (
-                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-              ))}
-            </select>
-            <button
-              type='button'
-              onClick={handleStatusUpdate}
-              disabled={statusSaving || statusValue === order.status}
-              className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors'
-            >
-              {statusSaving ? 'Salvando...' : 'Atualizar status'}
-            </button>
-          </div>
-        </div>
       </div>
 
       <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6'>

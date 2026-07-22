@@ -1,9 +1,11 @@
 import { cloneElement, useState, useEffect, useCallback, useId } from 'react';
-import { Plus, Wallet, TrendingDown, BarChart2, Trash2 } from 'lucide-react';
+import { Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2 } from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
 import Dialog from '@/components/ui/Dialog';
+import DataTable from '@/components/tables/DataTable';
 import { moneyForDisplay, moneyString, percentageOf, sumMoney } from '@/lib/decimal';
+import { useAuth } from '@/hooks/useAuth';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -30,8 +32,11 @@ interface Comissao {
   cliente?: { razao_social: string } | null;
   numero_pedido: string | null;
   numero_nfe: string | null;
+  /** Presente quando a comissão nasceu do registro de uma nota fiscal (fluxo de faturamento). */
+  nota_fiscal_id: number | null;
   data_pedido: string | null;
   data_faturamento: string | null;
+  data_pagamento: string | null;
   valor_pedido: string | null;
   valor_faturado: string | null;
   perc_comissao: string | null;
@@ -74,7 +79,7 @@ interface Fornecedor {
 const now = new Date();
 
 const inputCls =
-  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2A9D8F] focus:ring-1 focus:ring-[#2A9D8F]/40 w-full';
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 w-full';
 const labelCls = 'text-xs font-semibold uppercase tracking-wide text-slate-500';
 
 function writeErrorMessage(error: unknown): string {
@@ -98,7 +103,7 @@ function FiltroMesAno({
   const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
   const anos = Array.from({ length: now.getFullYear() - 2024 + 1 }, (_, i) => 2024 + i);
   const sel =
-    'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-[#2A9D8F]';
+    'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-primary';
   return (
     <div className='flex items-center gap-2'>
       <select value={mes} onChange={(e) => setMes(Number(e.target.value))} className={sel}>
@@ -153,8 +158,8 @@ function ModalBtns({ onClose, saving }: { onClose: () => void; saving: boolean }
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    pendente: 'bg-orange-100 text-orange-700',
-    faturado: 'bg-blue-100 text-blue-700',
+    pendente: 'bg-slate-100 text-slate-700',
+    faturado: 'bg-primary-50 text-primary-700',
     pago: 'bg-teal-100 text-teal-700',
   };
   return (
@@ -178,7 +183,7 @@ function FluxoCaixa() {
 
   const TIPO_COLORS: Record<string, string> = {
     'Custo Fixo': 'bg-red-100 text-red-700',
-    'Custo Rotativo': 'bg-orange-100 text-orange-700',
+    'Custo Rotativo': 'bg-slate-100 text-slate-700',
     'Venda': 'bg-teal-100 text-teal-700',
   };
 
@@ -258,38 +263,32 @@ function FluxoCaixa() {
             </div>
           </div>
 
-          <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
-            <div className='px-5 py-4 border-b border-slate-100'>
-              <h3 className='text-xs font-semibold uppercase tracking-wider text-slate-400'>Lançamentos do Mês</h3>
-            </div>
-            {data.lancamentos.length === 0 ? (
-              <div className='py-10 text-center text-sm text-slate-400'>Nenhum lançamento no período</div>
-            ) : (
-              <table className='w-full text-sm'>
-                <thead>
-                  <tr className='text-xs uppercase text-slate-400 bg-slate-50'>
-                    <th className='px-5 py-3 text-left font-medium'>Tipo</th>
-                    <th className='px-5 py-3 text-left font-medium'>Descrição</th>
-                    <th className='px-5 py-3 text-left font-medium'>Data</th>
-                    <th className='px-5 py-3 text-right font-medium'>Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.lancamentos.map((l) => (
-                    <tr key={l.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
-                      <td className='px-5 py-3'>
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${TIPO_COLORS[l.tipo] ?? 'bg-slate-100 text-slate-600'}`}>
-                          {l.tipo}
-                        </span>
-                      </td>
-                      <td className='px-5 py-3 text-slate-700'>{l.descricao ?? '—'}</td>
-                      <td className='px-5 py-3 text-slate-500'>{fmtDate(l.data)}</td>
-                      <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(moneyForDisplay(l.valor))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <div>
+            <h3 className='mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400'>Lançamentos do Mês</h3>
+            <DataTable<Lancamento>
+              columns={[
+                {
+                  key: 'tipo',
+                  header: 'Tipo',
+                  cell: (l) => (
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${TIPO_COLORS[l.tipo] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {l.tipo}
+                    </span>
+                  ),
+                },
+                { key: 'descricao', header: 'Descrição', cell: (l) => <span className='text-slate-700'>{l.descricao ?? '—'}</span> },
+                { key: 'data', header: 'Data', cell: (l) => <span className='text-slate-500'>{fmtDate(l.data)}</span> },
+                {
+                  key: 'valor',
+                  header: 'Valor',
+                  className: 'text-right',
+                  cell: (l) => <span className='font-semibold text-slate-900'>{BRL.format(moneyForDisplay(l.valor))}</span>,
+                },
+              ]}
+              data={data.lancamentos}
+              emptyTitle='Nenhum lançamento no período'
+              emptyDescription='Registre um lançamento para vê-lo listado aqui.'
+            />
           </div>
         </>
       ) : (
@@ -353,37 +352,44 @@ function Empresas() {
         <div className='py-10 text-center text-sm text-slate-400'>Nenhuma venda registrada no período</div>
       ) : (
         grupos.map((g) => (
-          <div key={g.fornecedor_id} className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
-            <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
-              <h3 className='font-semibold text-slate-900'>📦 {g.razao_social}</h3>
+          <div key={g.fornecedor_id} className='space-y-2'>
+            <div className='flex items-center justify-between'>
+              <h3 className='flex items-center gap-2 font-semibold text-slate-900'>
+                <Package className='h-4 w-4 text-slate-400' />
+                {g.razao_social}
+              </h3>
               <div className='text-sm font-medium text-slate-600'>
                 Fat: {BRL.format(moneyForDisplay(g.total_faturado))} · Com: {BRL.format(moneyForDisplay(g.total_comissao))}
               </div>
             </div>
-            <table className='w-full text-sm'>
-              <thead>
-                <tr className='text-xs uppercase text-slate-400 bg-slate-50'>
-                  <th className='px-5 py-3 text-left font-medium'>Data</th>
-                  <th className='px-5 py-3 text-left font-medium'>Cliente</th>
-                  <th className='px-5 py-3 text-right font-medium'>Val. Fat.</th>
-                  <th className='px-5 py-3 text-right font-medium'>%</th>
-                  <th className='px-5 py-3 text-right font-medium'>Comissão</th>
-                  <th className='px-5 py-3 text-left font-medium'>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.registros.map((r) => (
-                  <tr key={r.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
-                    <td className='px-5 py-3 text-slate-500'>{fmtDate(r.data_pedido)}</td>
-                    <td className='px-5 py-3 text-slate-700'>{r.cliente?.razao_social ?? '—'}</td>
-                    <td className='px-5 py-3 text-right text-slate-900 font-medium'>{BRL.format(moneyForDisplay(r.valor_faturado))}</td>
-                    <td className='px-5 py-3 text-right text-slate-500'>{r.perc_comissao ?? '—'}%</td>
-                    <td className='px-5 py-3 text-right font-semibold text-teal-700'>{BRL.format(moneyForDisplay(r.valor_comissao))}</td>
-                    <td className='px-5 py-3'><StatusBadge status={r.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable<Comissao>
+              columns={[
+                { key: 'data', header: 'Data', cell: (r) => <span className='text-slate-500'>{fmtDate(r.data_pedido)}</span> },
+                { key: 'cliente', header: 'Cliente', cell: (r) => <span className='text-slate-700'>{r.cliente?.razao_social ?? '—'}</span> },
+                {
+                  key: 'valor_faturado',
+                  header: 'Val. Fat.',
+                  className: 'text-right',
+                  cell: (r) => <span className='font-medium text-slate-900'>{BRL.format(moneyForDisplay(r.valor_faturado))}</span>,
+                },
+                {
+                  key: 'perc',
+                  header: '%',
+                  className: 'text-right',
+                  cell: (r) => <span className='text-slate-500'>{r.perc_comissao ?? '—'}%</span>,
+                },
+                {
+                  key: 'comissao',
+                  header: 'Comissão',
+                  className: 'text-right',
+                  cell: (r) => <span className='font-semibold text-teal-700'>{BRL.format(moneyForDisplay(r.valor_comissao))}</span>,
+                },
+                { key: 'status', header: 'Status', cell: (r) => <StatusBadge status={r.status} /> },
+              ]}
+              data={g.registros}
+              emptyTitle='Nenhuma venda registrada'
+              emptyDescription='Este fornecedor não teve vendas no período selecionado.'
+            />
           </div>
         ))
       )}
@@ -394,6 +400,9 @@ function Empresas() {
 // ─── Tab: Comissão ────────────────────────────────────────────────────────────
 
 function ComissaoAlune() {
+  const { hasPermission } = useAuth();
+  const canEdit = hasPermission('financeiro.editar');
+
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [ano, setAno] = useState(now.getFullYear());
   const [status, setStatus] = useState('');
@@ -402,19 +411,17 @@ function ComissaoAlune() {
   const [resumo, setResumo] = useState({ total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<{
-    data_pedido: string; data_faturamento: string; fornecedor_id: string;
-    numero_pedido: string; numero_nfe: string; valor_pedido: number | null;
-    valor_faturado: number | null; perc_comissao: string; valor_comissao: number | null;
-    status: string;
-  }>({
-    data_pedido: '', data_faturamento: '', fornecedor_id: '',
-    numero_pedido: '', numero_nfe: '', valor_pedido: null, valor_faturado: null,
-    perc_comissao: '', valor_comissao: null, status: 'pendente',
-  });
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [percentualAlvo, setPercentualAlvo] = useState<Comissao | null>(null);
+  const [percentualValor, setPercentualValor] = useState('');
+  const [savingPercentual, setSavingPercentual] = useState(false);
+  const [percentualError, setPercentualError] = useState<string | null>(null);
+
+  const [pagamentoAlvo, setPagamentoAlvo] = useState<Comissao | null>(null);
+  const [pagamentoData, setPagamentoData] = useState('');
+  const [savingPagamento, setSavingPagamento] = useState(false);
+  const [pagamentoError, setPagamentoError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get('/fornecedores?limit=100').then((r) => {
@@ -443,39 +450,65 @@ function ComissaoAlune() {
 
   useEffect(() => { load(); }, [load]);
 
-  function calcVc(vp: number | null, pc: string): number | null {
-    if (vp === null || pc.trim() === '') return null;
-    try { return moneyForDisplay(percentageOf(vp, pc)); } catch { return null; }
+  function openPercentualDialog(comissao: Comissao) {
+    setPercentualAlvo(comissao);
+    setPercentualValor(comissao.perc_comissao ?? '');
+    setPercentualError(null);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handlePercentualSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
+    if (!percentualAlvo) return;
+    if (percentualValor.trim() === '') {
+      setPercentualError('Informe o percentual de comissão.');
+      return;
+    }
+    setSavingPercentual(true);
+    setPercentualError(null);
     try {
-      await api.post('/financeiro/comissoes', {
-        uuid: crypto.randomUUID(),
-        fornecedor_id: form.fornecedor_id ? Number(form.fornecedor_id) : undefined,
-        numero_pedido: form.numero_pedido || null,
-        numero_nfe: form.numero_nfe || null,
-        data_pedido: form.data_pedido || null,
-        data_faturamento: form.data_faturamento || null,
-        valor_pedido: form.valor_pedido === null ? undefined : moneyString(form.valor_pedido),
-        valor_faturado: form.valor_faturado === null ? undefined : moneyString(form.valor_faturado),
-        perc_comissao: form.perc_comissao || undefined,
-        valor_comissao: moneyString(form.valor_comissao),
-        status: form.status,
+      await api.patch(`/financeiro/comissoes/${percentualAlvo.uuid}/percentual`, {
+        perc_comissao: percentualValor,
+        version: percentualAlvo.version,
       });
-      setShowForm(false);
+      setPercentualAlvo(null);
       load();
     } catch (requestError) {
-      setError(writeErrorMessage(requestError));
+      setPercentualError(writeErrorMessage(requestError));
     } finally {
-      setSaving(false);
+      setSavingPercentual(false);
     }
   }
 
-  const sel = 'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-[#2A9D8F]';
+  function openPagamentoDialog(comissao: Comissao) {
+    setPagamentoAlvo(comissao);
+    setPagamentoData(comissao.data_pagamento ?? new Date().toISOString().slice(0, 10));
+    setPagamentoError(null);
+  }
+
+  async function handlePagamentoSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pagamentoAlvo) return;
+    if (!pagamentoData) {
+      setPagamentoError('Informe a data de pagamento.');
+      return;
+    }
+    setSavingPagamento(true);
+    setPagamentoError(null);
+    try {
+      await api.patch(`/financeiro/comissoes/${pagamentoAlvo.uuid}/pagamento`, {
+        data_pagamento: pagamentoData,
+        version: pagamentoAlvo.version,
+      });
+      setPagamentoAlvo(null);
+      load();
+    } catch (requestError) {
+      setPagamentoError(writeErrorMessage(requestError));
+    } finally {
+      setSavingPagamento(false);
+    }
+  }
+
+  const sel = 'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-primary';
 
   return (
     <div className='space-y-5'>
@@ -493,7 +526,6 @@ function ComissaoAlune() {
             <option value='pago'>Pago</option>
           </select>
         </div>
-        <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Nova Comissão</BtnPrimary>
       </div>
       <WriteError message={error} />
 
@@ -501,8 +533,8 @@ function ComissaoAlune() {
       <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>
         {[
           { label: 'Total', value: resumo.total, color: 'text-slate-900' },
-          { label: 'Faturado', value: resumo.faturado, color: 'text-blue-700' },
-          { label: 'Pendente', value: resumo.pendente, color: 'text-orange-600' },
+          { label: 'Faturado', value: resumo.faturado, color: 'text-primary-700' },
+          { label: 'Pendente', value: resumo.pendente, color: 'text-slate-700' },
           { label: 'Pago', value: resumo.pago, color: 'text-teal-700' },
         ].map(({ label, value, color }) => (
           <div key={label} className='rounded-xl bg-white border border-slate-100 shadow-sm p-4'>
@@ -513,101 +545,107 @@ function ComissaoAlune() {
       </div>
 
       {/* Tabela */}
-      <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
-        {loading ? (
-          <div className='py-10 text-center text-sm text-slate-400'>Carregando...</div>
-        ) : comissoes.length === 0 ? (
-          <div className='py-10 text-center text-sm text-slate-400'>Nenhuma comissão no período</div>
-        ) : (
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='text-xs uppercase text-slate-400 bg-slate-50'>
-                <th className='px-4 py-3 text-left font-medium'>Data Ped.</th>
-                <th className='px-4 py-3 text-left font-medium'>Data Fat.</th>
-                <th className='px-4 py-3 text-left font-medium'>Fornecedor</th>
-                <th className='px-4 py-3 text-left font-medium'>NF-e</th>
-                <th className='px-4 py-3 text-right font-medium'>Val. Fat.</th>
-                <th className='px-4 py-3 text-right font-medium'>%</th>
-                <th className='px-4 py-3 text-right font-medium'>Comissão</th>
-                <th className='px-4 py-3 text-left font-medium'>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comissoes.map((c) => (
-                <tr key={c.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
-                  <td className='px-4 py-3 text-slate-500'>{fmtDate(c.data_pedido)}</td>
-                  <td className='px-4 py-3 text-slate-500'>{fmtDate(c.data_faturamento)}</td>
-                  <td className='px-4 py-3 text-slate-700'>{c.fornecedor?.razao_social ?? '—'}</td>
-                  <td className='px-4 py-3 text-slate-500'>{c.numero_nfe ?? '—'}</td>
-                  <td className='px-4 py-3 text-right text-slate-900'>{BRL.format(moneyForDisplay(c.valor_faturado))}</td>
-                  <td className='px-4 py-3 text-right text-slate-500'>{c.perc_comissao ?? '—'}%</td>
-                  <td className='px-4 py-3 text-right font-semibold text-teal-700'>{BRL.format(moneyForDisplay(c.valor_comissao))}</td>
-                  <td className='px-4 py-3'><StatusBadge status={c.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <DataTable<Comissao>
+        columns={[
+          {
+            key: 'origem',
+            header: 'Origem',
+            cell: (c) =>
+              c.nota_fiscal_id != null ? (
+                <span className='inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600'>
+                  Via nota{c.numero_pedido ? ` · Pedido #${c.numero_pedido}` : ''}
+                </span>
+              ) : (
+                <span className='inline-flex rounded-full bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-400'>Manual</span>
+              ),
+          },
+          { key: 'data_pedido', header: 'Data Ped.', cell: (c) => <span className='text-slate-500'>{fmtDate(c.data_pedido)}</span> },
+          { key: 'fornecedor', header: 'Fornecedor', cell: (c) => <span className='text-slate-700'>{c.fornecedor?.razao_social ?? '—'}</span> },
+          { key: 'nfe', header: 'NF-e', cell: (c) => <span className='text-slate-500'>{c.numero_nfe ?? '—'}</span> },
+          {
+            key: 'valor_faturado',
+            header: 'Val. Fat.',
+            className: 'text-right',
+            cell: (c) => <span className='text-slate-900'>{BRL.format(moneyForDisplay(c.valor_faturado))}</span>,
+          },
+          {
+            key: 'perc',
+            header: '%',
+            className: 'text-right',
+            cell: (c) => <span className='text-slate-500'>{c.perc_comissao ?? '—'}%</span>,
+          },
+          {
+            key: 'comissao',
+            header: 'Comissão',
+            className: 'text-right',
+            cell: (c) => <span className='font-semibold text-teal-700'>{BRL.format(moneyForDisplay(c.valor_comissao))}</span>,
+          },
+          { key: 'status', header: 'Status', cell: (c) => <StatusBadge status={c.status} /> },
+          ...(canEdit
+            ? [
+                {
+                  key: 'acoes',
+                  header: 'Ações',
+                  cell: (c: Comissao) => (
+                    <>
+                      {c.status === 'pendente' && (
+                        <button type='button' onClick={() => openPercentualDialog(c)} className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'>
+                          Informar percentual
+                        </button>
+                      )}
+                      {c.status === 'faturado' && (
+                        <button type='button' onClick={() => openPagamentoDialog(c)} className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'>
+                          Registrar pagamento
+                        </button>
+                      )}
+                      {c.status === 'pago' && c.data_pagamento && (
+                        <span className='text-xs text-slate-500'>Pago em {fmtDate(c.data_pagamento)}</span>
+                      )}
+                    </>
+                  ),
+                },
+              ]
+            : []),
+        ]}
+        data={comissoes}
+        isLoading={loading}
+        emptyTitle='Nenhuma comissão no período'
+        emptyDescription='Comissões aparecem aqui conforme pedidos são faturados ou lançados manualmente.'
+      />
 
-      {showForm && (
-        <Modal title='Nova Comissão' onClose={() => setShowForm(false)}>
-          <form onSubmit={handleSubmit} className='space-y-4'>
-            <div className='grid grid-cols-2 gap-3'>
-              <Field label='Data do Pedido'>
-                <input type='date' value={form.data_pedido} onChange={(e) => setForm((p) => ({ ...p, data_pedido: e.target.value }))} className={inputCls} />
-              </Field>
-              <Field label='Data de Faturamento'>
-                <input type='date' value={form.data_faturamento} onChange={(e) => setForm((p) => ({ ...p, data_faturamento: e.target.value }))} className={inputCls} />
-              </Field>
-            </div>
-            <Field label='Fornecedor'>
-              <select value={form.fornecedor_id} onChange={(e) => setForm((p) => ({ ...p, fornecedor_id: e.target.value }))} className={inputCls}>
-                <option value=''></option>
-                {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
-              </select>
+      {percentualAlvo && (
+        <Modal title={`Informar percentual — ${percentualAlvo.fornecedor?.razao_social ?? 'comissão'}`} onClose={() => setPercentualAlvo(null)}>
+          <form onSubmit={handlePercentualSubmit} className='space-y-4'>
+            <WriteError message={percentualError} />
+            <Field label='% Comissão'>
+              <div className='relative'>
+                <input
+                  type='number'
+                  aria-label='Percentual de comissão'
+                  step='0.01'
+                  min='0'
+                  max='100'
+                  required
+                  value={percentualValor}
+                  onChange={(e) => setPercentualValor(e.target.value)}
+                  className={`${inputCls} pr-8`}
+                />
+                <span className='absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none'>%</span>
+              </div>
             </Field>
-            <div className='grid grid-cols-2 gap-3'>
-              <Field label='Nº Pedido'>
-                <input type='text' value={form.numero_pedido} onChange={(e) => setForm((p) => ({ ...p, numero_pedido: e.target.value }))} className={inputCls} />
-              </Field>
-              <Field label='NF-e'>
-                <input type='text' value={form.numero_nfe} onChange={(e) => setForm((p) => ({ ...p, numero_nfe: e.target.value }))} className={inputCls} />
-              </Field>
-            </div>
-            <div className='grid grid-cols-2 gap-3'>
-              <Field label='Valor do Pedido'>
-                <InputMoney value={form.valor_pedido} onChange={(val) => {
-                  setForm((p) => ({ ...p, valor_pedido: val, valor_comissao: calcVc(val, p.perc_comissao) }));
-                }} />
-              </Field>
-              <Field label='Valor Faturado'>
-                <InputMoney value={form.valor_faturado} onChange={(val) => setForm((p) => ({ ...p, valor_faturado: val }))} />
-              </Field>
-            </div>
-            <div className='grid grid-cols-2 gap-3'>
-              <Field label='% Comissão'>
-                <div className='relative'>
-                  <input type='number' aria-label='Percentual de comissão' step='0.01' min='0' max='100' value={form.perc_comissao}
-                    onChange={(e) => {
-                      const pc = e.target.value;
-                      setForm((p) => ({ ...p, perc_comissao: pc, valor_comissao: calcVc(p.valor_pedido, pc) }));
-                    }} className={`${inputCls} pr-8`} />
-                  <span className='absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none'>%</span>
-                </div>
-              </Field>
-              <Field label='Valor Comissão'>
-                <InputMoney value={form.valor_comissao} onChange={(val) => setForm((p) => ({ ...p, valor_comissao: val }))} required />
-              </Field>
-            </div>
-            <Field label='Status'>
-              <select value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))} className={inputCls}>
-                <option value='pendente'>Pendente</option>
-                <option value='faturado'>Faturado</option>
-                <option value='pago'>Pago</option>
-              </select>
+            <ModalBtns onClose={() => setPercentualAlvo(null)} saving={savingPercentual} />
+          </form>
+        </Modal>
+      )}
+
+      {pagamentoAlvo && (
+        <Modal title={`Registrar pagamento — ${pagamentoAlvo.fornecedor?.razao_social ?? 'comissão'}`} onClose={() => setPagamentoAlvo(null)}>
+          <form onSubmit={handlePagamentoSubmit} className='space-y-4'>
+            <WriteError message={pagamentoError} />
+            <Field label='Data de pagamento'>
+              <input type='date' required value={pagamentoData} onChange={(e) => setPagamentoData(e.target.value)} className={inputCls} />
             </Field>
-            <ModalBtns onClose={() => setShowForm(false)} saving={saving} />
+            <ModalBtns onClose={() => setPagamentoAlvo(null)} saving={savingPagamento} />
           </form>
         </Modal>
       )}
@@ -693,38 +731,43 @@ function Parceiros() {
         <div className='py-10 text-center text-sm text-slate-400'>Nenhum parceiro no período</div>
       ) : (
         Object.values(grupos).map((g) => (
-          <div key={g.nome} className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
-            <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
-              <div>
-                <h3 className='font-semibold text-slate-900'>👤 {g.nome}</h3>
-                {g.empresa && <p className='text-xs text-slate-400'>{g.empresa}</p>}
-              </div>
+          <div key={g.nome} className='space-y-2'>
+            <div className='flex items-center justify-between'>
+              <h3 className='flex items-center gap-2 font-semibold text-slate-900'>
+                <User className='h-4 w-4 text-slate-400' />
+                {g.nome}
+                {g.empresa && <span className='text-xs font-normal text-slate-400'>({g.empresa})</span>}
+              </h3>
               <div className='text-sm font-medium text-teal-700'>Total: {BRL.format(moneyForDisplay(g.total))}</div>
             </div>
-            <table className='w-full text-sm'>
-              <thead>
-                <tr className='text-xs uppercase text-slate-400 bg-slate-50'>
-                  <th className='px-5 py-3 text-left font-medium'>Data</th>
-                  <th className='px-5 py-3 text-left font-medium'>Cliente</th>
-                  <th className='px-5 py-3 text-right font-medium'>Val. Fat.</th>
-                  <th className='px-5 py-3 text-right font-medium'>%</th>
-                  <th className='px-5 py-3 text-right font-medium'>Sua Parte</th>
-                  <th className='px-5 py-3 text-left font-medium'>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.items.map((p) => (
-                  <tr key={p.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
-                    <td className='px-5 py-3 text-slate-500'>{fmtDate(p.data_pedido)}</td>
-                    <td className='px-5 py-3 text-slate-700'>{p.cliente?.razao_social ?? '—'}</td>
-                    <td className='px-5 py-3 text-right text-slate-900'>{BRL.format(moneyForDisplay(p.valor_faturado))}</td>
-                    <td className='px-5 py-3 text-right text-slate-500'>{p.percentual_comissao}%</td>
-                    <td className='px-5 py-3 text-right font-semibold text-teal-700'>{BRL.format(moneyForDisplay(p.valor_comissao))}</td>
-                    <td className='px-5 py-3'><StatusBadge status={p.status} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <DataTable<Parceiro>
+              columns={[
+                { key: 'data', header: 'Data', cell: (p) => <span className='text-slate-500'>{fmtDate(p.data_pedido)}</span> },
+                { key: 'cliente', header: 'Cliente', cell: (p) => <span className='text-slate-700'>{p.cliente?.razao_social ?? '—'}</span> },
+                {
+                  key: 'valor_faturado',
+                  header: 'Val. Fat.',
+                  className: 'text-right',
+                  cell: (p) => <span className='text-slate-900'>{BRL.format(moneyForDisplay(p.valor_faturado))}</span>,
+                },
+                {
+                  key: 'perc',
+                  header: '%',
+                  className: 'text-right',
+                  cell: (p) => <span className='text-slate-500'>{p.percentual_comissao}%</span>,
+                },
+                {
+                  key: 'sua_parte',
+                  header: 'Sua Parte',
+                  className: 'text-right',
+                  cell: (p) => <span className='font-semibold text-teal-700'>{BRL.format(moneyForDisplay(p.valor_comissao))}</span>,
+                },
+                { key: 'status', header: 'Status', cell: (p) => <StatusBadge status={p.status} /> },
+              ]}
+              data={g.items}
+              emptyTitle='Nenhum lançamento'
+              emptyDescription='Este parceiro não tem lançamentos no período selecionado.'
+            />
           </div>
         ))
       )}
@@ -854,32 +897,33 @@ function Custos() {
   const totalFixo = sumMoney(fixos.map((l) => l.valor));
   const totalRotativo = sumMoney(rotativos.map((l) => l.valor));
 
-  function CustoTable({ items }: { items: Lancamento[] }) {
+  function CustoTable({ items, emptyDescription }: { items: Lancamento[]; emptyDescription: string }) {
     return (
-      <table className='w-full text-sm'>
-        <thead>
-          <tr className='text-xs uppercase text-slate-400 bg-slate-50'>
-            <th className='px-5 py-3 text-left font-medium'>Descrição</th>
-            <th className='px-5 py-3 text-left font-medium'>Data</th>
-            <th className='px-5 py-3 text-right font-medium'>Valor</th>
-            <th className='px-5 py-3 w-10' />
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((l) => (
-            <tr key={l.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
-              <td className='px-5 py-3 text-slate-700'>{l.descricao ?? '—'}</td>
-              <td className='px-5 py-3 text-slate-500'>{fmtDate(l.data)}</td>
-              <td className='px-5 py-3 text-right font-semibold text-slate-900'>{BRL.format(moneyForDisplay(l.valor))}</td>
-              <td className='px-5 py-3 text-right'>
-                <button aria-label={`Remover custo ${l.descricao ?? ''}`} onClick={() => handleDelete(l.uuid, l.version)} className='inline-flex h-11 w-11 items-center justify-center rounded text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'>
-                  <Trash2 className='h-4 w-4' />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <DataTable<Lancamento>
+        columns={[
+          { key: 'descricao', header: 'Descrição', cell: (l) => <span className='text-slate-700'>{l.descricao ?? '—'}</span> },
+          { key: 'data', header: 'Data', cell: (l) => <span className='text-slate-500'>{fmtDate(l.data)}</span> },
+          {
+            key: 'valor',
+            header: 'Valor',
+            className: 'text-right',
+            cell: (l) => <span className='font-semibold text-slate-900'>{BRL.format(moneyForDisplay(l.valor))}</span>,
+          },
+          {
+            key: 'acoes',
+            header: '',
+            className: 'w-10 text-right',
+            cell: (l) => (
+              <button aria-label={`Remover custo ${l.descricao ?? ''}`} onClick={() => handleDelete(l.uuid, l.version)} className='inline-flex h-11 w-11 items-center justify-center rounded text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'>
+                <Trash2 className='h-4 w-4' />
+              </button>
+            ),
+          },
+        ]}
+        data={items}
+        emptyTitle='Nenhum custo cadastrado'
+        emptyDescription={emptyDescription}
+      />
     );
   }
 
@@ -896,24 +940,26 @@ function Custos() {
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
       ) : (
         <>
-          <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
-            <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
-              <h3 className='font-semibold text-slate-900'>📌 Custo Fixo</h3>
+          <div className='space-y-2'>
+            <div className='flex items-center justify-between'>
+              <h3 className='flex items-center gap-2 font-semibold text-slate-900'>
+                <Pin className='h-4 w-4 text-slate-400' />
+                Custo Fixo
+              </h3>
               <span className='text-sm font-medium text-red-600'>Total: {BRL.format(moneyForDisplay(totalFixo))}</span>
             </div>
-            {fixos.length === 0
-              ? <div className='py-6 text-center text-sm text-slate-400'>Nenhum custo fixo cadastrado</div>
-              : <CustoTable items={fixos} />}
+            <CustoTable items={fixos} emptyDescription='Nenhum custo fixo cadastrado.' />
           </div>
 
-          <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
-            <div className='px-5 py-4 border-b border-slate-100 flex items-center justify-between'>
-              <h3 className='font-semibold text-slate-900'>🔄 Custo Rotativo</h3>
+          <div className='space-y-2'>
+            <div className='flex items-center justify-between'>
+              <h3 className='flex items-center gap-2 font-semibold text-slate-900'>
+                <RefreshCw className='h-4 w-4 text-slate-400' />
+                Custo Rotativo
+              </h3>
               <span className='text-sm font-medium text-orange-600'>Total: {BRL.format(moneyForDisplay(totalRotativo))}</span>
             </div>
-            {rotativos.length === 0
-              ? <div className='py-6 text-center text-sm text-slate-400'>Nenhum custo rotativo no mês</div>
-              : <CustoTable items={rotativos} />}
+            <CustoTable items={rotativos} emptyDescription='Nenhum custo rotativo no mês.' />
           </div>
 
           <div className='rounded-xl bg-slate-50 border border-slate-200 px-5 py-3 text-sm font-medium text-slate-700'>
@@ -1024,38 +1070,39 @@ function InadimplenciaTab() {
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
       ) : items.length === 0 ? (
         <div className='rounded-xl bg-white border border-slate-100 shadow-sm py-14 text-center'>
-          <p className='text-3xl mb-3'>✅</p>
+          <CheckCircle2 className='mx-auto mb-3 h-8 w-8 text-teal-500' />
           <p className='text-slate-600 font-medium'>Nenhum registro de inadimplência. Parabéns!</p>
         </div>
       ) : (
-        <div className='overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm'>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='text-xs uppercase text-slate-400 bg-slate-50'>
-                <th className='px-5 py-3 text-left font-medium'>Cliente</th>
-                <th className='px-5 py-3 text-left font-medium'>Empresa Devedora</th>
-                <th className='px-5 py-3 text-right font-medium'>Valor Aberto</th>
-                <th className='px-5 py-3 text-left font-medium'>Observação</th>
-                <th className='px-5 py-3 w-10' />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((i) => (
-                <tr key={i.uuid} className='border-t border-slate-50 hover:bg-slate-50/50'>
-                  <td className='px-5 py-3 text-slate-700'>{i.cliente?.razao_social ?? '—'}</td>
-                  <td className='px-5 py-3 text-slate-700'>{i.empresa_devedora ?? '—'}</td>
-                  <td className='px-5 py-3 text-right font-semibold text-red-600'>{BRL.format(moneyForDisplay(i.valor_aberto))}</td>
-                  <td className='px-5 py-3 text-slate-500 max-w-xs truncate'>{i.observacao ?? '—'}</td>
-                  <td className='px-5 py-3 text-right'>
-                    <button aria-label={`Remover inadimplência de ${i.empresa_devedora ?? 'cliente'}`} onClick={() => handleDelete(i.uuid, i.version)} className='inline-flex h-11 w-11 items-center justify-center rounded text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'>
-                      <Trash2 className='h-4 w-4' />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<Inadimplencia>
+          columns={[
+            { key: 'cliente', header: 'Cliente', cell: (i) => <span className='text-slate-700'>{i.cliente?.razao_social ?? '—'}</span> },
+            { key: 'empresa', header: 'Empresa Devedora', cell: (i) => <span className='text-slate-700'>{i.empresa_devedora ?? '—'}</span> },
+            {
+              key: 'valor',
+              header: 'Valor Aberto',
+              className: 'text-right',
+              cell: (i) => <span className='font-semibold text-red-600'>{BRL.format(moneyForDisplay(i.valor_aberto))}</span>,
+            },
+            {
+              key: 'observacao',
+              header: 'Observação',
+              className: 'max-w-xs truncate',
+              cell: (i) => <span className='text-slate-500'>{i.observacao ?? '—'}</span>,
+            },
+            {
+              key: 'acoes',
+              header: '',
+              className: 'w-10 text-right',
+              cell: (i) => (
+                <button aria-label={`Remover inadimplência de ${i.empresa_devedora ?? 'cliente'}`} onClick={() => handleDelete(i.uuid, i.version)} className='inline-flex h-11 w-11 items-center justify-center rounded text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'>
+                  <Trash2 className='h-4 w-4' />
+                </button>
+              ),
+            },
+          ]}
+          data={items}
+        />
       )}
 
       {showForm && (
@@ -1104,7 +1151,7 @@ export default function Financeiro() {
             onClick={() => setTab(t.id)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               tab === t.id
-                ? 'border-[#2A9D8F] text-[#2A9D8F]'
+                ? 'border-primary text-primary'
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
             }`}
           >

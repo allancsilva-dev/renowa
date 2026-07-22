@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import type { ApiResponse, Client, Transport } from '@/types';
 import { withGeneratedUuid } from '@/lib/entityPayload';
 import { maskCnpj } from '@/lib/format';
+import { lookupCnpj } from '@/services/clients.service';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -23,6 +24,8 @@ type FormFields = {
   transportadora_uuid: string;
   cep: string;
   endereco: string;
+  numero: string;
+  complemento: string;
   bairro: string;
   cidade: string;
   uf: string;
@@ -43,6 +46,8 @@ const empty: FormFields = {
   transportadora_uuid: '',
   cep: '',
   endereco: '',
+  numero: '',
+  complemento: '',
   bairro: '',
   cidade: '',
   uf: '',
@@ -64,6 +69,8 @@ function toFields(c: Client): FormFields {
     transportadora_uuid: c.transportadora?.uuid ?? '',
     cep: c.cep ?? '',
     endereco: c.endereco ?? '',
+    numero: c.numero ?? '',
+    complemento: c.complemento ?? '',
     bairro: c.bairro ?? '',
     cidade: c.cidade ?? '',
     uf: c.uf ?? '',
@@ -100,13 +107,18 @@ export default function ClienteForm() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
   const [cepLoading, setCepLoading] = useState(false);
+  const [cnpjLoading, setCnpjLoading] = useState(false);
+  const [cnpjMessage, setCnpjMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transports, setTransports] = useState<Transport[]>([]);
+  const cnpjAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     fetchAllPages<Transport>('/transportadoras').then(setTransports)
       .catch(() => setError('Não foi possível carregar as transportadoras.'));
   }, []);
+
+  useEffect(() => () => cnpjAbortRef.current?.abort(), []);
 
   useEffect(() => {
     if (!uuid) return;
@@ -159,6 +171,43 @@ export default function ClienteForm() {
     } finally {
       window.clearTimeout(timeout);
       setCepLoading(false);
+    }
+  }
+
+  async function handleConsultarCnpj() {
+    const cnpjLimpo = form.cnpj.replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) {
+      setCnpjMessage('Informe um CNPJ completo (14 dígitos) para consultar.');
+      return;
+    }
+
+    cnpjAbortRef.current?.abort();
+    const controller = new AbortController();
+    cnpjAbortRef.current = controller;
+
+    setCnpjLoading(true);
+    setCnpjMessage(null);
+    try {
+      const data = await lookupCnpj(cnpjLimpo, { signal: controller.signal });
+      setForm((prev) => ({
+        ...prev,
+        razao_social: data.razao_social ?? prev.razao_social,
+        endereco: data.endereco ?? prev.endereco,
+        numero: data.numero ?? prev.numero,
+        complemento: data.complemento ?? prev.complemento,
+        bairro: data.bairro ?? prev.bairro,
+        cidade: data.cidade ?? prev.cidade,
+        uf: data.uf ?? prev.uf,
+        cep: data.cep ? maskCep(data.cep) : prev.cep,
+        tel: data.telefone ? maskTel(data.telefone) : prev.tel,
+      }));
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404) setCnpjMessage('CNPJ não encontrado. Preencha os dados manualmente.');
+      else if (status === 503) setCnpjMessage('Serviço de consulta de CNPJ indisponível no momento. Preencha os dados manualmente.');
+      else if ((err as { name?: string })?.name !== 'AbortError') setCnpjMessage('Não foi possível consultar o CNPJ. Preencha os dados manualmente.');
+    } finally {
+      setCnpjLoading(false);
     }
   }
 
@@ -252,16 +301,29 @@ export default function ClienteForm() {
               {/* CNPJ */}
               <div className='flex flex-col gap-1'>
                 <label htmlFor='cnpj' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>CNPJ</label>
-                <input
-                  type='text'
-                  id='cnpj'
-                  name='cnpj'
-                  value={form.cnpj}
-                  onChange={handleCnpj}
-                  placeholder='00.000.000/0001-00'
-                  inputMode='numeric'
-                  className={inputClass}
-                />
+                <div className='flex gap-2'>
+                  <input
+                    type='text'
+                    id='cnpj'
+                    name='cnpj'
+                    value={form.cnpj}
+                    onChange={handleCnpj}
+                    placeholder='00.000.000/0001-00'
+                    inputMode='numeric'
+                    className={`${inputClass} flex-1`}
+                  />
+                  <button
+                    type='button'
+                    onClick={handleConsultarCnpj}
+                    disabled={cnpjLoading}
+                    className='min-h-11 shrink-0 rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60'
+                  >
+                    {cnpjLoading ? 'Consultando...' : 'Consultar CNPJ'}
+                  </button>
+                </div>
+                {cnpjMessage && (
+                  <p role='status' className='mt-1 text-xs text-amber-700'>{cnpjMessage}</p>
+                )}
               </div>
 
               {/* E-mail */}
@@ -347,6 +409,32 @@ export default function ClienteForm() {
                   id='endereco'
                   name='endereco'
                   value={form.endereco}
+                  onChange={handleChange}
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Número */}
+              <div className='flex flex-col gap-1'>
+                <label htmlFor='numero' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Número</label>
+                <input
+                  type='text'
+                  id='numero'
+                  name='numero'
+                  value={form.numero}
+                  onChange={handleChange}
+                  className={inputClass}
+                />
+              </div>
+
+              {/* Complemento */}
+              <div className='flex flex-col gap-1'>
+                <label htmlFor='complemento' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Complemento</label>
+                <input
+                  type='text'
+                  id='complemento'
+                  name='complemento'
+                  value={form.complemento}
                   onChange={handleChange}
                   className={inputClass}
                 />

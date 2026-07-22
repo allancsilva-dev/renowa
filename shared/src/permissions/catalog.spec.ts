@@ -7,10 +7,10 @@ import {
 } from './catalog';
 
 describe('PERMISSION_CATALOG', () => {
-  it('has exactly 25 entries, one per PermissionSlug value', () => {
+  it('has exactly 28 entries, one per PermissionSlug value', () => {
     const enumSlugs = Object.values(PermissionSlug);
-    expect(enumSlugs).toHaveLength(25);
-    expect(PERMISSION_CATALOG).toHaveLength(25);
+    expect(enumSlugs).toHaveLength(28);
+    expect(PERMISSION_CATALOG).toHaveLength(28);
     expect(new Set(PERMISSION_SLUGS)).toEqual(new Set(enumSlugs));
   });
 
@@ -40,6 +40,23 @@ describe('DEFAULT_ROLE_PERMISSIONS', () => {
   it('grants admin and gestao every permission in the catalog', () => {
     expect(new Set(DEFAULT_ROLE_PERMISSIONS.admin)).toEqual(new Set(PERMISSION_SLUGS));
     expect(new Set(DEFAULT_ROLE_PERMISSIONS.gestao)).toEqual(new Set(PERMISSION_SLUGS));
+  });
+
+  it('grants financeiro visibility/liberation of pedidos plus faturamento', () => {
+    expect(new Set(DEFAULT_ROLE_PERMISSIONS.financeiro)).toEqual(new Set([
+      PermissionSlug.FinanceiroVer,
+      PermissionSlug.FinanceiroEditar,
+      PermissionSlug.PedidosVer,
+      PermissionSlug.PedidosLiberar,
+      PermissionSlug.FaturamentoVer,
+      PermissionSlug.FaturamentoEditar,
+    ]));
+  });
+
+  it('does not grant vendedor any pedidos.liberar or faturamento permission', () => {
+    expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(PermissionSlug.PedidosLiberar);
+    expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(PermissionSlug.FaturamentoVer);
+    expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(PermissionSlug.FaturamentoEditar);
   });
 });
 

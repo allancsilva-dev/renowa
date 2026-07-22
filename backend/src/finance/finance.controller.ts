@@ -6,6 +6,7 @@ import { FinanceService } from './finance.service';
 import { CreateMovementDto } from './dto/create-movement.dto';
 import { UpdateMovementDto } from './dto/update-movement.dto';
 import { CreateComissaoDto, UpdateComissaoDto } from './dto/create-comissao.dto';
+import { InformarPercentualDto, RegistrarPagamentoDto } from './dto/commission-action.dto';
 import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -171,6 +172,28 @@ export class FinanceController {
       ano: query.ano ? Number(query.ano) : undefined,
       status: query.status || undefined,
     });
+  }
+
+  // Ações dedicadas de comissão-por-nota. Registradas ANTES do PATCH genérico
+  // ':uuid' — mantém o endpoint legado intocado para compatibilidade.
+  @Patch('comissoes/:uuid/percentual')
+  @RequirePermission('financeiro.editar')
+  async informarPercentual(
+    @Param('uuid') uuid: string,
+    @Body() dto: InformarPercentualDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.informarPercentual(uuid, dto.perc_comissao, dto.version, user.tenantId);
+  }
+
+  @Patch('comissoes/:uuid/pagamento')
+  @RequirePermission('financeiro.editar')
+  async registrarPagamento(
+    @Param('uuid') uuid: string,
+    @Body() dto: RegistrarPagamentoDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.registrarPagamento(uuid, dto.data_pagamento, dto.version, user.tenantId);
   }
 
   @Patch('comissoes/:uuid')

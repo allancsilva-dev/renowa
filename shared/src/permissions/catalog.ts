@@ -5,6 +5,7 @@ export enum PermissionModule {
   FORNECEDORES = 'fornecedores',
   TRANSPORTADORAS = 'transportadoras',
   FINANCEIRO = 'financeiro',
+  FATURAMENTO = 'faturamento',
   USUARIOS = 'usuarios',
   AUDITORIA = 'auditoria',
   PRIVACIDADE = 'privacidade',
@@ -20,6 +21,7 @@ export enum PermissionSlug {
   PedidosCriar = 'pedidos.criar',
   PedidosEditar = 'pedidos.editar',
   PedidosDeletar = 'pedidos.deletar',
+  PedidosLiberar = 'pedidos.liberar',
 
   ProdutosVer = 'produtos.ver',
   ProdutosCriar = 'produtos.criar',
@@ -38,6 +40,9 @@ export enum PermissionSlug {
 
   FinanceiroVer = 'financeiro.ver',
   FinanceiroEditar = 'financeiro.editar',
+
+  FaturamentoVer = 'faturamento.ver',
+  FaturamentoEditar = 'faturamento.editar',
 
   UsuariosGerenciar = 'usuarios.gerenciar',
 
@@ -62,6 +67,7 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { slug: PermissionSlug.PedidosCriar, module: PermissionModule.PEDIDOS, description: 'Criar pedidos' },
   { slug: PermissionSlug.PedidosEditar, module: PermissionModule.PEDIDOS, description: 'Editar pedidos' },
   { slug: PermissionSlug.PedidosDeletar, module: PermissionModule.PEDIDOS, description: 'Remover pedidos' },
+  { slug: PermissionSlug.PedidosLiberar, module: PermissionModule.PEDIDOS, description: 'Liberar pedidos para faturamento' },
 
   { slug: PermissionSlug.ProdutosVer, module: PermissionModule.PRODUTOS, description: 'Visualizar produtos' },
   { slug: PermissionSlug.ProdutosCriar, module: PermissionModule.PRODUTOS, description: 'Criar produtos' },
@@ -80,6 +86,9 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
 
   { slug: PermissionSlug.FinanceiroVer, module: PermissionModule.FINANCEIRO, description: 'Visualizar dados financeiros' },
   { slug: PermissionSlug.FinanceiroEditar, module: PermissionModule.FINANCEIRO, description: 'Alterar dados financeiros' },
+
+  { slug: PermissionSlug.FaturamentoVer, module: PermissionModule.FATURAMENTO, description: 'Visualizar faturamento' },
+  { slug: PermissionSlug.FaturamentoEditar, module: PermissionModule.FATURAMENTO, description: 'Registrar e editar notas fiscais de faturamento' },
 
   { slug: PermissionSlug.UsuariosGerenciar, module: PermissionModule.USUARIOS, description: 'Gerenciar usuários e perfis do tenant' },
 
@@ -108,7 +117,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly Permissi
     PermissionSlug.FornecedoresVer, PermissionSlug.FornecedoresCriar, PermissionSlug.FornecedoresEditar,
     PermissionSlug.TransportadorasVer, PermissionSlug.TransportadorasCriar, PermissionSlug.TransportadorasEditar,
   ],
-  financeiro: [PermissionSlug.FinanceiroVer, PermissionSlug.FinanceiroEditar],
+  financeiro: [
+    PermissionSlug.FinanceiroVer, PermissionSlug.FinanceiroEditar,
+    PermissionSlug.PedidosVer, PermissionSlug.PedidosLiberar,
+    PermissionSlug.FaturamentoVer, PermissionSlug.FaturamentoEditar,
+  ],
 };
 
 /**

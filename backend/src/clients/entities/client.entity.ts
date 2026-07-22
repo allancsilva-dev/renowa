@@ -23,6 +23,12 @@ export class Client extends VersionedBaseEntity {
   @Column({ name: 'endereco', type: 'varchar', nullable: true })
   endereco: string | null;
 
+  @Column({ name: 'numero', type: 'varchar', nullable: true })
+  numero: string | null;
+
+  @Column({ name: 'complemento', type: 'varchar', nullable: true })
+  complemento: string | null;
+
   @Column({ name: 'bairro', type: 'varchar', nullable: true })
   bairro: string | null;
 
