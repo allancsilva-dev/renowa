@@ -114,6 +114,9 @@ export default function PedidoForm() {
   }, [clientSearch, clients]);
   const calculationItems = items.map((item) => ({ ...item, ipi_perc: item.aplicar_ipi ? item.ipi_perc : '0' }));
   const totals = previewOrder(calculationItems);
+  // Transportadora vinculada — tel/end exibidos automaticamente (§3.2), read-only
+  const selectedTransport = transports.find((t) => t.uuid === header.transportadora_uuid);
+  const readonlyClass = 'min-h-11 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500 outline-none';
 
   function chooseClient(client: Client) {
     setHeader((current) => ({ ...current, cliente_uuid: client.uuid, pgt: client.pgt_padrao ?? '', prazo: client.prazo ?? '',
@@ -196,6 +199,10 @@ export default function PedidoForm() {
             <select value={header.transportadora_uuid} onChange={(e) => setHeader((h) => ({ ...h, transportadora_uuid: e.target.value }))} className={inputClass}>
               <option value=''>Sem transportadora</option>{transports.map((entry) => <option key={entry.uuid} value={entry.uuid}>{entry.razao_social}</option>)}
             </select></label>
+          <label className='flex flex-col gap-1'><span className={labelClass}>Tel. Transporte</span>
+            <input value={selectedTransport?.telefone ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} /></label>
+          <label className='flex flex-col gap-1'><span className={labelClass}>End. Transporte</span>
+            <input value={selectedTransport?.endereco_completo ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Status</span>
             <select value={header.status} onChange={(e) => setHeader((h) => ({ ...h, status: e.target.value as OrderStatus }))} className={inputClass}>
               <option value='em_aberto'>Em aberto</option><option value='concluido'>Concluído</option><option value='cancelado'>Cancelado</option>

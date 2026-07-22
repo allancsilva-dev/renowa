@@ -203,6 +203,10 @@ export default function ClienteForm() {
   }
 
   const inputClass = 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40';
+  const readonlyClass = 'rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 outline-none';
+
+  // Transportadora vinculada — tel/end são exibidos automaticamente (§2.1), read-only
+  const selectedTransport = transports.find((t) => t.uuid === form.transportadora_uuid);
 
   return (
     <div className='max-w-4xl mx-auto'>
@@ -417,6 +421,16 @@ export default function ClienteForm() {
                   <option value=''>Sem transportadora</option>
                   {transports.map((transport) => <option key={transport.uuid} value={transport.uuid}>{transport.razao_social}</option>)}
                 </select>
+              </div>
+              {/* Tel. Transporte — preenchido automaticamente ao vincular transportadora */}
+              <div className='flex flex-col gap-1'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Tel. Transporte</label>
+                <input type='text' value={selectedTransport?.telefone ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} />
+              </div>
+              {/* End. Transporte — preenchido automaticamente ao vincular transportadora */}
+              <div className='flex flex-col gap-1 sm:col-span-2'>
+                <label className='text-xs font-semibold uppercase tracking-wide text-slate-500'>End. Transporte</label>
+                <input type='text' value={selectedTransport?.endereco_completo ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} />
               </div>
             </div>
           </div>
