@@ -39,11 +39,15 @@ import { RedisThrottlerStorage } from './common/throttling/redis-throttler.stora
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
         autoLoadEntities: true,
-        // Prod usa synchronize:false. DB_SYNC=true liga só no 1º boot (DB vazio)
-        // para criar o schema; remova a var após as tabelas existirem.
-        synchronize:
-          config.get<string>('DB_SYNC') === 'true' ||
-          config.get<string>('NODE_ENV') !== 'production',
+        // Migrations SQL são a fonte de verdade do schema em TODO ambiente,
+        // inclusive dev. `synchronize` só liga com DB_SYNC=true explícito, para
+        // o 1º boot de um DB vazio; remova a var após as tabelas existirem.
+        //
+        // Nunca reative por NODE_ENV: `synchronize` derruba silenciosamente
+        // qualquer objeto sem equivalente em decorator TypeORM (CHECK
+        // constraints, índices parciais `WHERE ...`, triggers). Já apagou os
+        // 20 CHECKs do schema de dev duas vezes — ver PROB-0059.
+        synchronize: config.get<string>('DB_SYNC') === 'true',
         logging: config.get<string>('NODE_ENV') === 'development',
         // PostgreSQL: define timezone da sessão; `timezone` do TypeORM é opção MySQL-only.
         extra: {

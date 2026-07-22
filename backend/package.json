@@ -8,7 +8,9 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
-    "test": "jest"
+    "test": "jest",
+    "db:migrate": "node -e \"require('./dist/database/migrate').runMigrations().then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); })\"",
+    "db:verify": "node dist/database/verify-schema.js"
   },
   "dependencies": {
     "@renowa/shared": "*",
@@ -28,11 +30,11 @@
     "ioredis": "^5.11.1",
     "jose": "^5.9.6",
     "jsonwebtoken": "^9.0.2",
+    "papaparse": "^5.5.4",
     "pg": "^8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "typeorm": "^0.3.20",
-    "xlsx": "^0.18.5"
+    "typeorm": "^0.3.31"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
@@ -45,6 +47,7 @@
     "@types/jsonwebtoken": "^9.0.7",
     "@types/multer": "^2.0.0",
     "@types/node": "^22.10.0",
+    "@types/papaparse": "^5.5.2",
     "@types/supertest": "^7.2.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",

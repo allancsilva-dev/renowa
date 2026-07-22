@@ -40,7 +40,7 @@ describe('importProducts', () => {
     };
     vi.mocked(apiClient.post).mockResolvedValue({ data: { data: result } });
 
-    const file = new File(['x'], 'produtos.xlsx');
+    const file = new File(['x'], 'produtos.csv');
     await expect(importProducts(file, 'fornecedor-uuid-2')).resolves.toEqual(result);
   });
 });

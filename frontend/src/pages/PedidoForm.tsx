@@ -179,8 +179,13 @@ export default function PedidoForm() {
       setError('Cada item precisa de um produto ou de código/descrição manual.'); return;
     }
     setLoading(true);
+    // `status` fica fora do payload: o backend não aceita mais status no corpo
+    // de create/update (é derivado — liberação/cancelamento/faturamento têm
+    // endpoints próprios), e o ValidationPipe roda com forbidNonWhitelisted,
+    // então mandá-lo devolveria 400 em todo save.
+    const { status: _status, ...headerFields } = header;
     const payload: Record<string, unknown> = {
-      uuid: uuid ?? crypto.randomUUID(), ...header,
+      uuid: uuid ?? crypto.randomUUID(), ...headerFields,
       vendedor_uuid: canChooseVendor && header.vendedor_uuid ? header.vendedor_uuid : undefined,
       transportadora_uuid: header.transportadora_uuid || null,
       data: header.data || null, pgt: header.pgt || null, prazo: header.prazo || null,

@@ -1,5 +1,11 @@
+// Necessário antes dos DTOs: sem isto os decorators de class-validator/
+// class-transformer não registram metadata e a validação vira ruído.
+import 'reflect-metadata';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { OrdersService } from './orders.service';
+import { CreateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 
 function queryBuilder(overrides: Record<string, jest.Mock> = {}) {
@@ -173,11 +179,24 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
   });
 
   describe('remove', () => {
+    /** `remove` passou a checar notas fiscais antes de apagar — precisa de dataSource. */
+    function dataSourceWithNotas(total: number) {
+      return { query: jest.fn().mockResolvedValue([{ total }]) } as any;
+    }
+
     it('retorna 404 ao tentar apagar pedido de outro vendedor', async () => {
+      const service = new OrdersService({} as any, {} as any, dataSourceWithNotas(0));
+      jest.spyOn(service, 'findOne').mockRejectedValue(new NotFoundException());
+
+      await expect(service.remove(orderUuid, 1, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('mantém o escopo do vendedor no próprio soft delete', async () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 0 }) });
       const lookupBuilder = queryBuilder({ getRawOne: jest.fn().mockResolvedValue(undefined) });
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, dataSourceWithNotas(0));
+      jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
 
@@ -191,9 +210,59 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1 }) });
       const lookupBuilder = queryBuilder();
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, dataSourceWithNotas(0));
+      jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, vendedorA)).resolves.toBeUndefined();
+    });
+
+    it('bloqueia exclusão de pedido com nota fiscal ativa (nota/comissão órfã no caixa)', async () => {
+      const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1 }) });
+      const orderRepo = repoForWrite(updateBuilder, queryBuilder());
+      const service = new OrdersService(orderRepo, {} as any, dataSourceWithNotas(1));
+      jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
+
+      await expect(service.remove(orderUuid, 1, admin)).rejects.toBeInstanceOf(ConflictException);
+      expect(updateBuilder.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('status não é aceito no corpo de create/update', () => {
+    // Guarda de regressão: enquanto `status` era @IsOptional() @IsString() no
+    // DTO, um vendedor sem `pedidos.liberar` mandava {"status":"liberado"} no
+    // POST/PUT e contornava o endpoint dedicado — e podia ir direto a
+    // 'faturado' sem nenhuma nota fiscal. Valida contra o mesmo par de opções
+    // do ValidationPipe global (`main.ts`).
+    const pipeOptions = { whitelist: true, forbidNonWhitelisted: true };
+
+    const validBody = {
+      // v4 de verdade: `orderUuid` do resto do spec não passa em @IsUUID('4').
+      uuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      cliente_uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      fornecedor_uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      itens: [{
+        uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        qtd_caixas: 1, qtd_unitaria: 1, preco_unitario: 10,
+      }],
+    };
+
+    it('aceita o corpo válido sem `status`', async () => {
+      const errors = await validate(plainToInstance(CreateOrderDto, validBody), pipeOptions);
+      expect(errors).toEqual([]);
+    });
+
+    it('rejeita `status` no corpo do create', async () => {
+      const dto = plainToInstance(CreateOrderDto, { ...validBody, status: 'liberado' });
+      const errors = await validate(dto, pipeOptions);
+
+      expect(errors.map((error) => error.property)).toContain('status');
+    });
+
+    it('rejeita `status` no corpo do update', async () => {
+      const dto = plainToInstance(UpdateOrderDto, { ...validBody, version: 1, status: 'faturado' });
+      const errors = await validate(dto, pipeOptions);
+
+      expect(errors.map((error) => error.property)).toContain('status');
     });
   });
 });

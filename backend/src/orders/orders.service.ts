@@ -128,7 +128,8 @@ export class OrdersService {
         numero_pedido: sequence[0].numero,
         ...refs,
         data: dto.data ?? null,
-        status: dto.status ?? 'em_aberto',
+        // Todo pedido nasce 'em_aberto'. Liberação é endpoint dedicado.
+        status: 'em_aberto',
         pgt: dto.pgt ?? null,
         prazo: dto.prazo ?? null,
         local_entrega: dto.local_entrega ?? null,
@@ -198,9 +199,10 @@ export class OrdersService {
       if (omitted.length) await itemRepo.softRemove(omitted);
 
       const totals = this.totalsFromItems(calculatedItems);
+      // `status` não é tocado no update: a guarda acima só deixa editar pedido
+      // 'em_aberto', e transição de status tem endpoint próprio.
       Object.assign(order, refs, {
         data: dto.data ?? null,
-        status: dto.status ?? 'em_aberto',
         pgt: dto.pgt ?? null,
         prazo: dto.prazo ?? null,
         local_entrega: dto.local_entrega ?? null,
@@ -274,11 +276,7 @@ export class OrdersService {
 
     const order = await this.findOne(uuid, user);
 
-    const notaCountRows = await this.dataSource.query(
-      `SELECT COUNT(*)::int AS total FROM notas_fiscais WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`,
-      [user.tenantId, order.id],
-    ) as Array<{ total: number }>;
-    if (Number(notaCountRows[0]?.total ?? 0) > 0) {
+    if (await this.countNotasAtivas(user.tenantId, order.id) > 0) {
       throw new ConflictException('Pedido possui notas fiscais ativas e não pode ser cancelado.');
     }
 
@@ -301,7 +299,28 @@ export class OrdersService {
     return this.findOne(uuid, user);
   }
 
+  /**
+   * Notas fiscais ativas travam tanto cancelamento quanto exclusão: sem essa
+   * guarda, o soft delete do pedido deixa nota e comissão vivas (`deleted_at
+   * IS NULL`) somando no caixa, e ainda torna a nota impossível de corrigir —
+   * `FaturamentoService` não acha mais o pedido dono dela.
+   */
+  private async countNotasAtivas(tenantId: string, orderId: number): Promise<number> {
+    const rows = await this.dataSource.query(
+      `SELECT COUNT(*)::int AS total FROM notas_fiscais WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`,
+      [tenantId, orderId],
+    ) as Array<{ total: number }>;
+    return Number(rows[0]?.total ?? 0);
+  }
+
   async remove(uuid: string, version: number, user: RequestUser): Promise<void> {
+    const order = await this.findOne(uuid, user);
+    if (await this.countNotasAtivas(user.tenantId, order.id) > 0) {
+      throw new ConflictException(
+        'Pedido possui notas fiscais ativas e não pode ser excluído. Exclua as notas fiscais primeiro.',
+      );
+    }
+
     await optimisticSoftDelete({ repository: this.orderRepo, uuid, tenantId: user.tenantId,
       expectedVersion: version, resource: 'order', notFoundMessage: `Pedido ${uuid} não encontrado.`,
       extraWhere: this.isVendorOnly(user) ? this.vendorOwnershipWhere(user) : undefined });

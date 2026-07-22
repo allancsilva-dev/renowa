@@ -3,6 +3,7 @@ import {
   UseInterceptors, UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -23,8 +24,10 @@ export class ProductsController {
     return this.productsService.create(dto, user.tenantId);
   }
 
+  /** Upload + parse são caros: limite agressivo para conter abuso/DoS. */
   @Post('importacao')
   @RequirePermission('produtos.criar')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @UseInterceptors(FileInterceptor('arquivo', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
   async importar(
     @UploadedFile() file: Express.Multer.File,

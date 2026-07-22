@@ -4,6 +4,8 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 
 **Estado atual (2026-07-22, após overhaul de RBAC — ver PROBLEM_LEDGER.md#PROB-0058): 16 itens não fechados (14 ABERTO, 1 PARCIALMENTE_RESOLVIDO — BACKLOG-0009, 1 FECHADO_COM_RESSALVA — BACKLOG-0011; contagem exata por status, corrigindo texto anterior que citava 13).** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
 
+**Atualização 2026-07-22 (parte 3 — revisão independente + testes + Wave 0/Wave 1 do commit `d91b9b3`):** contagem revisada — **34 itens não fechados** (os 16 anteriores, cuja contagem por status **não foi rechecada nesta rodada**, mais os 18 novos abaixo, todos ABERTO). 18 itens novos (BACKLOG-0024 a BACKLOG-0041), originados da sessão registrada em [REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md](REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md). **Enquadramento: o produto vai para produção depois desta rodada** — BACKLOG-0041 (rodar `db:verify` contra produção) e BACKLOG-0040 (migração NestJS 10 → 11) são gates de deploy, não itens de fila normal. **Nada desta sessão foi commitado.**
+
 **Atualização 2026-07-22 (pós "Fluxo Comercial Completo"):** 3 itens novos adicionados (BACKLOG-0021 a BACKLOG-0023), todos originados da crítica de design pós-implementação (`.impeccable/critique/2026-07-22T17-30-23Z__edidodetalhe-financeiro-fornecedores-asynccombobox.md`, score 23/40) e adiados por decisão explícita do usuário para uma rodada futura — ver [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) seção "Implementação Fluxo Comercial Completo" para o contexto completo da entrega.
 
 ## Formato de entrada
@@ -278,6 +280,179 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Risco se ficar pendente:** inconsistência visual entre módulos do app e pior suporte a acessibilidade (leitor de tela) nas 7 ações destrutivas listadas; nenhum risco de integridade de dado (a confirmação em si já existe, só o componente usado para ela é inconsistente).
 - **Status:** ABERTO
 - **Relacionado:** BACKLOG-0022
+
+### BACKLOG-0024 — `GET /consultas/cnpj/:cnpj` sem throttle próprio nem cache: consome a cota de IP da aplicação contra a BrasilAPI
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** o endpoint é um proxy autenticado para a BrasilAPI e não tem `@Throttle` próprio nem cache. Todo tenant compartilha o mesmo IP de saída da aplicação: um único usuário em loop gasta a cota e um bloqueio do IP **derruba a função de consulta de CNPJ para todos os tenants**. **Veredito registrado do `security-auditor`, para não ser reauditado a cada rodada: a ausência de `@RequirePermission` neste endpoint é aceitável** — ele exige autenticação, não toca dado de tenant, o CNPJ é normalizado e validado por dígito verificador antes de compor a URL (portanto **sem SSRF**), tem timeout de 5s, o erro da API externa não vaza para o cliente e a resposta passa por allowlist de 9 campos.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** rota com `@Throttle` dedicado (limite por usuário/tenant, não só global) e cache de resposta por CNPJ com TTL definido; teste cobrindo que a segunda consulta ao mesmo CNPJ dentro do TTL não chama a API externa.
+- **Risco se ficar pendente:** indisponibilidade da consulta de CNPJ para todos os tenants por bloqueio de IP causado por um único usuário.
+- **Status:** ABERTO
+
+### BACKLOG-0025 — Comissão gerada pelo faturamento nasce sem `numero_nfe`/`data_faturamento` e some da tela por filtro de data errado
+- **Prioridade:** P1
+- **Área:** backend / frontend
+- **Motivo:** dois defeitos que se somam. (1) `faturamento.service.ts:182-196` cria a comissão sem `numero_nfe` e sem `data_faturamento` — a coluna "NF-e" da tela de Financeiro mostra sempre "—". (2) `findAllComissoes` e `getResumoComissoes` filtram por `data_pedido` (`finance.service.ts:304-309`, `:336-341`) enquanto a tela abre no mês corrente: faturar hoje um pedido antigo faz a comissão **não aparecer**; e com a data nula, ela não aparece em mês nenhum.
+- **Dependências:** decisão de negócio sobre qual data governa a listagem de comissões (data do pedido vs. data do faturamento).
+- **Critério de aceite:** comissão criada pelo faturamento nasce com `numero_nfe` e `data_faturamento` preenchidos; a listagem/resumo de comissões usa a data acordada e exibe a comissão de um pedido antigo faturado hoje; teste cobre o caso "pedido de mês anterior faturado no mês corrente".
+- **Risco se ficar pendente:** comissão real invisível na tela — usuário conclui que o faturamento não gerou comissão.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0066
+
+### BACKLOG-0026 — Pedido totalmente faturado vira beco sem saída na UI
+- **Prioridade:** P2
+- **Área:** frontend
+- **Motivo:** ao ficar `faturado`, o pedido some de `GET /faturamento/pedidos` e **não existe nenhum link para `/faturamento/:uuid` fora daquela lista**. O backend permite corrigir a nota; a UI não oferece caminho.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** a tela de detalhe do pedido (e/ou a listagem de pedidos) oferece navegação para as notas fiscais do pedido mesmo quando ele está `faturado`.
+- **Risco se ficar pendente:** correção de nota fiscal só por acesso direto à URL ou ao banco.
+- **Status:** ABERTO
+
+### BACKLOG-0027 — `cross-tenant-foreign-keys.spec.ts` sem nenhuma asserção para `NotaFiscal`/`Commission`
+- **Prioridade:** P1
+- **Área:** backend / segurança
+- **Motivo:** `backend/src/database/cross-tenant-foreign-keys.spec.ts:30-47` — `NotaFiscal` foi adicionado só para o `buildMetadatas()` não quebrar; **nenhuma asserção** cobre `NotaFiscal.pedido`, `Commission.pedido` nem `Commission.notaFiscal`. As entidades **estão corretas** (FKs compostas com `tenant_id`), mas o módulo novo ficou sem guarda de regressão — exatamente o teste que existe para impedir que uma FK perca o par de tenant.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** o spec passa a assertar as 3 relações; remover `tenant_id` de qualquer uma delas faz o teste falhar.
+- **Risco se ficar pendente:** regressão silenciosa de isolamento multi-tenant no módulo mais novo do sistema.
+- **Status:** ABERTO
+
+### BACKLOG-0028 — Teste de integração real contra Postgres para concorrência no `FaturamentoService`
+- **Prioridade:** P1
+- **Área:** backend
+- **Motivo:** **toda a suíte de `faturamento`/`finance`/`orders` é mock puro** (`jest.fn()` sobre repositórios); nada roda contra Postgres. Os 236 testes verdes **não provam** que locks pessimistas, FKs compostas, índices únicos parciais e CHECKs funcionem. A asserção central "duas notas concorrentes no mesmo pedido serializam" é **inverificável** hoje, e a promessa "sem comissão duplicada" repousa inteiramente no índice `uq_comissoes_tenant_nota_fiscal_active`, que **nunca foi exercitado** por teste.
+- **Dependências:** infraestrutura de teste com Postgres real (container efêmero) — hoje inexistente no projeto.
+- **Critério de aceite:** existe ao menos um teste de integração que sobe Postgres real, aplica as migrations e prova (a) que duas emissões concorrentes de nota no mesmo pedido serializam e (b) que a segunda comissão para a mesma nota é rejeitada pelo índice único.
+- **Risco se ficar pendente:** as garantias centrais do ciclo comercial são afirmações não testadas — e o PROB-0059 já mostrou que essas invariantes podem simplesmente desaparecer do banco sem ninguém notar.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0059, BUG-0022, BUG-0023
+
+### BACKLOG-0029 — `perc_comissao` sem `@Min(0)`/`@Max(100)`
+- **Prioridade:** P1
+- **Área:** backend
+- **Motivo:** `backend/src/finance/dto/commission-action.dto.ts:5-6` aceita percentual negativo (**comissão negativa entra no fluxo de caixa**) e valor como `"9999"`, que estoura `numeric(5,2)` e vira **500** em vez de 400.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** `@Min(0) @Max(100)` no DTO; teste cobrindo `-1` e `9999` retornando 400.
+- **Risco se ficar pendente:** dado financeiro inválido persistido e erro 500 em input de usuário.
+- **Status:** ABERTO
+
+### BACKLOG-0030 — `@MaxLength` ausente em todos os DTOs novos
+- **Prioridade:** P2
+- **Área:** backend / segurança
+- **Motivo:** falta `@MaxLength` em `backend/src/faturamento/dto/`, `backend/src/suppliers/dto/` e `backend/src/clients/dto/create-client.dto.ts`; `observacao` de nota fiscal é `text` **sem teto**. Sem limite, qualquer campo textual aceita payload arbitrariamente grande.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** todo campo string dos DTOs citados tem `@MaxLength` compatível com o tipo da coluna; `observacao` tem teto explícito.
+- **Risco se ficar pendente:** payloads grandes inflando o banco e degradando listagens; erro de banco vazando como 500 em campos com limite físico.
+- **Status:** ABERTO
+
+### BACKLOG-0031 — `valor_faturado` é `numeric(12,2)` mas copia `notas_fiscais.valor`, que é `numeric(18,2)`
+- **Prioridade:** P2
+- **Área:** banco / backend
+- **Motivo:** `backend/src/finance/entities/commission.entity.ts:85-86` declara `valor_faturado` como `numeric(12,2)` enquanto a origem do valor é `notas_fiscais.valor`, `numeric(18,2)`. Acima de 10^10 há **overflow** na cópia.
+- **Dependências:** migration de alteração de tipo.
+- **Critério de aceite:** os dois campos têm a mesma precisão; migration aplicada e verificada por `db:verify`.
+- **Risco se ficar pendente:** erro em runtime (500) ao faturar nota de valor muito alto; limite hoje não documentado em lugar nenhum.
+- **Status:** ABERTO
+
+### BACKLOG-0032 — `excluirNota` usa `softRemove` em vez do helper `optimisticSoftDelete`
+- **Prioridade:** P3
+- **Área:** backend
+- **Motivo:** `backend/src/faturamento/faturamento.service.ts:296-297` usa `softRemove`. É **seguro sob o lock pessimista** já aplicado, mas foge do helper padrão do projeto e **não incrementa `version`** — inconsistente com o controle de concorrência otimista do resto do sistema.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** o caminho passa a usar `optimisticSoftDelete` (ou fica documentado no código o motivo explícito de não usar).
+- **Risco se ficar pendente:** baixo hoje; vira problema se o lock for removido/refatorado no futuro sem ninguém notar a dependência.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0014, PROB-0063
+
+### BACKLOG-0033 — Import de produtos faz N+1 dentro de uma transação longa
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** `backend/src/products/products.service.ts:216-218` — até 10 mil queries seriais dentro de uma única transação, **segurando locks** o tempo todo.
+- **Dependências:** coordenar com a frente em andamento de substituição do parser (PROB-0069), que toca o mesmo fluxo.
+- **Critério de aceite:** importação em lote (`IN`/`upsert` em blocos) sem consulta por linha; transação não excede um tempo alvo definido para 10k linhas.
+- **Risco se ficar pendente:** importação grande trava escrita concorrente na tabela de produtos.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0069, PROB-0070
+
+### BACKLOG-0034 — Bundle de `PedidoDetalhe` com 1,48 MB (496 kB gzip)
+- **Prioridade:** P2
+- **Área:** frontend
+- **Motivo:** `dist/assets/PedidoDetalhe-*.js` com 1,48 MB. Provável (não confirmado) que `xlsx` e/ou a lib de PDF estejam entrando estaticamente na rota em vez de por `import()` dinâmico.
+- **Dependências:** a frente de PROB-0069 pode remover `xlsx` do backend, mas o frontend precisa ser verificado à parte.
+- **Critério de aceite:** confirmar a origem do peso por análise do bundle e mover as libs pesadas para dynamic import; chunk da rota abaixo de um teto acordado.
+- **Risco se ficar pendente:** carregamento lento da tela mais usada do fluxo comercial, especialmente em conexão móvel.
+- **Status:** ABERTO
+
+### BACKLOG-0035 — `0007_optimistic_concurrency.sql` tem `BEGIN;`/`COMMIT;` próprios dentro da transação do runner
+- **Prioridade:** P1
+- **Área:** banco / infra
+- **Motivo:** o `COMMIT` interno **encerra a transação externa do runner antes do registro em `schema_migrations`**, quebrando a atomicidade num provisionamento do zero. Latente hoje (o banco de dev já tinha a migration aplicada), mas é **candidato à causa raiz de PROB-0061 e PROB-0060** — os dois têm a mesma assinatura: migration registrada, objetos ausentes.
+- **Dependências:** nenhuma para a correção do arquivo; a investigação do baseline depende de BACKLOG-0039.
+- **Critério de aceite:** nenhuma migration contém `BEGIN`/`COMMIT` próprios; provisionamento de banco vazio do zero resulta em `db:verify` limpo; `grep` confirma que não há outro arquivo com o mesmo padrão.
+- **Risco se ficar pendente:** migrations continuam podendo ser marcadas como aplicadas sem ter aplicado nada — o problema que tornou `schema_migrations` não confiável.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0060, PROB-0061, BACKLOG-0039
+
+### BACKLOG-0036 — Paridade dev/prod de versão do PostgreSQL (15.18 em dev, `postgres:16-alpine` em prod)
+- **Prioridade:** P2
+- **Área:** infra
+- **Motivo:** dev roda PostgreSQL 15.18 e `docker-compose.prod.yml` fixa `postgres:16-alpine`. Toda a verificação de schema desta sessão foi feita contra a 15.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** dev e prod na mesma major, ou divergência documentada com a lista do que muda entre elas para os recursos usados pelo projeto.
+- **Risco se ficar pendente:** comportamento validado em dev não necessariamente vale em produção — risco maior agora que dev deixou de usar `synchronize` e depende do mesmo caminho de migrations.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0059
+
+### BACKLOG-0037 — `POST /produtos` passou a exigir fornecedor, mas `fornecedor_uuid` continua opcional no DTO
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** `backend/src/products/products.service.ts:47-49` passou a exigir fornecedor. É regra de negócio defensável, mas é **breaking change de contrato** — e como `fornecedor_uuid` segue opcional no DTO, o erro só aparece em **runtime**, não na validação.
+- **Dependências:** confirmar com o usuário que a obrigatoriedade é intencional.
+- **Critério de aceite:** se intencional, o DTO reflete a regra (campo obrigatório, erro 400 na validação) e a mudança é registrada como breaking change; se não, a regra é revertida.
+- **Risco se ficar pendente:** integrações e o app mobile quebram sem mensagem clara de validação.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0064
+
+### BACKLOG-0038 — Divergência doc × código: `valor_comissao` é descrito como imutável, mas é recalculado
+- **Prioridade:** P2
+- **Área:** backend / documentação
+- **Motivo:** `backend/src/finance/entities/commission.entity.ts:9-11` afirma que `valor_comissao` é "snapshot imutável… NUNCA recalculado retroativamente", mas `backend/src/faturamento/faturamento.service.ts:256-258` **recalcula** quando a nota muda de valor. **Um dos dois está errado** e é preciso decidir qual antes que alguém confie no comentário.
+- **Dependências:** decisão de negócio sobre o comportamento correto.
+- **Critério de aceite:** comportamento decidido, código e comentário alinhados, teste cobrindo o caso "nota alterada depois da comissão criada".
+- **Risco se ficar pendente:** decisão financeira tomada com base em um comentário que contradiz o código em produção.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0066
+
+### BACKLOG-0039 — Onboarding de banco vazio vira caminho crítico agora que `synchronize` está desligado em dev
+- **Prioridade:** P1
+- **Área:** infra / banco
+- **Motivo:** com `synchronize` desligado em dev (BUG-0019), provisionar um ambiente novo passa a depender inteiramente do migration runner. A nota já existente neste backlog sobre o runner **tropeçar em `001_initial_schema.sql` quando encontra tabelas preexistentes** deixa de ser incômodo e vira bloqueio de onboarding. Some-se o baseline sujo de `schema_migrations` (PROB-0061) e o `BEGIN`/`COMMIT` da `0007` (BACKLOG-0035).
+- **Dependências:** BACKLOG-0035.
+- **Critério de aceite:** `npm run db:migrate` sobe um banco **vazio** do zero até o schema atual sem erro, e `npm run db:verify` termina limpo em seguida; o procedimento está documentado para onboarding.
+- **Risco se ficar pendente:** desenvolvedor novo não consegue subir o ambiente, e não há caminho confiável para recriar o schema em um ambiente limpo — inclusive em recuperação de desastre.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0059, PROB-0061, BACKLOG-0035, BUG-0019
+
+### BACKLOG-0040 — Migração NestJS 10 → 11 (item com data própria; não pode ficar para depois do deploy)
+- **Prioridade:** P1
+- **Área:** infra / segurança
+- **Motivo:** o projeto está em NestJS 10.4.22, a **última 10.x que vai existir**. `npm audit --omit=dev` retorna 20 achados, 10 high, e o advisory do próprio `@nestjs/core` tem range `<=11.1.17` — só corrigido em 11.1.18+, isto é, **NestJS 10 nunca vai receber**. Mesma situação para `body-parser` e `qs`. Ver PROB-0068 para a triagem completa, inclusive a lista de **não-aplicáveis com motivo**.
+- **Dependências:** suíte completa verde como rede de segurança (existe, mas é mock puro — ver BACKLOG-0028).
+- **Critério de aceite:** backend em NestJS 11.1.28+ (ou superior corrigido), suíte completa verde nos três workspaces, `npm audit --omit=dev` sem HIGH atribuível à linha do NestJS, **com data acordada explicitamente com o usuário**.
+- **Risco se ficar pendente:** ir para produção com 10 advisories HIGH numa linha de dependência sem manutenção e sem caminho de correção.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0068, PROB-0069, PROB-0071
+
+### BACKLOG-0041 — GATE DE DEPLOY: rodar `db:verify` contra produção antes de subir
+- **Prioridade:** P0
+- **Área:** banco / infra
+- **Motivo:** **nenhuma verificação contra o banco de produção foi feita nesta sessão.** Três problemas distintos deixam o estado de produção desconhecido: PROB-0059 (invariantes apagadas — em dev estavam **zeradas**, 0 de ~20 CHECKs), PROB-0060 (triggers `set_updated_at` ausentes) e PROB-0061 (infra de sync de `0008`/`0009` inexistente apesar de registrada como aplicada). E a lição transversal do PROB-0061 é que **`schema_migrations` não é evidência confiável do que existe no banco, em nenhum ambiente** — só a inspeção do catálogo do Postgres é. A ferramenta para isso passou a existir nesta sessão (`npm run db:verify`, read-only, parametrizado por `DATABASE_URL`).
+- **Dependências:** acesso ao `DATABASE_URL` de produção; BUG-0021 (a ferramenta) já está pronto no working tree, **sem commit**.
+- **Critério de aceite:** `db:verify` executado contra produção com saída registrada; para cada divergência encontrada, decisão explícita (aplicar `0031`, que é idempotente e aditiva, ou tratar como incidente). Só então o deploy segue.
+- **Risco se ficar pendente:** subir para produção sem saber se o banco tem CHECKs de `version > 0` (base do controle de concorrência otimista), índices únicos que impedem comissão duplicada, triggers de `updated_at` e as tabelas de sync. Se qualquer um faltar, a falha aparece como corrupção silenciosa de dado real, não como erro.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0059, PROB-0060, PROB-0061, BUG-0020, BUG-0021
 
 # MetaRenowa P0 (21/07/2026)
 

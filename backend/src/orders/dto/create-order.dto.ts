@@ -38,7 +38,11 @@ export class CreateOrderDto {
   @IsOptional() @IsUUID('4') transportadora_uuid?: string | null;
 
   @IsOptional() @IsDateString() data?: string | null;
-  @IsOptional() @IsString() status?: string;
+  // `status` NÃO é aceito no corpo de create/update — é derivado.
+  // Criação nasce 'em_aberto'; 'liberado' só por PATCH /pedidos/:uuid/liberar
+  // (permissão `pedidos.liberar`); 'cancelado' só por PATCH /pedidos/:uuid/status;
+  // 'parcialmente_faturado'/'faturado' só pelo FaturamentoService.
+  // Aceitá-lo aqui tornava `pedidos.liberar` contornável — ver order.entity.ts.
   @IsOptional() @IsString() pgt?: string | null;
   @IsOptional() @IsString() prazo?: string | null;
   @IsOptional() @IsString() local_entrega?: string | null;

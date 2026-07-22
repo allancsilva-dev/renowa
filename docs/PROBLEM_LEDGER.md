@@ -4,6 +4,22 @@ Registro central de problemas. Mantido pelo `docs-reporter`. IDs sequenciais (`P
 
 **Não registrar suposição como fato.** O que não foi verificado é marcado como suposição.
 
+## Estado atual — revisão 2026-07-22 (parte 3: revisão independente + testes + Wave 0/Wave 1 do commit `d91b9b3`)
+
+**Enquadramento: o produto vai para produção depois desta rodada.** Isso eleva a severidade de todo achado que hoje é "só dev" mas **não foi verificado em produção** — nenhuma verificação contra o banco de produção foi feita nesta sessão.
+
+**Estado de commit: NADA foi commitado nesta sessão. Tudo está no working tree** (confirmado por `git status --porcelain` no momento deste registro: `backend/package.json`, `backend/src/app.module.ts`, `backend/src/faturamento/faturamento.service.ts`, `backend/src/orders/dto/create-order.dto.ts`, `backend/src/orders/orders.service.ts`, `backend/src/orders/orders.service.spec.ts`, `frontend/src/pages/PedidoForm.tsx`, `package.json`/`package-lock.json` na raiz modificados; `backend/src/database/migrations/0031_restore_schema_invariants.sql` e `backend/src/database/verify-schema.ts` não rastreados).
+
+- **Suíte de testes (execução real nesta sessão):** baseline do commit `d91b9b3` confirmado — shared 8/8 (1 suite), backend **236/236** (38 suites), frontend 29/29 (8 arquivos); lint e build limpos nos três workspaces. Após as correções desta sessão, `orders`+`faturamento` foram de 26 → **29 testes** (total esperado do backend: 239, sujeito a subir com o trabalho em andamento).
+- **Ressalva estrutural sobre a suíte (levantada pelo `quality-reviewer`, não neutralizada):** toda a suíte de `faturamento`/`finance`/`orders` é **mock puro** (`jest.fn()` sobre repositórios); nada roda contra Postgres. Os 236 verdes **não provam** que locks pessimistas, FKs compostas, índices únicos parciais e CHECKs funcionem. A asserção central "duas notas concorrentes no mesmo pedido serializam" é **inverificável** pelos testes atuais — ver BACKLOG-0028.
+- **PROB-0059 (`synchronize`) teve reincidência confirmada por query direta no banco de dev e escopo real muito maior que o registrado**: não eram 4 objetos, eram **zero CHECK constraints em todo o schema `public`** (as migrations declaram ~20), mais 2 índices únicos parciais e todos os triggers `set_updated_at`. Mecanismo desligado, invariantes restauradas pela migration `0031`, detector de drift criado (`db:verify`). Agora **FECHADO_COM_RESSALVA** — a ressalva é que **produção não foi verificada**.
+- **PROB-0060 teve o diagnóstico corrigido**: a função `public.set_updated_at()` **existe** (recriada por `CREATE OR REPLACE` na migration `0028`); faltavam só os triggers. Restaurados em dev pela `0031`. Produção não verificada.
+- **Achado novo de alta severidade: a infra de sync das migrations `0008`/`0009` não existe no banco de dev**, apesar de ambas constarem como aplicadas em `schema_migrations` — **PROB-0061**. Consequência transversal: **`schema_migrations` não é evidência confiável do que existe no banco, em nenhum ambiente.**
+- **Dois bloqueadores da máquina de estados de pedido, achados e corrigidos nesta sessão:** PROB-0062 (`status` gravável via POST/PUT contornando a permissão `pedidos.liberar` criada por este mesmo commit) e PROB-0063 (`DELETE /pedidos/:uuid` sem checagem de faturamento, deixando nota/comissão órfãs e impossíveis de corrigir). Ver BUG-0022 e BUG-0023.
+- **Cinco achados novos ABERTOS, não corrigidos nesta sessão:** PROB-0064 (mass assignment em `PATCH /produtos` e `PATCH /transportadoras` — **única falha identificada com quebra real de isolamento multi-tenant**, pré-existente), PROB-0065 (caminho de sync ignora a máquina de estados nova), PROB-0066 (`PATCH /financeiro/comissoes/:uuid` legado contorna a máquina de estados), PROB-0067 (PII completa de cliente exposta a quem só tem `faturamento.ver` — relevante LGPD), PROB-0068 (**NestJS 10.4.22 é fim de linha** — gate de produção).
+- **Três frentes EM_ANDAMENTO no momento deste registro:** PROB-0069 (substituição de `xlsx@0.18.5` por `papaparse` + limite de linhas durante o parse + `@Throttle`), PROB-0070 (bug pré-existente de parse de `preco_base` em formato pt-BR) e PROB-0071 (`overrides` de `multer`/`express` + bump de `typeorm`).
+- Relatório completo da sessão: [REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md](REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md). 18 itens novos de backlog: BACKLOG-0024 a BACKLOG-0041.
+
 ## Estado atual — revisão 2026-07-22 (parte 2, pós "Fluxo Comercial Completo")
 
 - **Implementação de grande porte concluída: "Fluxo Comercial Completo" (pedidos → faturamento → comissão → caixa)**, plano em `/Users/Zero/.claude/plans/fluxo-comercial-completo-buzzing-seal.md`. Catálogo de permissões (`shared/src/permissions/catalog.ts`) ganhou módulo `FATURAMENTO` e 3 slugs novos (`pedidos.liberar`, `faturamento.ver`, `faturamento.editar`), catálogo de 25→28 entradas; migrations `0026`–`0030` aplicadas em dev (novos campos de endereço em clientes/fornecedores, ciclo de vida de status de pedido, tabela `notas_fiscais`, vínculo `comissoes`↔pedido/nota, permissões novas concedidas a `admin`/`gestao`/`financeiro`); backend com novos módulos `consultas` (CNPJ via BrasilAPI) e `faturamento`, `OrdersService.liberar()`, bloqueio de edição pós-liberação; frontend com `AsyncCombobox`, `FornecedorForm`, tela "Faturamento", "Consultar CNPJ". Relatório completo: [REVIEW_REPORTS/2026-07-22_fullstack_implementation_fluxo-comercial-completo.md](REVIEW_REPORTS/2026-07-22_fullstack_implementation_fluxo-comercial-completo.md). Dois achados de risco estrutural (não corrigidos, fora do escopo desta feature) registrados como **PROB-0059** (`synchronize:true` em dev coexistindo com migrations SQL — já causou drop silencioso de 4 invariantes recém-criadas) e **PROB-0060** (drift pré-existente: triggers `set_updated_at` da migration `0020` ausentes no Postgres de dev). Quatro achados de crítica de design pós-implementação (score 23/40, `.impeccable/critique/2026-07-22T17-30-23Z__edidodetalhe-financeiro-fornecedores-asynccombobox.md`) adiados por decisão do usuário registrados em BACKLOG-0021 a BACKLOG-0023. **Confirmado por `git status` no momento deste registro: toda a implementação (backend/frontend do Fluxo Comercial Completo) está no working tree, sem nenhum commit** — migrations `0026`–`0030` já aplicadas no Postgres de dev, mas o código correspondente ainda não foi commitado em `master`.
@@ -1152,11 +1168,34 @@ Origem: implementação de grande porte, plano aprovado em `/Users/Zero/.claude/
 - **Impacto técnico:** qualquer invariante de banco criada via migration SQL que não tenha equivalente exato em decorator TypeORM (CHECK constraints, índices parciais, alguns tipos de FK composta) está em risco de ser removida silenciosamente em ambiente de dev sempre que uma entity for editada com o processo `watch` ativo — sem erro visível, sem log de alerta, só detectável reconferindo o catálogo do Postgres manualmente. Neste caso as 4 invariantes foram reaplicadas manualmente e confirmadas presentes no banco de dev no momento deste registro, mas o mecanismo que as removeu continua ativo.
 - **Arquivos/módulos:** `backend/src/app.module.ts:44-46` (`synchronize`); `backend/src/database/migrations/0027_order_status_lifecycle.sql` (`pedidos_status_check`); `backend/src/database/migrations/0028_notas_fiscais.sql` (índice único parcial de `notas_fiscais`); `backend/src/database/migrations/0029_commission_pedido_nota_link.sql` (`comissoes_status_check` + índice único parcial de `comissoes`)
 - **Solução proposta:** avaliar com `software-architect`/`database-engineer` uma das opções — (a) desligar `synchronize` também em dev, já que migrations SQL são a fonte de verdade declarada do projeto (BACKLOG-0004 já reescreveu as migrations pensando nisso), passando dev a depender só do migration runner; (b) manter `synchronize:true` em dev por conveniência de desenvolvimento, mas documentar como risco operacional conhecido e formalizar um passo de checklist pós-migration ("reconferir constraints/índices únicos parciais no catálogo do Postgres sempre que um processo `watch`/`synchronize` esteve ativo durante ou após aplicar uma migration"); (c) migrar as invariantes hoje só em SQL para uma combinação de decorator (`@Check`, `@Index` com `where`) onde o TypeORM suportar, reduzindo a superfície de divergência.
-- **Solução aplicada:** nenhuma (fora da permissão deste agente — requer decisão de arquitetura/config, delegado a `software-architect`). As 4 invariantes foram reaplicadas manualmente durante a implementação e confirmadas presentes no banco no momento deste registro.
-- **Evidências/comandos:** relato direto do implementador da feature (agente que executou o "Fluxo Comercial Completo"), não reverificado de forma independente por este agente (`docs-reporter` não tem acesso a shell de banco nesta sessão); leitura de `backend/src/app.module.ts:42-46` confirma a condição do `synchronize`.
-- **Riscos residuais:** o mecanismo permanece ativo — qualquer futura edição de entity em dev com `watch` rodando pode repetir o problema silenciosamente, sem erro visível, para qualquer invariante SQL sem equivalente em decorator TypeORM (não só as 4 já identificadas).
-- **Próximo passo:** decisão de `software-architect` sobre synchronize em dev; se mantido ligado, formalizar o passo de checklist pós-migration nesta mesma ledger ou em documentação de onboarding.
-- **Relacionado:** PROB-0060, PROB-0004, BACKLOG-0004
+- **Solução aplicada:** ver bloco "ATUALIZAÇÃO 2026-07-22 (parte 3)" abaixo. (Registro original: nenhuma solução — as 4 invariantes foram reaplicadas manualmente durante a implementação e confirmadas presentes no banco naquele momento.)
+- **Evidências/comandos:** relato direto do implementador da feature (agente que executou o "Fluxo Comercial Completo"), não reverificado de forma independente naquele registro; leitura de `backend/src/app.module.ts:42-46` confirma a condição do `synchronize`.
+- **Riscos residuais:** ver bloco de atualização abaixo.
+- **Próximo passo:** ver bloco de atualização abaixo.
+- **Relacionado:** PROB-0060, PROB-0061, PROB-0004, BACKLOG-0004, BACKLOG-0039, BACKLOG-0041, BUG-0019, BUG-0020, BUG-0021
+
+#### ATUALIZAÇÃO 2026-07-22 (parte 3) — reincidência confirmada, escopo real muito maior, e resolvido em dev
+
+- **Status revisado:** ABERTO → **FECHADO_COM_RESSALVA**. (Mecanismo desligado + invariantes restauradas + detector de drift criado. **A ressalva é única e explícita: produção não foi verificada nesta sessão.**)
+- **Reincidência confirmada — verificado diretamente por query no `renowa-dev-postgres` nesta sessão:** as 4 invariantes tinham sumido **de novo**; as duas queries do ledger retornaram `(0 rows)`. Processo `nest start --watch` PID 13091 estava rodando desde 12:14, com `NODE_ENV=development` e `app.module.ts:44-46` em `synchronize: true`.
+- **Correção factual de escopo (verificado por query própria):** o registro original subestimou o dano. Não eram 4 objetos — havia **zero CHECK constraints em todo o schema `public`**, enquanto as migrations declaram ~20. Além das 2 já registradas, também tinham sido apagadas:
+  - `version > 0` em `pedidos`, `financeiro_movimentacao`, `comissoes`, `parceiros_comerciais`, `inadimplencia` (migration `0007`) e em `notas_fiscais` (`0028`) — **base do controle de concorrência otimista**;
+  - `version > 0` da migration `0009` (`clientes`, `produtos`, `fornecedores`, `transportadoras`, `itens_pedido`);
+  - `itens_pedido_desconto_perc_range` e `itens_pedido_ipi_perc_range` (`0024`);
+  - `access_token_version > 0` (`0023`);
+  - enums de `lgpd_requests` (`subject_type`, `request_type`, `status`) e `action` de `pii_audit_events` (`0010`/`0011`);
+  - o índice único parcial `uq_lgpd_active_request` (`0011`).
+- **ARMADILHA NOVA — ninguém deve "só rodar a migration de novo" (verificado):** o `synchronize` **renomeou** as FKs compostas das migrations `0028`/`0029` (ex.: `fk_notas_fiscais_tenant_pedido` → `FK_183ff04740a6e9633d5f305ef32`). As FKs **existem** e mantêm o par `(tenant_id, ...)` — o isolamento multi-tenant foi preservado — mas os blocos `DO $$ IF NOT EXISTS (conname = 'fk_...')` das migrations `0028`/`0029` **perderam idempotência contra esse banco**: reexecutar aqueles arquivos criaria FK duplicada em vez de no-op.
+- **Correções aplicadas nesta sessão:**
+  1. Processo `nest start --watch` (PID 13091) encerrado.
+  2. `backend/src/app.module.ts` — `synchronize` passou de `DB_SYNC === 'true' || NODE_ENV !== 'production'` para **`DB_SYNC === 'true'` apenas**; comentário no código explica por que nunca reativar por `NODE_ENV`. Migrations SQL passam a ser fonte de verdade em **todo** ambiente. `DB_SYNC` não está setado em nenhum `.env` nem compose. Ver BUG-0019.
+  3. Nova migration `backend/src/database/migrations/0031_restore_schema_invariants.sql` — aditiva e **idempotente por design** (guardas em `pg_constraint`/`pg_indexes`/`pg_trigger`), para poder rodar também em produção sem falhar nem duplicar. Testada duas vezes em transação com `ROLLBACK` antes de valer; a segunda passada é no-op. Ver BUG-0020.
+  4. Novo `backend/src/database/verify-schema.ts` + scripts `db:verify` e `db:migrate` em `backend/package.json`. Ver BUG-0021.
+- **Descoberta lateral (verificada):** **não existia script de migration nenhum** no projeto — o runner só era chamado no boot em produção (`backend/src/main.ts:13`). O `db:verify` compara **por estrutura, não por nome** (porque o `synchronize` renomeia índice para `IDX_<hash>`), é read-only, parametrizado por `DATABASE_URL`, e sai com código 0/1/2.
+- **Estado do banco de dev depois — verificado por query própria nesta sessão:** `checks=20` (era 0); as 2 constraints originais do PROB-0059 presentes; os 2 índices parciais presentes; `trg_set_updated_at` em 17 tabelas (+ `trg_notas_fiscais_updated_at`, que mantém nome próprio = 18 triggers); `fk_notas=1` e `fk_comissoes=4` — **sem duplicação**, a armadilha acima foi evitada.
+- **Duas decisões de projeto do `database-engineer` registradas deliberadamente:** (a) as 4 constraints que nasceram `NOT VALID` **continuam `NOT VALID`** — promover a validado varre a tabela inteira e, como `runMigrations()` roda antes do `NestFactory`, uma linha histórica suja viraria falha de boot; é decisão separada, com janela própria; (b) o guard do trigger é **por função, não por nome**, senão o bloco da migration `0020` renomearia `trg_notas_fiscais_updated_at`, que é legítimo.
+- **Riscos residuais:** (1) **produção não foi verificada** — não se sabe se as invariantes existem lá; o `db:verify` precisa rodar contra produção antes do deploy (BACKLOG-0041); (2) as constraints `NOT VALID` seguem sem validação de dado histórico; (3) com `synchronize` desligado em dev, provisionar banco vazio passa a depender do migration runner, que tem problema conhecido (BACKLOG-0039); (4) nada disso foi commitado.
+- **Próximo passo:** rodar `db:verify` contra produção antes do deploy (BACKLOG-0041); commitar o working tree.
 
 ### PROB-0060 — Drift pré-existente: triggers `set_updated_at` da migration `0020` ausentes no Postgres de dev; `updated_at` não é atualizado em UPDATE nas tabelas antigas
 - **Data:** 2026-07-22
@@ -1169,11 +1208,213 @@ Origem: implementação de grande porte, plano aprovado em `/Users/Zero/.claude/
 - **Impacto técnico:** `updated_at` não é confiável como "última modificação" em nenhuma das tabelas afetadas em dev — qualquer lógica que dependa desse campo para ordenação, cursor de sync ou auditoria de "quando foi a última mudança" está lendo um valor congelado no momento do INSERT, não da última alteração real.
 - **Arquivos/módulos:** `backend/src/database/migrations/0020_utc_timestamps_db_authority.sql:31` (`CREATE OR REPLACE FUNCTION public.set_updated_at()`), `:74` (`CREATE TRIGGER trg_set_updated_at ... EXECUTE FUNCTION public.set_updated_at()`)
 - **Solução proposta:** (1) investigar se esse mesmo drift existe em staging/produção, onde `synchronize` é `false` — se confirmado que existe **só em dev**, não é urgente (efeito é só no ambiente local); se existir também em produção, é um achado sério de integridade de dado (`updated_at` não confiável em dado real de negócio) e precisa de correção priorizada (reaplicar a função+triggers da migration `0020` e auditar todo uso de `updated_at` em regras de negócio/relatórios); (2) independente do ambiente, reaplicar a função e os triggers em dev para manter paridade com o que a migration `0020` pretendia.
-- **Solução aplicada:** nenhuma (fora da permissão deste agente — investigação e correção requerem `database-engineer`/acesso a staging/produção). Não corrigido nesta sessão por decisão deliberada de não ser o escopo pedido.
-- **Evidências/comandos:** relato direto do implementador da feature, não reverificado de forma independente por este agente; leitura de `backend/src/database/migrations/0020_utc_timestamps_db_authority.sql` confirma que a migration declara a criação da função e do trigger (linhas 31 e 74).
-- **Riscos residuais:** severidade real depende inteiramente de onde o drift existe — pode ser inofensivo (só dev) ou um problema sério de integridade de dado (se também em produção); esse fato não está verificado.
-- **Próximo passo:** delegar a `database-engineer` — verificar catálogo de triggers em staging/produção; se ausente só em dev, reaplicar lá e documentar; se ausente em produção, tratar como incidente de dado e avaliar se `updated_at` foi usado para alguma decisão de negócio que dependeria dele estar correto.
-- **Relacionado:** PROB-0059
+- **Solução aplicada:** ver bloco de atualização abaixo. (Registro original: nenhuma.)
+- **Evidências/comandos:** relato direto do implementador da feature, não reverificado naquele registro; leitura de `backend/src/database/migrations/0020_utc_timestamps_db_authority.sql` confirma que a migration declara a criação da função e do trigger (linhas 31 e 74).
+- **Riscos residuais:** ver bloco de atualização abaixo.
+- **Próximo passo:** ver bloco de atualização abaixo.
+- **Relacionado:** PROB-0059, PROB-0061, BUG-0020, BACKLOG-0041
+
+#### ATUALIZAÇÃO 2026-07-22 (parte 3) — diagnóstico corrigido e resolvido em dev
+
+- **Status revisado:** ABERTO → **FECHADO_COM_RESSALVA** (corrigido em dev; **produção não verificada**).
+- **Correção factual ao diagnóstico original:** a função `public.set_updated_at()` **existe** — a migration `0028_notas_fiscais.sql` a recriou com `CREATE OR REPLACE`. O registro original afirmava que a função estava ausente; estava errado. Faltavam **só os triggers**.
+- **Solução aplicada:** triggers restaurados pela migration `0031_restore_schema_invariants.sql` (ver BUG-0020). Estado do banco de dev depois, verificado por query própria: `trg_set_updated_at` em 17 tabelas, mais `trg_notas_fiscais_updated_at` (nome próprio, legítimo) = 18 triggers.
+- **Riscos residuais:** **produção não foi verificada** — se os triggers estiverem ausentes lá, `updated_at` de dado real de negócio está congelado no INSERT desde algum momento histórico não determinado, e a `0031` corrige o comportamento futuro mas **não recupera** os `updated_at` já perdidos. Nada disso está verificado.
+- **Próximo passo:** rodar `db:verify` contra produção antes do deploy (BACKLOG-0041); se os triggers estiverem ausentes lá, avaliar separadamente se `updated_at` foi usado para alguma decisão de negócio, cursor de sync ou relatório.
+
+### PROB-0061 — Infra de sync das migrations `0008`/`0009` não existe no banco de dev, apesar de ambas constarem como aplicadas em `schema_migrations`
+- **Data:** 2026-07-22
+- **Origem:** revisão (achado próprio ao verificar o estado do banco durante a investigação de PROB-0059)
+- **Severidade:** HIGH
+- **Status:** ABERTO
+- **Área:** banco / backend / infra
+- **Sintoma:** verificado por query própria no `renowa-dev-postgres` — `sync_outbox`, `sync_changes` e `sync_mutation_inbox` = **0 tabelas**; `capture_sync_outbox` e `drain_sync_outbox` = **0 funções**; `sync_change_revision_seq` = **0**. Ainda assim, `schema_migrations` tem `0008_sync_change_feed.sql` e `0009_sync_push_v2.sql` registradas como aplicadas em 2026-07-22 14:07:57.
+- **Causa raiz:** provável — **`schema_migrations` foi populada sem que o SQL correspondente tenha rodado**. As duas alternativas foram descartadas por verificação direta: (a) **não é o mecanismo do PROB-0059** — não existe nenhuma `@Entity` para essas tabelas (`grep @Entity backend/src/sync/` retorna vazio) e o `synchronize` do TypeORM só mexe em tabelas presentes nos seus metadados, nunca dropa tabela que desconhece; (b) as migrations `0008`/`0009` usam `CREATE TABLE IF NOT EXISTS` — se tivessem executado, as tabelas existiriam. Isso bate com a nota já existente no BACKLOG sobre "sanear o baseline de `schema_migrations` no banco dev legado" e tem a **mesma assinatura do PROB-0060** (migration registrada, objetos ausentes), o que sugere **causa comum, não coincidência**. Candidato à causa raiz mecânica: BACKLOG-0035 (`0007_optimistic_concurrency.sql` tem `BEGIN;`/`COMMIT;` próprios dentro da transação do runner).
+- **Impacto técnico:** `backend/src/sync/sync.service.ts` depende dessas tabelas em SQL cru (`:72`, `:99`, `:498`, `:504`, `:512`) — **em dev, push/pull do mobile está quebrado**. Em produção o estado é **desconhecido e não verificado**; precisa ser checado antes do deploy (`db:verify` contra produção). **Não registrar como falha em produção — isso não está verificado.**
+- **Consequência transversal (registrar com destaque):** **`schema_migrations` não é evidência confiável do que existe no banco, em nenhum ambiente.** Toda auditoria futura de schema deve inspecionar o catálogo do Postgres, não a tabela de controle.
+- **Arquivos/módulos:** `backend/src/database/migrations/0008_sync_change_feed.sql`, `backend/src/database/migrations/0009_sync_push_v2.sql`, `backend/src/sync/sync.service.ts:72`, `:99`, `:498`, `:504`, `:512`
+- **Solução proposta:** reexecutar `0008`/`0009` contra o banco de dev (são `IF NOT EXISTS`, portanto seguras); antes disso, decidir explicitamente sobre a mudança de comportamento embutida (ver abaixo). Em paralelo, rodar `db:verify` contra produção antes do deploy e sanear o baseline de `schema_migrations` (BACKLOG-0039/BACKLOG-0035).
+- **Solução aplicada:** nenhuma. **Não restaurado nesta sessão por decisão deliberada:** restaurar religa trigger de escrita em 6 tabelas quentes (`clientes`, `produtos`, `fornecedores`, `transportadoras`, `pedidos`, `itens_pedido`) — é **mudança de comportamento, não reparo de invariante** — e aguarda decisão do usuário.
+- **Evidências/comandos:** queries próprias no `renowa-dev-postgres` (contagem de tabelas/funções/sequences no catálogo + leitura de `schema_migrations`); `grep @Entity backend/src/sync/` sem resultado; leitura dos arquivos `0008`/`0009` confirmando `CREATE TABLE IF NOT EXISTS`.
+- **Riscos residuais:** enquanto ABERTO, o sync mobile em dev não funciona e nenhum teste de sync exercita o caminho real; o estado de produção segue desconhecido.
+- **Próximo passo:** decisão do usuário sobre religar os triggers de outbox em dev; independentemente disso, `db:verify` contra produção antes do deploy (BACKLOG-0041). Dono: `database-engineer` (+ `backend-engineer` para o impacto em `sync.service.ts`).
+- **Relacionado:** PROB-0059, PROB-0060, BACKLOG-0035, BACKLOG-0039, BACKLOG-0041
+
+### PROB-0062 — `status` de pedido gravável via POST/PUT, contornando por completo a permissão `pedidos.liberar` criada por este mesmo commit
+- **Data:** 2026-07-22
+- **Origem:** revisão (achado independentemente pelo `quality-reviewer` e pelo `security-auditor`, **confirmado por leitura direta do código nesta sessão**)
+- **Severidade:** BLOCKER
+- **Status:** FECHADO_COM_RESSALVA
+- **Área:** backend / segurança / frontend
+- **Sintoma:** `backend/src/orders/dto/create-order.dto.ts:41` tinha `@IsOptional() @IsString() status?: string`, e `orders.service.ts:131` (create) e `:203` (update) faziam `status: dto.status ?? 'em_aberto'`. Um usuário com a role padrão `vendedor` (que tem `pedidos.criar`/`pedidos.editar` e **não** tem `pedidos.liberar`) mandava `{"status":"liberado"}` no POST ou no PUT e contornava o endpoint dedicado criado por este mesmo commit — **a permissão nova era decorativa**.
+- **Causa raiz:** confirmada — campo de máquina de estados exposto no DTO de entrada. `PATCH /:uuid/status` tinha sido corretamente travado em `cancelado`, mas POST e PUT ficaram abertos. A constraint `pedidos_status_check` não protegia: `liberado` é valor válido do enum.
+- **Impacto técnico:** além de furar a permissão `pedidos.liberar`, dava para saltar direto a `"faturado"`, fazendo o pedido **sumir da fila de `GET /faturamento/pedidos`** (`faturamento.service.ts:48` só lista `liberado`/`parcialmente_faturado`) sem que existisse nota fiscal nem comissão.
+- **Arquivos/módulos:** `backend/src/orders/dto/create-order.dto.ts:41`, `backend/src/orders/orders.service.ts:131`, `:203`, `backend/src/faturamento/faturamento.service.ts:48`, `frontend/src/pages/PedidoForm.tsx`
+- **ARMADILHA ENCONTRADA NA CORREÇÃO (registrar):** `frontend/src/pages/PedidoForm.tsx` fazia `...header` no payload e `header` contém `status` — ou seja, o frontend mandava `status` em **todo** create/update. Com `forbidNonWhitelisted: true`, remover o campo só do DTO faria **todo save de pedido virar 400**. A correção teve obrigatoriamente que ser backend + frontend na mesma mudança.
+- **Solução aplicada:** campo removido do `CreateOrderDto` (e por herança do `UpdateOrderDto`); `status: 'em_aberto'` fixo no create; `status` fora do `Object.assign` do update; `const { status: _status, ...headerFields } = header;` no `PedidoForm.tsx`. Status agora só muda por `PATCH /liberar`, `PATCH /status` (que só cancela) e pelo `FaturamentoService`. Ver BUG-0022.
+- **Evidências/comandos:** leitura direta do código antes e depois (verificado nesta sessão: `create-order.dto.ts:41` hoje é um comentário explicando que `status` não é aceito; `orders.service.ts:132` é `status: 'em_aberto'` fixo; `PedidoForm.tsx:186` tem o descarte explícito). 3 testes novos em `orders.service.spec.ts`, incluindo **guarda de regressão que falha se `status` voltar ao DTO**.
+- **Riscos residuais:** nada foi commitado; a correção não teve smoke visual em navegador nesta rodada; não há teste de integração real contra Postgres (BACKLOG-0028). O caminho de **sync** continua permitindo escrever `status` direto na tabela — ver PROB-0065, que é a mesma classe de falha por outra porta.
+- **Próximo passo:** commitar; tratar PROB-0065 antes do deploy, senão o bloqueio é parcial.
+- **Relacionado:** BUG-0022, PROB-0063, PROB-0065
+
+### PROB-0063 — `DELETE /pedidos/:uuid` não checava faturamento: soft delete deixava nota fiscal e comissão ativas e impossíveis de corrigir
+- **Data:** 2026-07-22
+- **Origem:** revisão (confirmado por leitura direta do código nesta sessão)
+- **Severidade:** BLOCKER
+- **Status:** FECHADO_COM_RESSALVA
+- **Área:** backend
+- **Sintoma:** `backend/src/orders/orders.service.ts:304-308` — `remove()` chamava `optimisticSoftDelete` direto. `updateStatus` tinha ganhado a checagem de notas ativas; `remove()` não.
+- **Causa raiz:** confirmada — guarda de integridade aplicada em um caminho de saída da máquina de estados (`updateStatus`) e esquecida no outro (`remove`).
+- **Impacto técnico:** depois do soft delete do pedido, `notas_fiscais` e `comissoes` continuavam com `deleted_at IS NULL`, seguiam somando em `faturamentoBruto`/fluxo de caixa, **e a nota ficava impossível de corrigir**: `atualizarNota` e `excluirNota` faziam `orderRepo.findOne` sem `withDeleted` → 404 permanente ("Pedido vinculado não encontrado.").
+- **Arquivos/módulos:** `backend/src/orders/orders.service.ts:304-308`, `backend/src/faturamento/faturamento.service.ts` (dois `findOne` de pedido)
+- **Solução aplicada:** helper `countNotasAtivas()` extraído e aplicado também em `remove()` (responde 409 quando há nota ativa) + `withDeleted: true` nos dois `findOne` de `faturamento.service.ts`, este último para **sanear registros já órfãos** criados antes do fix. Ver BUG-0023.
+- **Evidências/comandos:** leitura direta do código depois da correção (verificado nesta sessão: `orders.service.ts:308` define `countNotasAtivas`, usado em `:279` e `:318`; `faturamento.service.ts:234` e `:301` com `withDeleted: true` e comentário justificando). 3 testes novos em `orders.service.spec.ts` (compartilhados com PROB-0062).
+- **Riscos residuais:** nada commitado; sem teste de integração real contra Postgres; o caminho de **sync** pode deletar pedido sem passar por essa guarda, reproduzindo o problema — ver PROB-0065.
+- **Próximo passo:** commitar; tratar PROB-0065.
+- **Relacionado:** BUG-0023, PROB-0062, PROB-0065, BACKLOG-0032
+
+### PROB-0064 — Mass assignment em `PATCH /produtos/:uuid` e `PATCH /transportadoras/:uuid` permite escrita cruzando fronteira de tenant
+- **Data:** 2026-07-22
+- **Origem:** revisão / auditoria de segurança
+- **Severidade:** HIGH
+- **Status:** ABERTO
+- **Área:** segurança / backend
+- **Sintoma:** `backend/src/products/products.controller.ts:58` e `backend/src/transport/transport.controller.ts:51` usam `@Body() dto: Partial<CreateXDto>` (confirmado por leitura direta nesta sessão). `Partial<T>` é **tipo TypeScript, não classe**: o `design:paramtypes` emitido é `Object`, e o `ValidationPipe` global (com `whitelist` + `forbidNonWhitelisted`) **pula metatypes nativos** — o body chega cru em `Object.assign(product, rest)` (`products.service.ts:113-114`).
+- **Causa raiz:** confirmada — validação por DTO desativada de fato pelo uso de `Partial<T>` como tipo de parâmetro. `tenant_id`, `id`, `deleted_at` e `created_at` são graváveis: `PATCH {"tenant_id":"<uuid-vítima>"}` move o registro para outro tenant.
+- **Impacto técnico:** **única falha identificada nesta rodada com quebra real de isolamento multi-tenant.** Também permite ressuscitar/apagar registro via `deleted_at` e falsear `created_at`.
+- **Enquadramento:** **pré-existente, fora do delta de `d91b9b3`.** Mas o commit corrigiu exatamente o gêmeo disso em fornecedores (`Partial<CreateSupplierDto>` → `UpdateSupplierDto`), então sobraram **dois** pontos com o padrão antigo.
+- **Arquivos/módulos:** `backend/src/products/products.controller.ts:58`, `backend/src/transport/transport.controller.ts:51`, `backend/src/products/products.service.ts:113-114`
+- **Solução proposta:** criar `UpdateProductDto extends PartialType(CreateProductDto)` e `UpdateTransportDto extends PartialType(CreateTransportDto)` e usá-los nos dois controllers — mesmo padrão já aplicado em fornecedores por este commit. Depois, `grep` por `Partial<Create` no backend inteiro para garantir que não sobrou um terceiro caso.
+- **Solução aplicada:** nenhuma.
+- **Evidências/comandos:** leitura direta de `products.controller.ts:56-60` e `transport.controller.ts:49-53` nesta sessão, confirmando `@Body() dto: Partial<CreateXDto>`.
+- **Riscos residuais:** **gate de produção** — enquanto ABERTO, qualquer usuário autenticado com `produtos.editar` ou `transportadoras.editar` consegue mover registro entre tenants.
+- **Próximo passo:** delegar a `backend-engineer`. Corrigir **antes do deploy**.
+- **Relacionado:** BACKLOG-0037
+
+### PROB-0065 — Caminho de sync (push do mobile) ignora a máquina de estados de pedido introduzida pelo commit
+- **Data:** 2026-07-22
+- **Origem:** revisão
+- **Severidade:** HIGH
+- **Status:** ABERTO
+- **Área:** backend / mobile / segurança
+- **Sintoma:** `backend/src/sync/sync-entity-policy.ts:54` mantém `status` em `writableFields` de `pedidos` (confirmado por leitura direta nesta sessão), e o push escreve **direto na tabela**, sem passar por `OrdersService`.
+- **Causa raiz:** confirmada — a máquina de estados nova foi implementada só na camada REST/serviço; o caminho de sync é uma segunda porta de escrita que não a conhece.
+- **Impacto técnico:** um device pode (a) setar `faturado` sem nota fiscal; (b) rebaixar pedido faturado para `em_aberto` e depois editá-lo pela REST, furando o bloqueio de `orders.service.ts:168`; (c) alterar `total_com_imposto` de pedido faturado sem recálculo; (d) deletar o pedido, reproduzindo PROB-0063 por outra porta.
+- **Arquivos/módulos:** `backend/src/sync/sync-entity-policy.ts:54`, `backend/src/orders/orders.service.ts:168`
+- **Solução proposta:** decisão de arquitetura sobre **o que o mobile pode fazer offline com pedido**. Opções: remover `status` (e possivelmente os totais) de `writableFields`; ou rotear o push de `pedidos` pelo `OrdersService`; ou restringir o push a pedidos em `em_aberto`.
+- **Solução aplicada:** nenhuma.
+- **Evidências/comandos:** leitura direta de `sync-entity-policy.ts:50-58` nesta sessão.
+- **Riscos residuais:** enquanto ABERTO, as correções de PROB-0062 e PROB-0063 são **parciais** — a mesma classe de falha continua alcançável pelo sync.
+- **Próximo passo:** decisão de `software-architect`; implementação por `backend-engineer`. Deveria ser resolvido antes do deploy, junto com PROB-0062/0063.
+- **Relacionado:** PROB-0062, PROB-0063, PROB-0061
+
+### PROB-0066 — Endpoint legado `PATCH /financeiro/comissoes/:uuid` contorna a máquina de estados de comissão
+- **Data:** 2026-07-22
+- **Origem:** revisão
+- **Severidade:** MEDIUM
+- **Status:** ABERTO
+- **Área:** backend
+- **Sintoma:** `backend/src/finance/finance.service.ts:211-227` + `backend/src/finance/dto/create-comissao.dto.ts:50`,`:72` (`status?: string` sem `@IsIn`) permitem gravar `status='pago'` **sem `data_pagamento`** e reescrever `valor_comissao` livremente.
+- **Causa raiz:** confirmada — endpoint anterior ao ciclo comercial novo, não reconciliado com `informarPercentual`/`registrarPagamento`.
+- **Impacto técnico:** comissão "paga" que nunca entra no fluxo de caixa e ainda **trava `atualizarNota`/`excluirNota`**. Com `comissoes_status_check` restaurada pela migration `0031`, status fora do enum agora resulta em **500 em vez de 400** (erro de banco vazando como erro de servidor).
+- **Arquivos/módulos:** `backend/src/finance/finance.service.ts:211-227`, `backend/src/finance/dto/create-comissao.dto.ts:50`, `:72`
+- **Solução proposta:** remover `status` e `valor_comissao` do DTO de update legado (ou aplicar `@IsIn(['pendente','faturado','pago'])` + exigir `data_pagamento` quando `pago`), deixando as transições só nos métodos dedicados.
+- **Solução aplicada:** nenhuma.
+- **Evidências/comandos:** relato de subagente de revisão com referência de arquivo:linha; **não reverificado por leitura direta nesta sessão.**
+- **Riscos residuais:** dado financeiro inconsistente e 500 em input inválido.
+- **Próximo passo:** delegar a `backend-engineer`.
+- **Relacionado:** PROB-0059 (a restauração da constraint muda o código de erro), BACKLOG-0038
+
+### PROB-0067 — PII completa de cliente exposta a quem só tem `faturamento.ver` (sem `clientes.ver`)
+- **Data:** 2026-07-22
+- **Origem:** revisão / auditoria (LGPD)
+- **Severidade:** MEDIUM
+- **Status:** ABERTO
+- **Área:** LGPD / segurança / backend
+- **Sintoma:** `backend/src/faturamento/faturamento.service.ts:88-110` devolve a entidade `Client` **inteira** (`cnpj`, `email`, `tel`, endereço completo, `contato`, `observacao`) via `leftJoinAndSelect`. A role padrão `financeiro` tem `faturamento.ver` mas **não** tem `clientes.ver` (`shared/src/permissions/catalog.ts:120-124`).
+- **Causa raiz:** confirmada — join de conveniência sem projeção de campos, ignorando a granularidade de RBAC.
+- **Impacto técnico:** **não é vazamento cross-tenant** (mesmo tenant), mas contorna a granularidade de RBAC que o próprio commit reforça; é exposição de PII a papel que não deveria ter acesso ao cadastro de cliente.
+- **Arquivos/módulos:** `backend/src/faturamento/faturamento.service.ts:88-110`, `shared/src/permissions/catalog.ts:120-124`
+- **Solução proposta:** trocar `leftJoinAndSelect` por `leftJoin` + `addSelect` com allowlist mínima (razão social/nome fantasia e identificador), ou condicionar os campos de PII à presença de `clientes.ver`.
+- **Solução aplicada:** nenhuma.
+- **Evidências/comandos:** relato de subagente de revisão com referência de arquivo:linha; **não reverificado por leitura direta nesta sessão.**
+- **Riscos residuais:** exposição desnecessária de PII sob LGPD; ainda não há registro de acesso (`pii_audit_events`) para esse caminho.
+- **Próximo passo:** delegar a `backend-engineer` com revisão de `security-auditor`.
+- **Relacionado:** LGPD_ARCHITECTURE.md
+
+### PROB-0068 — NestJS 10.4.22 é fim de linha: 10 advisories HIGH em dependência de runtime sem correção possível na linha 10.x
+- **Data:** 2026-07-22
+- **Origem:** revisão (triagem própria de `npm audit --omit=dev` nesta sessão)
+- **Severidade:** HIGH
+- **Status:** ABERTO
+- **Área:** infra / segurança / backend
+- **Sintoma:** `npm audit --omit=dev` retorna 20 achados, **10 high**. O projeto está na **última 10.x que vai existir**; a linha de correção do ecossistema é NestJS 11 (11.1.28).
+- **Causa raiz:** confirmada por leitura dos ranges dos advisories — o advisory do próprio `@nestjs/core` tem range `<=11.1.17`, ou seja, só corrigido em 11.1.18+: **NestJS 10 nunca vai receber o fix**. Mesma situação para os advisories de `body-parser` e `qs`.
+- **Impacto técnico:** **gate de produção.** O produto vai para produção sem caminho de correção dentro da linha atual.
+- **Triagem de NÃO-APLICÁVEIS (registrada de propósito, para evitar retrabalho em toda auditoria futura):**
+  - `typeorm` — SQLi em `orderBy` é **MySQL/MariaDB-only**; o projeto é PostgreSQL.
+  - `uuid <11.1.1` — só falha "when `buf` is provided"; o TypeORM chama `v4` **sem** `buf`.
+  - `glob` — advisory é da **CLI** (`-c`/`--cmd`); o TypeORM usa como biblioteca.
+  - `js-yaml` — vem de `@istanbuljs/load-nyc-config` (tooling de cobertura), não de runtime.
+  - `brace-expansion` / `picomatch` — mesma cadeia de tooling.
+  - `lodash` — advisory é de `_.template`; o `@nestjs/config` usa `get`/`set`.
+  - `file-type` — loop no parser ASF, não usado.
+  - `form-data` — não resolve na árvore de runtime do backend.
+- **Arquivos/módulos:** `backend/package.json` (dependências `@nestjs/*`), árvore de `node_modules`
+- **Solução proposta:** planejar a migração 10 → 11 como **item próprio com data**, não como tarefa pós-deploy (BACKLOG-0040).
+- **Solução aplicada:** nenhuma para o NestJS em si. Os advisories **alcançáveis e corrigíveis sem trocar de major** estão em tratamento — ver PROB-0069 (`xlsx`) e PROB-0071 (`multer`/`express`/`typeorm`).
+- **Evidências/comandos:** `npm audit --omit=dev` executado nesta sessão + leitura dos ranges de cada advisory.
+- **Riscos residuais:** ir para produção com 10 advisories HIGH abertos numa linha sem manutenção.
+- **Próximo passo:** decisão do usuário sobre a data da migração; ver BACKLOG-0040.
+- **Relacionado:** PROB-0069, PROB-0071, BACKLOG-0040
+
+### PROB-0069 — `xlsx@0.18.5` com 2 advisories HIGH sem correção no npm, recebendo upload de usuário em `POST /produtos/importacao`
+- **Data:** 2026-07-22
+- **Origem:** revisão
+- **Severidade:** HIGH
+- **Status:** EM_ANDAMENTO
+- **Área:** segurança / backend
+- **Sintoma:** dois advisories HIGH **sem versão corrigida disponível no registry** — prototype pollution `GHSA-4r6h-8v6p-xvw6` e ReDoS `GHSA-5pgg-2g8v-p4x9` — em uma lib que recebe **upload de usuário** em `POST /produtos/importacao`. Somado a isso, o limite `IMPORT_MAX_ROWS` é aplicado **depois** de `XLSX.read` + `sheet_to_json` materializarem o arquivo inteiro: DoS por planilha comprimida, e o limite de 5 MB do multer **não protege** porque `.xlsx` é um ZIP.
+- **Causa raiz:** confirmada — dependência sem manutenção no caminho de correção do npm, exposta diretamente a input não confiável.
+- **Impacto técnico:** superfície de ataque direta (prototype pollution/ReDoS) e DoS por descompressão em endpoint autenticado.
+- **Solução em andamento:** substituição de `xlsx@0.18.5` por **`papaparse`** — a importação passa a ser **só CSV** (`.xlsx` não é requisito; **decidido pelo usuário**). Comparação registrada: `papaparse` 5.5.4, MIT, 267 KB, **zero dependências transitivas**, publicado 2026-06. **Descartados:** `exceljs` (21,8 MB, parado desde 2024-12, puxa `unzipper` e `uuid@^8` vulnerável) e SheetJS via CDN (tira a dependência do registry, **cega o `npm audit`** e quebra proxies corporativos). No mesmo trabalho: limite de linhas aplicado **durante** o parse, `@Throttle` de 5/min na rota, e tratamento de separador `;`, BOM e latin1.
+- **Arquivos/módulos:** `backend/src/products/products.service.ts` (fluxo de importação), `backend/src/products/products.controller.ts` (rota `POST /produtos/importacao`), `backend/package.json`
+- **Evidências/comandos:** `npm audit --omit=dev` nesta sessão; leitura dos advisories e da árvore de dependências das alternativas.
+- **Riscos residuais:** mudança de contrato de importação (deixa de aceitar `.xlsx`) — precisa de comunicação a usuários e ajuste de documentação/UI.
+- **Próximo passo:** concluir a substituição; registrar o resultado (testes + BUGFIX) quando a frente fechar.
+- **Relacionado:** PROB-0068, PROB-0070, PROB-0071, BACKLOG-0033
+
+### PROB-0070 — Parse de `preco_base` rejeita todo preço acima de mil exportado do Excel pt-BR
+- **Data:** 2026-07-22
+- **Origem:** revisão (bug pré-existente, encontrado ao trabalhar em PROB-0069)
+- **Severidade:** MEDIUM
+- **Status:** EM_ANDAMENTO
+- **Área:** backend
+- **Sintoma:** `backend/src/products/products.service.ts:206` faz `Number(preco_base.replace(',', '.'))` — `"1.234,56"` vira `"1.234.56"` → `NaN`. Na prática, **todo preço acima de mil exportado do Excel em pt-BR é rejeitado hoje** na importação de produtos.
+- **Causa raiz:** confirmada — troca só a vírgula decimal, sem remover o separador de milhar.
+- **Impacto técnico:** importação em lote silenciosamente incompleta ou com linhas rejeitadas, exatamente nos produtos de maior valor.
+- **Arquivos/módulos:** `backend/src/products/products.service.ts:206`
+- **Solução em andamento:** normalização correta de número pt-BR, junto da frente de PROB-0069.
+- **Evidências/comandos:** leitura do código apontada na revisão; **não reverificada por leitura direta nesta sessão** (arquivo em alteração pela frente em andamento).
+- **Riscos residuais:** dados já importados antes do fix podem estar faltando produtos — não auditado.
+- **Próximo passo:** concluir junto de PROB-0069 e registrar em BUGFIX_LOG.
+- **Relacionado:** PROB-0069
+
+### PROB-0071 — `multer@2.0.2` com advisory HIGH alcançável via `FileInterceptor`
+- **Data:** 2026-07-22
+- **Origem:** revisão
+- **Severidade:** HIGH
+- **Status:** EM_ANDAMENTO
+- **Área:** segurança / infra
+- **Sintoma:** `multer` instalado na versão 2.0.2, com advisory HIGH afetando `<=2.1.1`, **alcançável** pelo uso de `FileInterceptor` na importação de produtos.
+- **Causa raiz:** confirmada — versão transitiva desatualizada.
+- **Impacto técnico:** advisory HIGH em caminho que recebe upload de usuário.
+- **Solução em andamento:** `overrides` de `multer` para `^2.2.0` e de `express` para `^4.22.2`, mais bump de `typeorm` dentro de 0.3.x.
+- **Arquivos/módulos:** `package.json` / `package-lock.json` (raiz — ambos aparecem modificados no working tree), `backend/package.json`
+- **Evidências/comandos:** `npm audit --omit=dev` nesta sessão.
+- **Riscos residuais:** `overrides` forçam versão em toda a árvore — precisa de suíte completa verde depois do bump para descartar regressão.
+- **Próximo passo:** concluir, rodar suíte completa nos três workspaces e registrar em BUGFIX_LOG.
+- **Relacionado:** PROB-0068, PROB-0069
 
 ---
 # MetaRenowa — fechamento P0 (21/07/2026)

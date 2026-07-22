@@ -259,3 +259,68 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Resultado:** PASS_COM_RESSALVA
 - **Ressalvas:** validação da suíte completa não reverificada de forma independente por este agente. Confirmado via `git status` no momento deste registro: toda a implementação do "Fluxo Comercial Completo" (incluindo este fix) está **no working tree, sem nenhum commit** — `backend/src/suppliers/suppliers.service.ts` aparece como modificado e não staged.
 - **Commit:** pendente
+
+### BUG-0019 — `synchronize` do TypeORM deixa de ligar por `NODE_ENV`; passa a exigir `DB_SYNC=true` explícito
+- **Problema relacionado:** PROB-0059
+- **Data:** 2026-07-22
+- **Área:** backend / banco / infra
+- **Sintoma:** com `nest start --watch` rodando em dev, o `synchronize` do TypeORM apagou silenciosamente invariantes de banco criadas por migration SQL — **duas vezes**. Na reincidência confirmada nesta sessão, o schema `public` estava com **zero CHECK constraints** (as migrations declaram ~20), sem os 2 índices únicos parciais e sem os triggers `set_updated_at`.
+- **Causa raiz:** `backend/src/app.module.ts` mantinha `synchronize: config.get('DB_SYNC') === 'true' || config.get('NODE_ENV') !== 'production'`, ou seja, ligado em todo ambiente que não fosse produção. `synchronize` remove qualquer objeto de banco sem equivalente em decorator TypeORM (CHECK constraints, índices parciais `WHERE ...`, triggers).
+- **Correção aplicada:** `synchronize: config.get<string>('DB_SYNC') === 'true'` — só liga com a variável explícita, pensada para o 1º boot de um banco vazio. Comentário no próprio código explica **por que nunca reativar por `NODE_ENV`**, citando PROB-0059. Migrations SQL passam a ser fonte de verdade em **todo** ambiente. Verificado que `DB_SYNC` não está setado em nenhum `.env` nem no compose. O processo `nest start --watch` (PID 13091, rodando desde 12:14) foi encerrado.
+- **Arquivos alterados:** `backend/src/app.module.ts:38-52`
+- **Testes/validações executadas:** suíte completa executada nesta sessão — shared 8/8, backend 236/236 (38 suites), frontend 29/29; lint e build limpos nos três workspaces. Estado do bloco `synchronize` reverificado por leitura direta do arquivo por este agente.
+- **Resultado:** PASS
+- **Ressalvas:** com `synchronize` desligado em dev, provisionar um banco vazio passa a depender do migration runner, que tem problema conhecido ao encontrar tabelas preexistentes (BACKLOG-0039). **Produção não foi verificada** nesta sessão.
+- **Commit:** pendente
+
+### BUG-0020 — Migration `0031` restaura as invariantes de schema apagadas pelo `synchronize` (20 CHECKs, 2 índices parciais, 18 triggers)
+- **Problema relacionado:** PROB-0059, PROB-0060
+- **Data:** 2026-07-22
+- **Área:** banco
+- **Sintoma:** banco de dev com `checks=0` no schema `public`, sem os índices únicos parciais de `notas_fiscais`/`comissoes`/`lgpd_requests` e sem os triggers `trg_set_updated_at`. Objetos apagados incluíam as constraints `version > 0` de `0007`/`0009`/`0028` — **base do controle de concorrência otimista** —, os ranges percentuais de `itens_pedido` (`0024`), `access_token_version > 0` (`0023`) e os enums de `lgpd_requests`/`pii_audit_events` (`0010`/`0011`).
+- **Causa raiz:** ver PROB-0059 (`synchronize:true`). Para os triggers, ver PROB-0060 — com a correção factual de que a **função `public.set_updated_at()` existia** (recriada por `CREATE OR REPLACE` na migration `0028`); faltavam só os triggers.
+- **Correção aplicada:** nova migration `0031_restore_schema_invariants.sql`, **aditiva e idempotente por design** (guardas em `pg_constraint`/`pg_indexes`/`pg_trigger`), para poder rodar também em produção sem falhar nem duplicar. Duas decisões de projeto deliberadas: (a) as 4 constraints que nasceram `NOT VALID` **continuam `NOT VALID`** — promover a validado varre a tabela inteira e, como `runMigrations()` roda antes do `NestFactory`, uma linha histórica suja viraria falha de boot; (b) o guard do trigger é **por função, não por nome**, senão o bloco da `0020` renomearia `trg_notas_fiscais_updated_at`, que é legítimo.
+- **Arquivos alterados:** `backend/src/database/migrations/0031_restore_schema_invariants.sql` (novo, não rastreado no git)
+- **Testes/validações executadas:** migration testada **duas vezes em transação com `ROLLBACK`** antes de valer; a segunda passada é no-op (idempotência confirmada). Estado do banco de dev depois, **verificado por query própria**: `checks=20` (era 0), as 2 constraints originais do PROB-0059 presentes, os 2 índices parciais presentes, `trg_set_updated_at` em 17 tabelas + `trg_notas_fiscais_updated_at` = 18 triggers, `fk_notas=1` e `fk_comissoes=4` (**sem duplicação**).
+- **Resultado:** PASS
+- **Ressalvas:** **(1) ARMADILHA — ninguém deve "só rodar a migration de novo".** O `synchronize` **renomeou** as FKs compostas de `0028`/`0029` (`fk_notas_fiscais_tenant_pedido` → `FK_183ff04740a6e9633d5f305ef32`, etc.). As FKs existem e mantêm o par `(tenant_id, ...)` — isolamento preservado — mas os blocos `DO $$ IF NOT EXISTS (conname = 'fk_...')` de `0028`/`0029` **perderam idempotência contra esse banco**: reexecutar aqueles arquivos criaria FK duplicada. A `0031` foi construída evitando isso, e a ausência de duplicação foi confirmada por query. (2) As 4 constraints `NOT VALID` seguem sem validação de dado histórico — decisão separada, com janela própria. (3) **Produção não foi verificada.**
+- **Commit:** pendente
+
+### BUG-0021 — `verify-schema.ts` + scripts `db:verify`/`db:migrate`: detector de drift de schema (não existia script de migration no projeto)
+- **Problema relacionado:** PROB-0059, PROB-0060, PROB-0061
+- **Data:** 2026-07-22
+- **Área:** banco / infra
+- **Sintoma:** o drift de schema do PROB-0059 só foi descoberto por inspeção manual do catálogo do Postgres, duas vezes. Não havia nenhuma forma automatizada de detectar que uma invariante declarada em migration não existia no banco. **Descoberta lateral:** não existia **script de migration nenhum** — o runner só era chamado no boot em produção (`backend/src/main.ts:13`).
+- **Causa raiz:** ausência de ferramenta de verificação; `schema_migrations` era tratada como evidência do que existe no banco, o que PROB-0061 mostrou ser falso.
+- **Correção aplicada:** novo `backend/src/database/verify-schema.ts` e scripts `db:verify` e `db:migrate` em `backend/package.json`. O `db:verify` compara **por estrutura, não por nome** (necessário porque o `synchronize` renomeia índice para `IDX_<hash>` e FK para `FK_<hash>`), é **read-only**, parametrizado por `DATABASE_URL`, e sai com código 0/1/2.
+- **Arquivos alterados:** `backend/src/database/verify-schema.ts` (novo, não rastreado), `backend/package.json:12-13` (`db:migrate`, `db:verify`)
+- **Testes/validações executadas:** executado contra o banco de dev nesta sessão, produzindo o inventário usado para confirmar a restauração de BUG-0020. Presença dos dois scripts reverificada por leitura direta de `backend/package.json` por este agente.
+- **Resultado:** PASS
+- **Ressalvas:** **ainda não foi executado contra produção** — é exatamente esse o gate pendente (BACKLOG-0041). O `db:verify` cobre as invariantes conhecidas; não é prova de equivalência total entre migrations e banco.
+- **Commit:** pendente
+
+### BUG-0022 — `status` removido do DTO de pedido (backend) e do payload do formulário (frontend): status deixa de ser gravável por POST/PUT
+- **Problema relacionado:** PROB-0062
+- **Data:** 2026-07-22
+- **Área:** backend / frontend / segurança
+- **Sintoma:** usuário com a role padrão `vendedor` (sem `pedidos.liberar`) mandava `{"status":"liberado"}` no `POST /pedidos` ou no `PUT /pedidos/:uuid` e contornava por completo o endpoint de liberação criado por este mesmo commit. Também dava para saltar direto a `"faturado"`, tirando o pedido da fila de `GET /faturamento/pedidos` sem existir nota fiscal nem comissão.
+- **Causa raiz:** `backend/src/orders/dto/create-order.dto.ts:41` expunha `@IsOptional() @IsString() status?: string`, e `orders.service.ts:131`/`:203` faziam `status: dto.status ?? 'em_aberto'`. A constraint `pedidos_status_check` não protegia — `liberado` é valor válido do enum. `PATCH /:uuid/status` tinha sido corretamente travado em `cancelado`, mas POST e PUT ficaram abertos.
+- **Correção aplicada:** campo removido do `CreateOrderDto` (e por herança do `UpdateOrderDto`), substituído por comentário explicando que `status` é derivado; `status: 'em_aberto'` fixo no create; `status` fora do `Object.assign` do update; `const { status: _status, ...headerFields } = header;` no `PedidoForm.tsx`. Status agora só muda por `PATCH /liberar`, `PATCH /status` (que só cancela) e pelo `FaturamentoService`.
+- **Arquivos alterados:** `backend/src/orders/dto/create-order.dto.ts:41-43`, `backend/src/orders/orders.service.ts:131-132`, `:203`, `frontend/src/pages/PedidoForm.tsx:186-188`, `backend/src/orders/orders.service.spec.ts`
+- **Testes/validações executadas:** suíte completa nesta sessão; `orders`+`faturamento` foram de 26 → **29 testes**, incluindo uma **guarda de regressão que falha se `status` voltar ao DTO**. Backend total esperado 239. Estado final do código reverificado por leitura direta por este agente.
+- **Resultado:** PASS_COM_RESSALVA
+- **Ressalvas:** **ARMADILHA registrada** — `PedidoForm.tsx` fazia `...header` no payload e `header` contém `status`; com `forbidNonWhitelisted: true`, remover o campo só do DTO faria **todo save de pedido virar 400**. A correção teve obrigatoriamente que ser backend + frontend na mesma mudança. Sem smoke visual em navegador nesta rodada. **O caminho de sync continua permitindo escrever `status` direto na tabela (PROB-0065) — o bloqueio só é completo quando aquele for resolvido.**
+- **Commit:** pendente
+
+### BUG-0023 — `DELETE /pedidos/:uuid` passa a recusar pedido com nota fiscal ativa; `faturamento` ganha `withDeleted` para sanear órfãos
+- **Problema relacionado:** PROB-0063
+- **Data:** 2026-07-22
+- **Área:** backend
+- **Sintoma:** soft delete de pedido deixava `notas_fiscais` e `comissoes` com `deleted_at IS NULL`, ainda somando em `faturamentoBruto`/fluxo de caixa, **e a nota ficava impossível de corrigir**: `atualizarNota` e `excluirNota` faziam `orderRepo.findOne` sem `withDeleted` e respondiam 404 permanente ("Pedido vinculado não encontrado.").
+- **Causa raiz:** `backend/src/orders/orders.service.ts:304-308` — `remove()` chamava `optimisticSoftDelete` direto; a checagem de notas ativas tinha sido adicionada só em `updateStatus`.
+- **Correção aplicada:** helper `countNotasAtivas()` extraído e aplicado também em `remove()` (409 quando há nota ativa) + `withDeleted: true` nos dois `findOne` de pedido em `faturamento.service.ts`, este último deliberadamente para permitir **sanear registros já órfãos** criados antes do fix.
+- **Arquivos alterados:** `backend/src/orders/orders.service.ts:279`, `:308`, `:318`, `backend/src/faturamento/faturamento.service.ts:228-234`, `:295-301`, `backend/src/orders/orders.service.spec.ts`
+- **Testes/validações executadas:** suíte completa nesta sessão; os 3 testes novos de `orders.service.spec.ts` são compartilhados com BUG-0022 (26 → 29 em `orders`+`faturamento`). Estado final reverificado por leitura direta por este agente (`countNotasAtivas` definido em `:308` e usado em `:279` e `:318`; `withDeleted: true` em `faturamento.service.ts:234` e `:301`).
+- **Resultado:** PASS_COM_RESSALVA
+- **Ressalvas:** os testes são **mock puro** — nenhum roda contra Postgres, então a interação real com FKs compostas e índices únicos parciais não é exercitada (BACKLOG-0028). O caminho de **sync** pode deletar pedido sem passar por essa guarda (PROB-0065). Nada commitado.
+- **Commit:** pendente

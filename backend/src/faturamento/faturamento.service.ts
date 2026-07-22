@@ -225,8 +225,13 @@ export class FaturamentoService {
         throw new ConflictException('Não é possível alterar nota fiscal com comissão já paga.');
       }
 
+      // `withDeleted` é deliberado: pedido soft-deletado antes desta guarda
+      // existir deixa notas órfãs, e sem isto elas ficariam impossíveis de
+      // corrigir ou excluir (404 permanente). Corrigir/excluir a nota de um
+      // pedido já apagado é justamente o caminho de saneamento.
       const order = await orderRepo.findOne({
         where: { id: nota.pedido_id, tenant_id: tenantId },
+        withDeleted: true,
         lock: { mode: 'pessimistic_write' },
       });
       if (!order) throw new NotFoundException('Pedido vinculado não encontrado.');
@@ -287,8 +292,13 @@ export class FaturamentoService {
         throw new ConflictException('Não é possível excluir nota fiscal com comissão já paga.');
       }
 
+      // `withDeleted` é deliberado: pedido soft-deletado antes desta guarda
+      // existir deixa notas órfãs, e sem isto elas ficariam impossíveis de
+      // corrigir ou excluir (404 permanente). Corrigir/excluir a nota de um
+      // pedido já apagado é justamente o caminho de saneamento.
       const order = await orderRepo.findOne({
         where: { id: nota.pedido_id, tenant_id: tenantId },
+        withDeleted: true,
         lock: { mode: 'pessimistic_write' },
       });
       if (!order) throw new NotFoundException('Pedido vinculado não encontrado.');

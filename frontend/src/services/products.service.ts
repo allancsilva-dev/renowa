@@ -24,7 +24,7 @@ export interface ImportProductsResult {
   erros: ImportProductRowError[];
 }
 
-/** Importação em massa de produtos (.csv/.xlsx) vinculados a um fornecedor. */
+/** Importação em massa de produtos (.csv) vinculados a um fornecedor. */
 export async function importProducts(file: File, fornecedorUuid: string): Promise<ImportProductsResult> {
   const formData = new FormData();
   formData.append('arquivo', file);

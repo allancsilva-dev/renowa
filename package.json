@@ -8,6 +8,22 @@
     "frontend",
     "mobile"
   ],
+  "comments": {
+    "overrides": [
+      "npm só honra 'overrides' no package.json da raiz do projeto (workspaces).",
+      "@nestjs/platform-express@10.4.22 fixa versões EXATAS de multer/express/body-parser,",
+      "então patches só chegam via override. Todos ficam dentro da major atual (não-breaking).",
+      "multer <=2.1.1: DoS por incomplete cleanup (HIGH) — alcançável em POST /produtos/importacao.",
+      "express 4.21.0-4.22.1: qs DoS; 4.22.2 puxa path-to-regexp ~0.1.12 (>=0.1.13) e qs ~6.15.1 (>=6.15.2).",
+      "body-parser <=1.20.5: DoS por limit inválido; platform-express depende dele direto, o override de express não alcança.",
+      "Remover este bloco quando o projeto migrar para NestJS 11 (platform-express >=11.1.28)."
+    ]
+  },
+  "overrides": {
+    "multer": "^2.2.0",
+    "express": "^4.22.2",
+    "body-parser": "^1.20.6"
+  },
   "scripts": {
     "backend": "npm run start:dev --workspace=backend",
     "frontend": "npm run dev --workspace=frontend",

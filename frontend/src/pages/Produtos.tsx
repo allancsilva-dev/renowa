@@ -60,7 +60,7 @@ export default function Produtos() {
   async function handleImportSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!importFile) {
-      setImportError('Selecione um arquivo .csv ou .xlsx para importar.');
+      setImportError('Selecione um arquivo .csv para importar.');
       return;
     }
     if (!importFornecedorUuid) {
@@ -208,15 +208,22 @@ export default function Produtos() {
 
             <div className='flex flex-col gap-1'>
               <label htmlFor='import-arquivo' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
-                Arquivo (.csv ou .xlsx) <span className='text-red-500'>*</span>
+                Arquivo (.csv) <span className='text-red-500'>*</span>
               </label>
               <input
                 id='import-arquivo'
                 type='file'
-                accept='.csv,.xlsx'
+                accept='.csv,text/csv'
                 onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
                 className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium focus:border-primary focus:ring-1 focus:ring-primary/40'
               />
+              <p className='text-xs text-slate-500'>
+                No Excel, use <strong>Arquivo &gt; Salvar como &gt; CSV UTF-8 (delimitado por vírgulas)</strong>.
+                O arquivo precisa ter uma linha de cabeçalho com as colunas{' '}
+                <code className='rounded bg-slate-100 px-1'>codigo</code>,{' '}
+                <code className='rounded bg-slate-100 px-1'>descricao</code> e{' '}
+                <code className='rounded bg-slate-100 px-1'>preco_base</code>. Máximo de 5.000 linhas.
+              </p>
             </div>
 
             {importResult && (

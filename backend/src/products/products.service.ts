@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
-import * as XLSX from 'xlsx';
+import * as Papa from 'papaparse';
 import { Product } from './entities/product.entity';
 import { money } from '../common/decimal/decimal';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -10,12 +10,84 @@ import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { ImportProductsResultDto, ImportProductRowError } from './dto/import-products-result.dto';
 
 const IMPORT_MAX_ROWS = 5000;
-const IMPORT_ALLOWED_EXTENSIONS = ['csv', 'xlsx'];
+const IMPORT_ALLOWED_EXTENSIONS = ['csv'];
+const UTF8_BOM = [0xef, 0xbb, 0xbf];
 
 interface ImportedRow {
   codigo?: string;
   descricao?: string;
   preco_base?: string;
+}
+
+/**
+ * Excel pt-BR gera CSV em dois formatos incompatíveis entre si:
+ * - "CSV UTF-8": UTF-8 COM BOM (o BOM entraria no nome da 1ª coluna).
+ * - "CSV (separado por vírgulas)": Windows-1252, onde "Descrição" não é
+ *   UTF-8 válido e viraria mojibake se decodificado como UTF-8.
+ * Decodifica em UTF-8 estrito e só cai para Windows-1252 quando o buffer
+ * comprovadamente não é UTF-8 — assim arquivo UTF-8 legítimo nunca é
+ * reinterpretado por engano.
+ */
+function decodeCsvBuffer(buffer: Buffer): string {
+  const hasBom = buffer.length >= 3 && UTF8_BOM.every((byte, i) => buffer[i] === byte);
+  const body = hasBom ? buffer.subarray(UTF8_BOM.length) : buffer;
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(body);
+  } catch {
+    return new TextDecoder('windows-1252').decode(body);
+  }
+}
+
+// Agrupamento de milhar válido: "1.234", "1.234.567". Ancorado nas duas
+// pontas e sem quantificador aninhado ambíguo — linear, sem risco de ReDoS.
+const THOUSANDS_GROUPED = { '.': /^-?\d{1,3}(\.\d{3})+$/, ',': /^-?\d{1,3}(,\d{3})+$/ } as const;
+const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
+
+/**
+ * Converte preço em formato pt-BR ou en-US para número.
+ * O parse anterior (`Number(valor.replace(',', '.'))`) trocava apenas a
+ * PRIMEIRA vírgula: "1.234,56" (saída padrão do Excel pt-BR) virava
+ * "1.234.56" => NaN, rejeitando toda linha com preço acima de mil.
+ * Regra: havendo os dois separadores, o mais à direita é o decimal e o
+ * outro é separador de milhar. Retorna NaN para qualquer entrada que não
+ * seja estritamente numérica após a normalização.
+ */
+function parseImportPrice(raw: string): number {
+  const cleaned = raw.replace(/\s/g, '').replace(/^R\$/i, '');
+  const lastComma = cleaned.lastIndexOf(',');
+  const lastDot = cleaned.lastIndexOf('.');
+  let normalized: string;
+
+  if (lastComma >= 0 && lastDot >= 0) {
+    // Ambos presentes: o separador mais à direita é o decimal.
+    const decimalAt = Math.max(lastComma, lastDot);
+    const thousandSep = lastComma > lastDot ? '.' : ',';
+    const integerPart = cleaned.slice(0, decimalAt);
+    const fractionPart = cleaned.slice(decimalAt + 1);
+    if (!THOUSANDS_GROUPED[thousandSep].test(integerPart) || !/^\d+$/.test(fractionPart)) {
+      return Number.NaN;
+    }
+    normalized = `${integerPart.split(thousandSep).join('')}.${fractionPart}`;
+  } else if (lastComma >= 0) {
+    // Vírgula única = decimal pt-BR ("12,50"). Várias só podem ser milhar
+    // ("1,234,567") — e só valem se o agrupamento for de 3 em 3 dígitos.
+    if (cleaned.indexOf(',') === lastComma) {
+      normalized = cleaned.replace(',', '.');
+    } else if (THOUSANDS_GROUPED[','].test(cleaned)) {
+      normalized = cleaned.split(',').join('');
+    } else {
+      return Number.NaN;
+    }
+  } else if (lastDot >= 0 && cleaned.indexOf('.') !== lastDot) {
+    // Vários pontos ("1.234.567") só podem ser separador de milhar.
+    if (!THOUSANDS_GROUPED['.'].test(cleaned)) return Number.NaN;
+    normalized = cleaned.split('.').join('');
+  } else {
+    // Ponto único ("1234.56"/"1.234") ou só dígitos: comportamento existente.
+    normalized = cleaned;
+  }
+
+  return PLAIN_NUMBER.test(normalized) ? Number(normalized) : Number.NaN;
 }
 
 function normalizeImportRow(row: Record<string, unknown>): ImportedRow {
@@ -134,10 +206,10 @@ export class ProductsService {
   }
 
   /**
-   * Importação em massa (.csv/.xlsx). Falhas ESTRUTURAIS (arquivo grande
-   * demais, tipo inválido, fornecedor inexistente) lançam exceção. Erros
-   * POR LINHA nunca interrompem o processamento — só são acumulados em
-   * `erros` e contam para `rejeitados`.
+   * Importação em massa (.csv). Falhas ESTRUTURAIS (arquivo grande demais,
+   * tipo inválido, fornecedor inexistente) lançam exceção. Erros POR LINHA
+   * nunca interrompem o processamento — só são acumulados em `erros` e
+   * contam para `rejeitados`.
    */
   async importFromFile(
     file: Express.Multer.File | undefined,
@@ -149,18 +221,26 @@ export class ProductsService {
 
     const extension = (file.originalname.split('.').pop() ?? '').toLowerCase();
     if (!IMPORT_ALLOWED_EXTENSIONS.includes(extension)) {
-      throw new BadRequestException('Tipo de arquivo inválido. Utilize .csv ou .xlsx.');
+      throw new BadRequestException('Tipo de arquivo inválido. Utilize .csv (UTF-8).');
     }
 
-    let workbook: XLSX.WorkBook;
+    let rows: Record<string, unknown>[];
     try {
-      workbook = XLSX.read(file.buffer, { type: 'buffer' });
+      const parsed = Papa.parse<Record<string, unknown>>(decodeCsvBuffer(file.buffer), {
+        header: true,
+        // Auto-detecção: Excel pt-BR salva CSV com ';' em vez de ','.
+        delimiter: '',
+        skipEmptyLines: 'greedy',
+        transformHeader: (header) => header.trim(),
+        // Limita DURANTE o parse: o array de linhas nunca passa de
+        // IMPORT_MAX_ROWS + 1, que é o suficiente para detectar o excesso
+        // logo abaixo sem materializar o arquivo inteiro.
+        preview: IMPORT_MAX_ROWS + 1,
+      });
+      rows = parsed.data;
     } catch {
       throw new BadRequestException('Não foi possível ler o arquivo enviado.');
     }
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) throw new BadRequestException('Arquivo não contém planilhas.');
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName], { defval: null });
 
     if (rows.length > IMPORT_MAX_ROWS) {
       throw new BadRequestException(`Arquivo excede o limite de ${IMPORT_MAX_ROWS} linhas.`);
@@ -205,7 +285,7 @@ export class ProductsService {
 
         let precoValue: string | null = null;
         if (preco_base !== undefined) {
-          const parsed = Number(preco_base.replace(',', '.'));
+          const parsed = parseImportPrice(preco_base);
           if (Number.isNaN(parsed)) {
             erros.push({ linha, codigo, erro: 'Preço base inválido.' });
             rejeitados++;
