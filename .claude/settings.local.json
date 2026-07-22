@@ -71,7 +71,15 @@
       "Bash(xargs ls)",
       "Bash(textutil -convert txt -stdout \"Sistema Renowa Requisitos.docx\")",
       "Bash(grep -nA12 \"Transport \" frontend/src/types/index.ts)",
-      "Bash(grep -rnA12 \"interface Transport\\\\b\\\\|type Transport\\\\b\" frontend/src/types)"
+      "Bash(grep -rnA12 \"interface Transport\\\\b\\\\|type Transport\\\\b\" frontend/src/types)",
+      "Bash(rg -n \"tenant_roles\" *.sql)",
+      "Bash(rg -rn \"roles\" auth/entities/*.ts)",
+      "Bash(rg -n \"roles\" auth/*.ts)",
+      "Bash(rg -rn \"roles\" --glob '*.ts' --glob '!*.spec.ts' users/ scripts/ ../scripts/)",
+      "Bash(rg -n \"roles\" src/users/users.service.ts scripts/*.ts)",
+      "Bash(npm test *)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(awk '/CREATE TABLE public.pedidos /,/^\\\\\\);/' 0000_baseline.sql)"
     ]
   },
   "hooks": {
