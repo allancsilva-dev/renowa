@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Users, ShieldCheck, ClipboardList, UserRoundCheck } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 const sections = [
   {
@@ -7,23 +8,35 @@ const sections = [
     title: 'Usuários',
     description: 'Gerencie pessoas, convites e acessos da empresa.',
     icon: Users,
+    permission: 'usuarios.gerenciar',
   },
   {
     to: '/configuracoes/roles',
     title: 'Perfis de acesso',
     description: 'Defina o que cada grupo de usuários pode fazer.',
     icon: ShieldCheck,
+    permission: 'usuarios.gerenciar',
   },
   {
     to: '/configuracoes/auditoria',
     title: 'Auditoria LGPD',
     description: 'Consulte acessos e alterações de dados pessoais.',
     icon: ClipboardList,
+    permission: 'auditoria.ver',
   },
-  { to: '/configuracoes/privacidade', title: 'Solicitações de privacidade', description: 'Gerencie apagamento e portabilidade de dados de clientes.', icon: UserRoundCheck },
+  {
+    to: '/configuracoes/privacidade',
+    title: 'Solicitações de privacidade',
+    description: 'Gerencie apagamento e portabilidade de dados de clientes.',
+    icon: UserRoundCheck,
+    permission: 'privacidade.gerenciar',
+  },
 ];
 
 export default function ConfiguracoesHome() {
+  const { hasPermission } = useAuth();
+  const visibleSections = sections.filter((section) => hasPermission(section.permission));
+
   return (
     <div className='rounded-lg border bg-white p-6 shadow-sm'>
       <h2 className='text-base font-semibold text-slate-900'>Selecione uma seção</h2>
@@ -32,7 +45,7 @@ export default function ConfiguracoesHome() {
       </p>
 
       <div className='mt-4 grid gap-3 sm:grid-cols-2'>
-        {sections.map(({ to, title, description, icon: Icon }) => (
+        {visibleSections.map(({ to, title, description, icon: Icon }) => (
           <Link
             key={to}
             to={to}

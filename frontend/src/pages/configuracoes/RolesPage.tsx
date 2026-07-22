@@ -11,6 +11,7 @@ interface Role {
   name: string;
   description: string | null;
   active: boolean;
+  isSystem: boolean;
   permissions: string[];
 }
 
@@ -42,6 +43,7 @@ export default function RolesPage() {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<RoleForm>(DEFAULT_FORM);
+  const [createPermissions, setCreatePermissions] = useState<string[]>([]);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -115,7 +117,14 @@ export default function RolesPage() {
       header: 'Perfil de acesso',
       cell: (row: Role) => (
         <div>
-          <p className='font-medium text-slate-900'>{row.name}</p>
+          <p className='flex items-center gap-2 font-medium text-slate-900'>
+            {row.name}
+            {row.isSystem && (
+              <span className='rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500'>
+                Sistema
+              </span>
+            )}
+          </p>
           <p className='text-xs text-slate-500'>{row.description || 'Sem descrição'}</p>
         </div>
       ),
@@ -132,17 +141,21 @@ export default function RolesPage() {
         <div className='flex items-center gap-2'>
           <button
             type='button'
+            disabled={row.isSystem}
+            title={row.isSystem ? 'Permissões de um perfil de sistema não podem ser editadas' : undefined}
             onClick={() => {
               setEditingRole(row);
               setSelectedPermissions(row.permissions);
               setPermissionsError(null);
             }}
-            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
+            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
           >
             Permissões
           </button>
           <button
             type='button'
+            disabled={row.isSystem}
+            title={row.isSystem ? 'Perfil de sistema não pode ser excluído' : undefined}
             onClick={async () => {
               if (permissionsLoading) return;
               if (!window.confirm(`Desativar o perfil "${row.name}"? Usuários associados podem perder acesso.`)) return;
@@ -157,7 +170,7 @@ export default function RolesPage() {
                 setPermissionsLoading(false);
               }
             }}
-            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
+            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
           >
             Desativar
           </button>
@@ -177,8 +190,10 @@ export default function RolesPage() {
       await apiClient.post('/roles', {
         name: createForm.name.trim(),
         description: createForm.description.trim() || null,
+        permissions: createPermissions,
       });
       setCreateForm(DEFAULT_FORM);
+      setCreatePermissions([]);
       setIsCreateOpen(false);
       await fetchRoles(1);
     } catch (err) {
@@ -209,8 +224,8 @@ export default function RolesPage() {
     }
   }
 
-  function togglePermission(slug: string) {
-    setSelectedPermissions((prev) => {
+  function toggleInList(setter: React.Dispatch<React.SetStateAction<string[]>>, slug: string) {
+    setter((prev) => {
       if (prev.includes(slug)) {
         return prev.filter((item) => item !== slug);
       }
@@ -229,6 +244,7 @@ export default function RolesPage() {
           type='button'
           onClick={() => {
             setCreateForm(DEFAULT_FORM);
+            setCreatePermissions([]);
             setCreateError(null);
             setIsCreateOpen(true);
           }}
@@ -258,7 +274,7 @@ export default function RolesPage() {
       />
 
       {isCreateOpen && (
-        <Dialog open title='Novo perfil de acesso' onClose={() => setIsCreateOpen(false)} className='max-w-md'>
+        <Dialog open title='Novo perfil de acesso' onClose={() => setIsCreateOpen(false)} className='max-w-2xl'>
           <form
             onSubmit={handleCreateRole}
             className='space-y-4'
@@ -288,6 +304,27 @@ export default function RolesPage() {
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, description: e.target.value }))}
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
               />
+            </div>
+            <div className='space-y-1'>
+              <span className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                Permissões ({createPermissions.length} selecionada{createPermissions.length === 1 ? '' : 's'})
+              </span>
+              <div className='grid max-h-64 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:grid-cols-2'>
+                {permissions.map((permission) => (
+                  <label key={permission.slug} className='flex items-start gap-2 rounded-md px-2 py-1 hover:bg-slate-50'>
+                    <input
+                      type='checkbox'
+                      checked={createPermissions.includes(permission.slug)}
+                      onChange={() => toggleInList(setCreatePermissions, permission.slug)}
+                    />
+                    <span className='text-sm text-slate-700'>
+                      <strong>{permission.description || permission.module}</strong>
+                      <br />
+                      <span className='text-xs text-slate-500'>{permission.module}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
             <div className='flex justify-end gap-3'>
               <button
@@ -322,7 +359,7 @@ export default function RolesPage() {
                   <input
                     type='checkbox'
                     checked={selectedPermissions.includes(permission.slug)}
-                    onChange={() => togglePermission(permission.slug)}
+                    onChange={() => toggleInList(setSelectedPermissions, permission.slug)}
                   />
                   <span className='text-sm text-slate-700'>
                     <strong>{permission.description || permission.module}</strong>

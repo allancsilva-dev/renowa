@@ -51,6 +51,15 @@ export class RolesService {
     return Array.from(new Set(links.map((link) => link.permission.slug))).sort();
   }
 
+  private async assertPermissionsExist(slugs: string[]): Promise<void> {
+    const permissions = await this.permissionRepo.find({ where: { slug: In(slugs) } });
+    const found = new Set(permissions.map((perm) => perm.slug));
+    const invalid = slugs.filter((slug) => !found.has(slug));
+    if (invalid.length > 0) {
+      throw new BadRequestException(`Permissões inválidas: ${invalid.join(', ')}`);
+    }
+  }
+
   async listRoles(tenantId: string): Promise<Array<{
     id: string;
     name: string;
@@ -78,6 +87,11 @@ export class RolesService {
     return mapped;
   }
 
+  /**
+   * Criação atômica: role + permissões iniciais na mesma transação, pra
+   * telas de criação não precisarem de um segundo request (e um segundo
+   * ponto de falha) só pra atribuir as permissões escolhidas no modal.
+   */
   async createRole(
     tenantId: string,
     dto: CreateRoleDto,
@@ -90,6 +104,7 @@ export class RolesService {
     permissions: string[];
   }> {
     const name = this.normalizeName(dto.name);
+    const normalizedPermissions = Array.from(new Set((dto.permissions ?? []).map((slug) => slug.trim())));
 
     const existing = await this.tenantRoleRepo.findOne({
       where: { tenantId, name },
@@ -99,17 +114,28 @@ export class RolesService {
       throw new BadRequestException('Já existe uma role com este nome no tenant');
     }
 
-    const role = existing ?? this.tenantRoleRepo.create({
-      tenantId,
-      name,
-      description: dto.description ?? null,
-      active: true,
+    if (normalizedPermissions.length > 0) {
+      await this.assertPermissionsExist(normalizedPermissions);
+    }
+
+    const roleId = await this.tenantRoleRepo.manager.transaction(async (manager) => {
+      const roleRepo = manager.getRepository(TenantRole);
+      const role = existing ?? roleRepo.create({ tenantId, name, active: true });
+      role.description = dto.description ?? null;
+      role.active = true;
+      const saved = await roleRepo.save(role);
+
+      if (normalizedPermissions.length > 0) {
+        const permissionRepo = manager.getRepository(TenantRolePermission);
+        await permissionRepo.insert(
+          normalizedPermissions.map((slug) => permissionRepo.create({ tenantId, roleId: saved.id, permissionSlug: slug })),
+        );
+      }
+
+      return saved.id;
     });
 
-    role.description = dto.description ?? null;
-    role.active = true;
-
-    const saved = await this.tenantRoleRepo.save(role);
+    const saved = await this.tenantRoleRepo.findOneOrFail({ where: { tenantId, id: roleId } });
 
     return {
       id: saved.uuid,
@@ -204,17 +230,7 @@ export class RolesService {
     const normalized = Array.from(new Set(permissionSlugs.map((slug) => slug.trim())));
 
     if (normalized.length > 0) {
-      const permissions = await this.permissionRepo.find({
-        where: { slug: In(normalized) },
-      });
-
-      const found = new Set(permissions.map((perm) => perm.slug));
-      const invalid = normalized.filter((slug) => !found.has(slug));
-      if (invalid.length > 0) {
-        throw new BadRequestException(
-          `Permissões inválidas: ${invalid.join(', ')}`,
-        );
-      }
+      await this.assertPermissionsExist(normalized);
     }
 
     await this.tenantRolePermissionRepo.manager.transaction(async (manager) => {

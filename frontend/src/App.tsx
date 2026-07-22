@@ -118,17 +118,25 @@ export default function App() {
           <Route
             path='configuracoes'
             element={(
-              <ProtectedRoute adminOnly>
+              <ProtectedRoute>
                 <AppShell />
               </ProtectedRoute>
             )}
           >
             <Route element={<Configuracoes />}>
               <Route index element={<ConfiguracoesHome />} />
-              <Route path='usuarios' element={<UsuariosPage />} />
-              <Route path='roles' element={<RolesPage />} />
-              <Route path='auditoria' element={<AuditoriaPage />} />
-              <Route path='privacidade' element={<PrivacidadePage />} />
+              <Route path='usuarios' element={(
+                <ProtectedRoute permission='usuarios.gerenciar'><UsuariosPage /></ProtectedRoute>
+              )} />
+              <Route path='roles' element={(
+                <ProtectedRoute permission='usuarios.gerenciar'><RolesPage /></ProtectedRoute>
+              )} />
+              <Route path='auditoria' element={(
+                <ProtectedRoute permission='auditoria.ver'><AuditoriaPage /></ProtectedRoute>
+              )} />
+              <Route path='privacidade' element={(
+                <ProtectedRoute permission='privacidade.gerenciar'><PrivacidadePage /></ProtectedRoute>
+              )} />
             </Route>
           </Route>
           <Route path='*' element={<Navigate to='/dashboard' replace />} />

@@ -46,9 +46,14 @@ const itemBase: React.CSSProperties = {
 };
 
 export default function Sidebar() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
   const role = user?.roles?.[0] ?? '';
+  // Configurações reúne telas com permissões próprias (usuários/perfis,
+  // auditoria, privacidade) — mostra o link se o usuário tiver qualquer uma.
+  const canSeeConfiguracoes = hasPermission('usuarios.gerenciar')
+    || hasPermission('auditoria.ver')
+    || hasPermission('privacidade.gerenciar');
 
   return (
     <aside
@@ -105,7 +110,7 @@ export default function Sidebar() {
         {/* Separador antes de Configurações */}
         <div className='my-3 border-t border-white/10' />
 
-        {isAdmin() && <NavLink
+        {canSeeConfiguracoes && <NavLink
           to='/configuracoes'
           style={({ isActive }) => ({
             ...itemBase,
