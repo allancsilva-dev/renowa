@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
+    "shared",
     "backend",
     "frontend",
     "mobile"
@@ -10,6 +11,7 @@
   "scripts": {
     "backend": "npm run start:dev --workspace=backend",
     "frontend": "npm run dev --workspace=frontend",
-    "mobile": "npm run start --workspace=mobile"
+    "mobile": "npm run start --workspace=mobile",
+    "postinstall": "npm run build --workspace=shared"
   }
 }
