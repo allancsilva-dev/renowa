@@ -224,6 +224,19 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Risco se ficar pendente:** o fix de BUG-0016 pode ser revertido por desconhecimento em uma revisão futura, ou o "Saldo" do Dashboard (`saldo = faturamento - custos - comissoes`) voltar a ficar sistematicamente incorreto.
 - **Status:** ABERTO
 - **Relacionado:** PROB-0056, BUG-0016, BACKLOG-0017
+
+---
+
+### BACKLOG-0019 — Smoke visual pendente do fix de dropdowns (BUG-0017) e teto de 100 do backend como decisão consciente
+- **Prioridade:** P2
+- **Área:** frontend
+- **Motivo:** o fix de BUG-0017 (novo `fetchAllPages` que pagina dropdowns em lotes de 100 até `meta.totalPages`) foi validado apenas por `npm run lint` + `npm run build` verdes; o **smoke visual em Safari com a stack no ar ficou PENDENTE**. Falta confirmar em runtime que: (1) um dropdown alimentado por uma lista real com mais de 100 registros (fornecedores, transportadoras, produtos, usuários/Responsável, vendedores) passa a exibir a lista inteira, sem truncar; (2) o dropdown "Vendedor" do `PedidoForm`, que antes herdava o default de 20 do backend por não enviar `limit`, agora traz todos os vendedores; (3) as `<option value=''>` que passaram a iniciar vazias (PedidoForm Fornecedor/Vendedor, ClienteForm UF, Financeiro Fornecedor, PrivacidadePage Cliente) renderizam como esperado. Item separado registrado no mesmo backlog: o **teto de 100 itens por página do backend permanece intencional** (guard anti-abuso deliberado) — `fetchAllPages` foi desenhado justamente para conviver com esse teto, e não deve ser removido; qualquer proposta futura de aumentar/remover o teto deve passar por revisão de segurança, não ser tratada como bug.
+- **Dependências:** stack (frontend + backend + Postgres) no ar; dataset de teste com mais de 100 registros em pelo menos uma das entidades dos dropdowns afetados.
+- **Critério de aceite:** smoke visual manual registrado (evidência/screenshot) confirmando lista completa nos 6 call sites de `fetchAllPages` e as options vazias nas 5 telas de UX; decisão de manter o teto de 100 do backend documentada como consciente (esta entrada serve de registro), sem alteração de código no guard.
+- **Risco se ficar pendente:** o fix pode conter uma regressão de runtime não detectada por `lint`/`build` (ex.: formato de resposta paginada não coberto por `normalizeListResponse` numa das rotas, ou option vazia confundindo o usuário); e o teto de 100 pode ser removido/afrouxado por engano numa revisão futura, reabrindo o vetor anti-abuso que ele protege.
+- **Status:** ABERTO
+- **Relacionado:** BUG-0017
+
 # MetaRenowa P0 (21/07/2026)
 
 - Implementado: contrato server-side de cálculo, migration dos campos, criação/edição transacional, integração de cadastros e PDF de validação.
