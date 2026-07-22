@@ -68,7 +68,10 @@
       "Bash(curl -s -c /tmp/renowa_cookies.txt -X POST http://localhost:3000/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@renowa.local\",\"senha\":\"Admin@12345!\"}')",
       "Bash(curl -s -o /tmp/resp.json -w \"HTTP:%{http_code}\\\\n\" -c /tmp/renowa_cookies.txt -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@renowa.local\",\"senha\":\"Admin@12345!\"}')",
       "Read(//tmp/**)",
-      "Bash(xargs ls)"
+      "Bash(xargs ls)",
+      "Bash(textutil -convert txt -stdout \"Sistema Renowa Requisitos.docx\")",
+      "Bash(grep -nA12 \"Transport \" frontend/src/types/index.ts)",
+      "Bash(grep -rnA12 \"interface Transport\\\\b\\\\|type Transport\\\\b\" frontend/src/types)"
     ]
   },
   "hooks": {
