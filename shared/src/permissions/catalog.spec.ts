@@ -1,4 +1,10 @@
-import { PERMISSION_CATALOG, PERMISSION_SLUGS, PermissionSlug } from './catalog';
+import {
+  DEFAULT_ROLE_PERMISSIONS,
+  PERMISSION_CATALOG,
+  PERMISSION_SLUGS,
+  PermissionSlug,
+  SYSTEM_ROLE_NAMES,
+} from './catalog';
 
 describe('PERMISSION_CATALOG', () => {
   it('has exactly 25 entries, one per PermissionSlug value', () => {
@@ -17,6 +23,31 @@ describe('PERMISSION_CATALOG', () => {
     for (const entry of PERMISSION_CATALOG) {
       expect(entry.description.length).toBeGreaterThan(0);
       expect(entry.slug.startsWith(`${entry.module}.`)).toBe(true);
+    }
+  });
+});
+
+describe('DEFAULT_ROLE_PERMISSIONS', () => {
+  it('only references slugs that exist in the catalog', () => {
+    const validSlugs = new Set(PERMISSION_SLUGS);
+    for (const slugs of Object.values(DEFAULT_ROLE_PERMISSIONS)) {
+      for (const slug of slugs) {
+        expect(validSlugs.has(slug)).toBe(true);
+      }
+    }
+  });
+
+  it('grants admin and gestao every permission in the catalog', () => {
+    expect(new Set(DEFAULT_ROLE_PERMISSIONS.admin)).toEqual(new Set(PERMISSION_SLUGS));
+    expect(new Set(DEFAULT_ROLE_PERMISSIONS.gestao)).toEqual(new Set(PERMISSION_SLUGS));
+  });
+});
+
+describe('SYSTEM_ROLE_NAMES', () => {
+  it('contains admin and only names with a default permission template', () => {
+    expect(SYSTEM_ROLE_NAMES).toContain('admin');
+    for (const name of SYSTEM_ROLE_NAMES) {
+      expect(DEFAULT_ROLE_PERMISSIONS[name]).toBeDefined();
     }
   });
 });

@@ -89,3 +89,30 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
 ] as const;
 
 export const PERMISSION_SLUGS: readonly PermissionSlug[] = PERMISSION_CATALOG.map((entry) => entry.slug);
+
+/**
+ * Nomes de tenant_roles que o app provisiona automaticamente (JWT
+ * `defaultRole` no primeiro login, ou role digitada na criação de usuário
+ * nativo) e o conjunto de permissões concedido nesse momento. Só se aplica
+ * na criação — editar um perfil depois disso é livre pela tela de Perfis.
+ * Qualquer nome fora deste mapa é provisionado sem nenhuma permissão
+ * (fail-closed: precisa ser concedida explicitamente depois).
+ */
+export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly PermissionSlug[]>> = {
+  admin: PERMISSION_SLUGS,
+  gestao: PERMISSION_SLUGS,
+  vendedor: [
+    PermissionSlug.ClientesVer, PermissionSlug.ClientesCriar, PermissionSlug.ClientesEditar,
+    PermissionSlug.PedidosVer, PermissionSlug.PedidosCriar, PermissionSlug.PedidosEditar,
+    PermissionSlug.ProdutosVer, PermissionSlug.ProdutosCriar, PermissionSlug.ProdutosEditar,
+    PermissionSlug.FornecedoresVer, PermissionSlug.FornecedoresCriar, PermissionSlug.FornecedoresEditar,
+    PermissionSlug.TransportadorasVer, PermissionSlug.TransportadorasCriar, PermissionSlug.TransportadorasEditar,
+  ],
+  financeiro: [PermissionSlug.FinanceiroVer, PermissionSlug.FinanceiroEditar],
+};
+
+/**
+ * Nomes de tenant_roles protegidos (não podem ser renomeados/excluídos —
+ * ver Etapa 4). Hoje só "admin"; tenant_roles.is_system reflete isto no banco.
+ */
+export const SYSTEM_ROLE_NAMES: readonly string[] = ['admin'];

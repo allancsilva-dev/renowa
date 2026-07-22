@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
+import { DEFAULT_ROLE_PERMISSIONS, SYSTEM_ROLE_NAMES } from '@renowa/shared';
 import { User } from './entities/user.entity';
 import { LocalUser } from '../rbac/entities/local-user.entity';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
@@ -43,32 +44,9 @@ export class UsersService {
     tenantId: string,
     roleName: string,
   ): Promise<TenantRole> {
-    const existing = await this.tenantRoleRepo.findOne({
-      where: { tenantId, name: roleName, active: true },
-    });
-
-    if (existing) return existing;
-
-    const created = this.tenantRoleRepo.create({
-      tenantId,
-      name: roleName,
-      description: roleName === 'admin'
-        ? 'Role administrativa padrão'
-        : 'Role provisionada automaticamente',
-      active: true,
-    });
-
-    try {
-      return await this.tenantRoleRepo.save(created);
-    } catch (err: any) {
-      if (err?.code === '23505') {
-        const concurrent = await this.tenantRoleRepo.findOne({
-          where: { tenantId, name: roleName },
-        });
-        if (concurrent) return concurrent;
-      }
-      throw err;
-    }
+    return this.dataSource.transaction((manager) =>
+      this.ensureTenantRoleWith(manager, tenantId, roleName),
+    );
   }
 
   async getCurrentUserContext(params: {
@@ -325,7 +303,14 @@ export class UsersService {
     });
   }
 
-  /** Versão transacional de ensureTenantRole (usa o EntityManager da transação). */
+  /**
+   * Provisionamento explícito: cria a tenant_role sob demanda (primeiro login
+   * via defaultRole do JWT, ou role digitada na criação de usuário nativo) já
+   * com is_system e as permissões padrão do template (DEFAULT_ROLE_PERMISSIONS
+   * em @renowa/shared), na mesma transação. Um nome fora do template é
+   * provisionado sem nenhuma permissão — fail-closed até um admin conceder
+   * explicitamente pela tela de Perfis.
+   */
   private async ensureTenantRoleWith(
     manager: EntityManager,
     tenantId: string,
@@ -337,16 +322,36 @@ export class UsersService {
     });
     if (existing) return existing;
 
-    return repo.save(
-      repo.create({
-        tenantId,
-        name: roleName,
-        description: roleName === 'admin'
-          ? 'Role administrativa padrão'
-          : 'Role provisionada automaticamente',
-        active: true,
-      }),
-    );
+    const created = repo.create({
+      tenantId,
+      name: roleName,
+      description: roleName === 'admin'
+        ? 'Role administrativa padrão'
+        : 'Role provisionada automaticamente',
+      active: true,
+      isSystem: SYSTEM_ROLE_NAMES.includes(roleName),
+    });
+
+    let role: TenantRole;
+    try {
+      role = await repo.save(created);
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        const concurrent = await repo.findOne({ where: { tenantId, name: roleName } });
+        if (concurrent) return concurrent;
+      }
+      throw err;
+    }
+
+    const defaultSlugs = DEFAULT_ROLE_PERMISSIONS[roleName];
+    if (defaultSlugs?.length) {
+      const permissionRepo = manager.getRepository(TenantRolePermission);
+      await permissionRepo.insert(
+        defaultSlugs.map((slug) => permissionRepo.create({ tenantId, roleId: role.id, permissionSlug: slug })),
+      );
+    }
+
+    return role;
   }
 
   async updateTenantUser(
