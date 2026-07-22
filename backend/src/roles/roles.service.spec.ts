@@ -15,10 +15,11 @@ function makeService(role: any) {
     save: jest.fn().mockResolvedValue(undefined),
   };
   const permissionRepo = { find: jest.fn().mockResolvedValue([]) };
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const service = new RolesService(
-    tenantRoleRepo as any, tenantRolePermissionRepo as any, permissionRepo as any,
+    tenantRoleRepo as any, tenantRolePermissionRepo as any, permissionRepo as any, audit as any,
   );
-  return { service, tenantRoleRepo };
+  return { service, tenantRoleRepo, audit };
 }
 
 describe('RolesService — proteção de role de sistema (is_system)', () => {
@@ -70,5 +71,27 @@ describe('RolesService — proteção de role de sistema (is_system)', () => {
     await expect(
       service.updateRolePermissions('t-1', 'vendas-uuid', []),
     ).resolves.toMatchObject({ isSystem: false });
+  });
+
+  it('registra auditoria em update/delete/updatePermissions quando o actor é informado', async () => {
+    const { service, audit } = makeService(customRole);
+    const actor = { sub: 'user-1', roles: ['manager'] } as any;
+
+    await service.updateRole('t-1', 'vendas-uuid', { description: 'nova' } as any, actor);
+    await service.deleteRole('t-1', 'vendas-uuid', actor);
+    await service.updateRolePermissions('t-1', 'vendas-uuid', [], actor);
+
+    expect(audit.record).toHaveBeenCalledTimes(3);
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE', resourceType: 'tenant_role' }));
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'DELETE', resourceType: 'tenant_role' }));
+  });
+
+  it('não registra auditoria quando nenhum actor é informado', async () => {
+    const { service, audit } = makeService(customRole);
+
+    await service.updateRole('t-1', 'vendas-uuid', { description: 'nova' } as any);
+    await service.deleteRole('t-1', 'vendas-uuid');
+
+    expect(audit.record).not.toHaveBeenCalled();
   });
 });

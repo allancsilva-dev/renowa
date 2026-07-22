@@ -5,6 +5,7 @@ import { RolesService } from './roles.service';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
 import { Permission } from '../common/entities/permission.entity';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { Permission } from '../common/entities/permission.entity';
       TenantRolePermission,
       Permission,
     ]),
+    AuditModule,
   ],
   controllers: [RolesController],
   providers: [RolesService],

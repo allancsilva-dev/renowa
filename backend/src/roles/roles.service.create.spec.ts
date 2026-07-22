@@ -36,8 +36,9 @@ function makeService() {
     }),
   };
 
-  const service = new RolesService(tenantRoleRepo as any, tenantRolePermissionRepo as any, permissionRepo as any);
-  return { service, roleRepoInTx, permissionRepoInTx };
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const service = new RolesService(tenantRoleRepo as any, tenantRolePermissionRepo as any, permissionRepo as any, audit as any);
+  return { service, roleRepoInTx, permissionRepoInTx, audit };
 }
 
 describe('RolesService.createRole — criação atômica', () => {
@@ -71,5 +72,24 @@ describe('RolesService.createRole — criação atômica', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(roleRepoInTx.save).not.toHaveBeenCalled();
+  });
+
+  it('registra auditoria de CREATE com a contagem de permissões quando o actor é informado', async () => {
+    const { service, audit } = makeService();
+    const actor = { sub: 'user-1', roles: ['manager'] } as any;
+
+    await service.createRole('t-1', { name: 'Vendas', permissions: ['clientes.ver'] } as any, actor);
+
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'CREATE', resourceType: 'tenant_role', metadata: { permissionCount: 1 },
+    }));
+  });
+
+  it('não registra auditoria quando nenhum actor é informado', async () => {
+    const { service, audit } = makeService();
+
+    await service.createRole('t-1', { name: 'Vendas' } as any);
+
+    expect(audit.record).not.toHaveBeenCalled();
   });
 });

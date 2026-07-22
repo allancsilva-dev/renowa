@@ -11,6 +11,10 @@ import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.en
 import { Permission } from '../common/entities/permission.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import { AuditService } from '../audit/audit.service';
+import { RequestUser } from '../common/types/jwt-payload.type';
+
+const AUDIT_PURPOSE = 'Gestão de perfis de acesso do tenant';
 
 @Injectable()
 export class RolesService {
@@ -21,6 +25,7 @@ export class RolesService {
     private readonly tenantRolePermissionRepo: Repository<TenantRolePermission>,
     @InjectRepository(Permission)
     private readonly permissionRepo: Repository<Permission>,
+    private readonly audit: AuditService,
   ) {}
 
   private normalizeName(name: string): string {
@@ -95,6 +100,7 @@ export class RolesService {
   async createRole(
     tenantId: string,
     dto: CreateRoleDto,
+    actor?: RequestUser,
   ): Promise<{
     id: string;
     name: string;
@@ -137,6 +143,14 @@ export class RolesService {
 
     const saved = await this.tenantRoleRepo.findOneOrFail({ where: { tenantId, id: roleId } });
 
+    if (actor) {
+      await this.audit.record({
+        tenantId, actor, action: 'CREATE', resourceType: 'tenant_role', resourceUuid: saved.uuid,
+        fields: ['name', 'description', 'permissions'], purpose: AUDIT_PURPOSE,
+        metadata: { permissionCount: normalizedPermissions.length },
+      });
+    }
+
     return {
       id: saved.uuid,
       name: saved.name,
@@ -151,6 +165,7 @@ export class RolesService {
     tenantId: string,
     roleUuid: string,
     dto: UpdateRoleDto,
+    actor?: RequestUser,
   ): Promise<{
     id: string;
     name: string;
@@ -187,6 +202,13 @@ export class RolesService {
 
     const saved = await this.tenantRoleRepo.save(role);
 
+    if (actor) {
+      await this.audit.record({
+        tenantId, actor, action: 'UPDATE', resourceType: 'tenant_role', resourceUuid: saved.uuid,
+        fields: ['name', 'description'], purpose: AUDIT_PURPOSE,
+      });
+    }
+
     return {
       id: saved.uuid,
       name: saved.name,
@@ -197,7 +219,7 @@ export class RolesService {
     };
   }
 
-  async deleteRole(tenantId: string, roleUuid: string): Promise<void> {
+  async deleteRole(tenantId: string, roleUuid: string, actor?: RequestUser): Promise<void> {
     const role = await this.findTenantRoleOrFail(tenantId, roleUuid);
 
     if (role.isSystem) {
@@ -207,12 +229,20 @@ export class RolesService {
     role.active = false;
     await this.tenantRoleRepo.save(role);
     await this.tenantRoleRepo.softDelete({ id: role.id });
+
+    if (actor) {
+      await this.audit.record({
+        tenantId, actor, action: 'DELETE', resourceType: 'tenant_role', resourceUuid: role.uuid,
+        fields: ['active'], purpose: AUDIT_PURPOSE,
+      });
+    }
   }
 
   async updateRolePermissions(
     tenantId: string,
     roleUuid: string,
     permissionSlugs: string[],
+    actor?: RequestUser,
   ): Promise<{
     id: string;
     name: string;
@@ -248,6 +278,14 @@ export class RolesService {
 
       await manager.getRepository(TenantRolePermission).save(toInsert);
     });
+
+    if (actor) {
+      await this.audit.record({
+        tenantId, actor, action: 'UPDATE', resourceType: 'tenant_role', resourceUuid: role.uuid,
+        fields: ['permissions'], purpose: AUDIT_PURPOSE,
+        metadata: { permissionCount: normalized.length },
+      });
+    }
 
     return {
       id: role.uuid,

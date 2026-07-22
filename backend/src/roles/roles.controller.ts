@@ -34,7 +34,7 @@ export class RolesController {
     @CurrentUser() user: RequestUser,
     @Body() dto: CreateRoleDto,
   ) {
-    return this.rolesService.createRole(user.tenantId, dto);
+    return this.rolesService.createRole(user.tenantId, dto, user);
   }
 
   @Patch(':id')
@@ -44,7 +44,7 @@ export class RolesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRoleDto,
   ) {
-    return this.rolesService.updateRole(user.tenantId, id, dto);
+    return this.rolesService.updateRole(user.tenantId, id, dto, user);
   }
 
   @Delete(':id')
@@ -54,7 +54,7 @@ export class RolesController {
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
-    await this.rolesService.deleteRole(user.tenantId, id);
+    await this.rolesService.deleteRole(user.tenantId, id, user);
   }
 
   @Patch(':id/permissions')
@@ -64,6 +64,6 @@ export class RolesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateRolePermissionsDto,
   ) {
-    return this.rolesService.updateRolePermissions(user.tenantId, id, dto.permissions);
+    return this.rolesService.updateRolePermissions(user.tenantId, id, dto.permissions, user);
   }
 }
