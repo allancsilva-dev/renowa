@@ -2,7 +2,7 @@
 
 Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs `BACKLOG-NNNN`. Referência cruzada com [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) por ID.
 
-**Estado atual (2026-07-21, pós revisão do Dashboard/Financeiro): 13 itens não fechados (ABERTO/EM_ANDAMENTO/PARCIALMENTE_RESOLVIDO/FECHADO_COM_RESSALVA).** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
+**Estado atual (2026-07-22, após overhaul de RBAC — ver PROBLEM_LEDGER.md#PROB-0058): 16 itens não fechados (14 ABERTO, 1 PARCIALMENTE_RESOLVIDO — BACKLOG-0009, 1 FECHADO_COM_RESSALVA — BACKLOG-0011; contagem exata por status, corrigindo texto anterior que citava 13).** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
 
 ## Formato de entrada
 
@@ -236,6 +236,16 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Risco se ficar pendente:** o fix pode conter uma regressão de runtime não detectada por `lint`/`build` (ex.: formato de resposta paginada não coberto por `normalizeListResponse` numa das rotas, ou option vazia confundindo o usuário); e o teto de 100 pode ser removido/afrouxado por engano numa revisão futura, reabrindo o vetor anti-abuso que ele protege.
 - **Status:** ABERTO
 - **Relacionado:** BUG-0017
+
+### BACKLOG-0020 — `RolesPage.tsx` não tem UI para renomear um perfil de acesso existente
+- **Prioridade:** P3
+- **Área:** frontend
+- **Motivo:** o backend suporta renomear uma role (`PATCH /roles/:id` → `RolesService.updateRole`, aceita `dto.name`, com a proteção `is_system` já aplicada — recusa rename de role de sistema com `ForbiddenException`, confirmado por leitura de `backend/src/roles/roles.service.ts:179-196`), mas `frontend/src/pages/configuracoes/RolesPage.tsx` só tem dois diálogos: "Novo perfil de acesso" (criação) e "Permissões de `<nome>`" (edição só de permissões) — confirmado por leitura do arquivo (`grep -n "Dialog\b" RolesPage.tsx`, sem nenhum diálogo/formulário de rename para role existente). Item pré-existente, **não introduzido** pelo overhaul de RBAC de 2026-07-22 (PROB-0058) — a Etapa 5 daquele overhaul adicionou o checklist de permissões na criação e o badge/bloqueio de `is_system`, mas não tocou em rename.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** tela de Perfis de acesso ganha um formulário/botão para editar o `name`/`description` de uma role existente, chamando o `PATCH /roles/:id` já existente; botão de rename desabilitado (mesmo padrão das outras ações) quando `isSystem === true`, coerente com o 403 que o backend já retorna nesse caso.
+- **Risco se ficar pendente:** usuário admin não consegue corrigir o nome de um perfil de acesso criado com erro de digitação sem recriar a role do zero (perdendo o histórico e tendo que reatribuir permissões e usuários).
+- **Status:** ABERTO
+- **Relacionado:** PROB-0058
 
 # MetaRenowa P0 (21/07/2026)
 

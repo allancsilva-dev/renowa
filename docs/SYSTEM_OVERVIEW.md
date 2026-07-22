@@ -2,7 +2,7 @@
 
 Visão de alto nível do funcionamento do sistema. Mantido pelo `docs-reporter`. Atualizar conforme o sistema evolui. Fatos verificados; suposições marcadas como tal.
 
-_Última atualização: 2026-07-21 (seção "Limitações conhecidas" ganhou nota sobre as duas fontes de dado de "venda" no Financeiro, achado do smoke test de regressão do Dashboard — ver [PROBLEM_LEDGER.md#PROB-0056](PROBLEM_LEDGER.md). Seção "Fluxo de autenticação" já havia sido corrigida antes nesta mesma data — descrevia o fluxo ZonaDevAuth/JWKS pré-migração; ver [PROBLEM_LEDGER.md#PROB-0052](PROBLEM_LEDGER.md). Demais seções seguem como estavam desde a auditoria completa de 2026-07-08 — ver [REVIEW_REPORTS/2026-07-08_full_system_audit.md](REVIEW_REPORTS/2026-07-08_full_system_audit.md))._
+_Última atualização: 2026-07-22 (seções "Fluxo multi-tenant" e "Pontos frágeis atuais" corrigidas contra o código atual: `role_permissions` já foi dropada pela migration `0022`, PROB-0034 já estava FECHADO — texto ainda descrevia como problema não reconciliado; "Endpoints de sync sem RBAC" (PROB-0007) já estava corrigido há tempo — texto seguia desatualizado. Gatilho: overhaul de RBAC de 6 etapas registrado em [PROBLEM_LEDGER.md#PROB-0058](PROBLEM_LEDGER.md). Atualização anterior, 2026-07-21: seção "Limitações conhecidas" ganhou nota sobre as duas fontes de dado de "venda" no Financeiro, achado do smoke test de regressão do Dashboard — ver [PROBLEM_LEDGER.md#PROB-0056](PROBLEM_LEDGER.md). Seção "Fluxo de autenticação" já havia sido corrigida antes nesta mesma data — descrevia o fluxo ZonaDevAuth/JWKS pré-migração; ver [PROBLEM_LEDGER.md#PROB-0052](PROBLEM_LEDGER.md). Demais seções (Stack real linha 9, Arquitetura geral linha 16, Integrações linha 51 ainda citam ZonaDevAuth/JWKS para o fluxo web) **não foram reauditadas nesta rodada** — mesmo risco de drift já sinalizado em PROB-0052, não confirmado/corrigido agora por estar fora do escopo pedido nesta sessão. Seções restantes seguem como estavam desde a auditoria completa de 2026-07-08 — ver [REVIEW_REPORTS/2026-07-08_full_system_audit.md](REVIEW_REPORTS/2026-07-08_full_system_audit.md))._
 
 ## Stack real
 
@@ -30,7 +30,7 @@ SaaS multi-tenant. Tenant #1 = Renowa Representações. Ecossistema ZonaDev: **Z
 
 ## Fluxo multi-tenant
 
-- `tenant_id UUID NOT NULL` nas tabelas tenant-scoped, inclusive `tenant_role_permissions` após migration 007. `permissions` e `role_permissions` permanecem catálogos globais.
+- `tenant_id UUID NOT NULL` nas tabelas tenant-scoped, inclusive `tenant_role_permissions` após migration 007. `tenant_role_permissions` é hoje o **único** modelo de RBAC — a tabela global legada `role_permissions` foi dropada pela migration `0022_remove_legacy_rbac_and_order_vendor_fk.sql` (comentário no próprio arquivo: "PROB-0034: tenant_role_permissions is the sole RBAC model"; confirmado por `grep -rn "role_permissions\b" backend/src` sem ocorrência fora de `tenant_role_permissions`). `permissions` permanece catálogo global de slugs (fonte tipada em `shared/src/permissions/catalog.ts`, `PERMISSION_CATALOG`/`PERMISSION_SLUGS`, 25 slugs — ver [PROB-0058](PROBLEM_LEDGER.md)).
 - `tenant_id` vem **exclusivamente do JWT** — nunca aceito do cliente. Verificado: nenhum controller/service confia em `tenant_id` do cliente; services REST filtram e forçam `tenant_id` de `user.tenantId`.
 - Tenant é passado explicitamente para services/repositories. Subscriber e CLS mortos foram removidos; isolamento não depende de interceptação parcial de inserts.
 
@@ -69,7 +69,7 @@ Representação comercial: usuários registram clientes e pedidos. `pedidos` usa
 ## Limitações conhecidas
 
 - Cursor de sync por **offset** (CHANGELOG #13) — sujeito a pular/repetir item sob escrita concorrente. Migração planejada para cursor por `updated_at` na v2.0. Ver [BACKLOG-0001](BACKLOG.md).
-- Dois modelos de permissão coexistem (`role_permissions` string-role vs `tenant_role_permissions` tenant-escopado) — não reconciliado ([PROB-0034](PROBLEM_LEDGER.md)).
+- ~~Dois modelos de permissão coexistem (`role_permissions` string-role vs `tenant_role_permissions` tenant-escopado) — não reconciliado.~~ Reconciliado pela migration `0022_remove_legacy_rbac_and_order_vendor_fk.sql`, que dropa `role_permissions`; `tenant_role_permissions` é o único modelo de RBAC ([PROB-0034](PROBLEM_LEDGER.md), FECHADO). O bypass hardcoded `role.name === 'admin'` que ainda existia sobre esse modelo (fazendo a permissão granular do papel `admin` ser inconsequente) foi removido separadamente no overhaul de RBAC de 2026-07-22 ([PROB-0058](PROBLEM_LEDGER.md)).
 - Schema de produção vem só das migrations, mas dev usa `synchronize` → **divergência dev↔prod** ([PROB-0004](PROBLEM_LEDGER.md)).
 - Duas fontes de dado para "venda" no módulo Financeiro, sem reconciliação automática: a tabela `pedidos` (venda real do fluxo comercial) e a tabela `financeiro_movimentacao` (lançamentos manuais livres, tipos `'Custo Fixo' | 'Custo Rotativo' | 'Venda'`, criados só pela tela Financeiro). Nenhum fluxo do sistema cria automaticamente um lançamento `financeiro_movimentacao` tipo `'Venda'` ao fechar um pedido. O KPI "Faturamento" do Dashboard passou a somar `pedidos` (2026-07-21, ver [PROB-0056](PROBLEM_LEDGER.md)/BUG-0016) para bater com "Evolução de Venda"/"Curva ABC de Clientes", que já usavam `pedidos` — mas essa é uma decisão de negócio ainda **não confirmada formalmente** com o usuário/PO ([BACKLOG-0018](BACKLOG.md)). A tabela `financeiro_movimentacao` continua existindo e sendo editável manualmente pela tela Financeiro, só deixou de alimentar esse KPI específico.
 
@@ -81,7 +81,7 @@ Representação comercial: usuários registram clientes e pedidos. `pedidos` usa
 - Migrations não sobem em banco vazio (sem CREATE TABLE, sintaxe inválida, índice em coluna inexistente) — [PROB-0004..0006](PROBLEM_LEDGER.md).
 
 **HIGH:**
-- Endpoints de sync sem RBAC — qualquer usuário escreve tudo — [PROB-0007](PROBLEM_LEDGER.md).
+- ~~Endpoints de sync sem RBAC — qualquer usuário escreve tudo.~~ Corrigido — [PROB-0007](PROBLEM_LEDGER.md) (FECHADO): `sync-authorization.service.ts` aplica checagem de permissão por entidade/operação em todo o caminho de sync; único bypass restante é `SUPERADMIN` (conceito de plataforma cross-tenant), confirmado por leitura direta do arquivo em 2026-07-22 ([PROB-0058](PROBLEM_LEDGER.md)).
 - Cursor global de sync + avanço em falha + pull sobrescrevendo edições locais → perda de dados — [PROB-0008..0010](PROBLEM_LEDGER.md).
 - FKs sem `tenant_id` composto → referência cross-tenant no DB — [PROB-0011](PROBLEM_LEDGER.md).
 - Casing de role trava admin real; AuthCallback trata falha como sucesso — [PROB-0014](PROBLEM_LEDGER.md) / [PROB-0015](PROBLEM_LEDGER.md).
