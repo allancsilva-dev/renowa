@@ -271,7 +271,7 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Testes/validações executadas:** suíte completa executada nesta sessão — shared 8/8, backend 236/236 (38 suites), frontend 29/29; lint e build limpos nos três workspaces. Estado do bloco `synchronize` reverificado por leitura direta do arquivo por este agente.
 - **Resultado:** PASS
 - **Ressalvas:** com `synchronize` desligado em dev, provisionar um banco vazio passa a depender do migration runner, que tem problema conhecido ao encontrar tabelas preexistentes (BACKLOG-0039). **Produção não foi verificada** nesta sessão.
-- **Commit:** pendente
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
 
 ### BUG-0020 — Migration `0031` restaura as invariantes de schema apagadas pelo `synchronize` (20 CHECKs, 2 índices parciais, 18 triggers)
 - **Problema relacionado:** PROB-0059, PROB-0060
@@ -284,7 +284,7 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Testes/validações executadas:** migration testada **duas vezes em transação com `ROLLBACK`** antes de valer; a segunda passada é no-op (idempotência confirmada). Estado do banco de dev depois, **verificado por query própria**: `checks=20` (era 0), as 2 constraints originais do PROB-0059 presentes, os 2 índices parciais presentes, `trg_set_updated_at` em 17 tabelas + `trg_notas_fiscais_updated_at` = 18 triggers, `fk_notas=1` e `fk_comissoes=4` (**sem duplicação**).
 - **Resultado:** PASS
 - **Ressalvas:** **(1) ARMADILHA — ninguém deve "só rodar a migration de novo".** O `synchronize` **renomeou** as FKs compostas de `0028`/`0029` (`fk_notas_fiscais_tenant_pedido` → `FK_183ff04740a6e9633d5f305ef32`, etc.). As FKs existem e mantêm o par `(tenant_id, ...)` — isolamento preservado — mas os blocos `DO $$ IF NOT EXISTS (conname = 'fk_...')` de `0028`/`0029` **perderam idempotência contra esse banco**: reexecutar aqueles arquivos criaria FK duplicada. A `0031` foi construída evitando isso, e a ausência de duplicação foi confirmada por query. (2) As 4 constraints `NOT VALID` seguem sem validação de dado histórico — decisão separada, com janela própria. (3) **Produção não foi verificada.**
-- **Commit:** pendente
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
 
 ### BUG-0021 — `verify-schema.ts` + scripts `db:verify`/`db:migrate`: detector de drift de schema (não existia script de migration no projeto)
 - **Problema relacionado:** PROB-0059, PROB-0060, PROB-0061
@@ -297,7 +297,7 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Testes/validações executadas:** executado contra o banco de dev nesta sessão, produzindo o inventário usado para confirmar a restauração de BUG-0020. Presença dos dois scripts reverificada por leitura direta de `backend/package.json` por este agente.
 - **Resultado:** PASS
 - **Ressalvas:** **ainda não foi executado contra produção** — é exatamente esse o gate pendente (BACKLOG-0041). O `db:verify` cobre as invariantes conhecidas; não é prova de equivalência total entre migrations e banco.
-- **Commit:** pendente
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
 
 ### BUG-0022 — `status` removido do DTO de pedido (backend) e do payload do formulário (frontend): status deixa de ser gravável por POST/PUT
 - **Problema relacionado:** PROB-0062
@@ -310,7 +310,7 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Testes/validações executadas:** suíte completa nesta sessão; `orders`+`faturamento` foram de 26 → **29 testes**, incluindo uma **guarda de regressão que falha se `status` voltar ao DTO**. Backend total esperado 239. Estado final do código reverificado por leitura direta por este agente.
 - **Resultado:** PASS_COM_RESSALVA
 - **Ressalvas:** **ARMADILHA registrada** — `PedidoForm.tsx` fazia `...header` no payload e `header` contém `status`; com `forbidNonWhitelisted: true`, remover o campo só do DTO faria **todo save de pedido virar 400**. A correção teve obrigatoriamente que ser backend + frontend na mesma mudança. Sem smoke visual em navegador nesta rodada. **O caminho de sync continua permitindo escrever `status` direto na tabela (PROB-0065) — o bloqueio só é completo quando aquele for resolvido.**
-- **Commit:** pendente
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
 
 ### BUG-0023 — `DELETE /pedidos/:uuid` passa a recusar pedido com nota fiscal ativa; `faturamento` ganha `withDeleted` para sanear órfãos
 - **Problema relacionado:** PROB-0063
@@ -323,4 +323,71 @@ Registro de bugs corrigidos. Mantido pelo `docs-reporter`. IDs `BUG-NNNN`. Refer
 - **Testes/validações executadas:** suíte completa nesta sessão; os 3 testes novos de `orders.service.spec.ts` são compartilhados com BUG-0022 (26 → 29 em `orders`+`faturamento`). Estado final reverificado por leitura direta por este agente (`countNotasAtivas` definido em `:308` e usado em `:279` e `:318`; `withDeleted: true` em `faturamento.service.ts:234` e `:301`).
 - **Resultado:** PASS_COM_RESSALVA
 - **Ressalvas:** os testes são **mock puro** — nenhum roda contra Postgres, então a interação real com FKs compostas e índices únicos parciais não é exercitada (BACKLOG-0028). O caminho de **sync** pode deletar pedido sem passar por essa guarda (PROB-0065). Nada commitado.
-- **Commit:** pendente
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
+
+### BUG-0024 — Importação de produtos migrada de `xlsx` para `papaparse` (só CSV), com limite aplicado durante o parse, `@Throttle` e detecção de encoding
+- **Problema relacionado:** PROB-0069 (FECHADO), PROB-0068
+- **Data:** 2026-07-22
+- **Área:** segurança / backend / frontend
+- **Sintoma:** `POST /produtos/importacao` recebia upload de usuário e o entregava a `xlsx@0.18.5`, lib com 2 advisories HIGH **sem versão corrigida no registry** (prototype pollution `GHSA-4r6h-8v6p-xvw6`, ReDoS `GHSA-5pgg-2g8v-p4x9`). Além disso, `IMPORT_MAX_ROWS` era conferido **depois** de `XLSX.read` + `sheet_to_json` materializarem o arquivo inteiro — DoS por planilha comprimida, com o limite de 5 MB do multer **sem proteger**, porque `.xlsx` é ZIP.
+- **Causa raiz:** confirmada — dependência sem manutenção no caminho de correção do npm, exposta a input não confiável, com o bound de tamanho aplicado no lugar errado do pipeline.
+- **Correção aplicada:** `xlsx` removido de `backend/package.json`; `papaparse@^5.5.4` (MIT, ~267 KB, **zero dependências transitivas**) + `@types/papaparse` no lugar; `IMPORT_ALLOWED_EXTENSIONS = ['csv']`. `normalizeImportRow`, o loop de upsert e o `ImportProductsResultDto` **não foram tocados** — a mudança é de camada de parse. Somado no mesmo trabalho: `preview: IMPORT_MAX_ROWS + 1` limitando **durante** o parse; `@Throttle({ default: { ttl: 60_000, limit: 5 } })` na rota; `decodeCsvBuffer` tratando BOM/UTF-8/Windows-1252; `delimiter: ''` para auto-detectar o `;` do Excel pt-BR.
+- **Arquivos alterados:** `backend/src/products/products.service.ts` (`:5` import, `:13` extensões, `:31` `decodeCsvBuffer`, `:229-238` parse), `backend/src/products/products.controller.ts:30` (`@Throttle`), `backend/src/products/products.service.spec.ts`, `backend/package.json`, `frontend/src/pages/Produtos.tsx` (`:211`, `:216`, `:221`, `:225`), `frontend/src/services/products.service.ts`, `frontend/src/services/products.service.test.ts`
+- **Testes/validações executadas:** suíte completa dos três workspaces nesta sessão — shared **8/8**, backend **260/260** (38 suites; baseline do commit era 236, **+24** somando esta correção e as demais da sessão), frontend **29/29**; lint e build limpos nos três. Testes específicos: 3 de encoding (UTF-8 puro, UTF-8 com BOM, Windows-1252), 2 de separador (`,` e `;`), 1 garantindo que 5000 linhas legítimas passam, 1 rejeitando `.xlsx`. `npm audit --omit=dev --workspace=backend`: **20 → 13**. Estado final reverificado por leitura direta por este agente.
+- **Resultado:** PASS_COM_RESSALVA
+- **Ressalvas (as quatro que importam):**
+  1. **MUDANÇA DE CONTRATO com impacto em usuário real:** `.xlsx` agora recebe **400** — `'Tipo de arquivo inválido. Utilize .csv (UTF-8).'`. **Quem já importava planilha `.xlsx` perde o fluxo.** A UI foi atualizada (accept, label, instrução "Salvar como > CSV UTF-8", colunas esperadas, limite de 5.000 linhas), **mas isso não substitui comunicar a mudança** — BACKLOG-0042. Shape do `ImportProductsResultDto` inalterado; **mobile não consome essa rota**.
+  2. **ARMADILHA de import:** tem que ser `import * as Papa from 'papaparse'`. O `tsconfig` tem `allowSyntheticDefaultImports` **sem** `esModuleInterop` — `import Papa from` compila e **quebra em runtime**.
+  3. **Nada rodou contra Postgres real** — os testes de import usam `manager` mockado; `dataSource.transaction` + upsert não foram exercidos contra banco (BACKLOG-0028). E **nenhum arquivo real exportado do Excel pt-BR foi usado**: os bytes foram simulados (BACKLOG-0045).
+  4. **`preview` não limita memória.** O buffer inteiro é decodificado para string antes do parse, então o bound real continua sendo o limite de 5 MB do multer; o `preview` limita o array de linhas e o loop O(n), não a string. Streaming exigiria mudar a assinatura para `Readable` — não feito (BACKLOG-0046).
+- **Nota de análise (verificada, não suposição):** prototype pollution via header `__proto__` no CSV **não é explorável** — o papaparse atribui string por bracket notation e `Object.entries` só lista own properties.
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
+
+### BUG-0025 — `parseImportPrice`: preço em formato pt-BR deixa de virar `NaN` na importação de produtos
+- **Problema relacionado:** PROB-0070 (FECHADO)
+- **Data:** 2026-07-22
+- **Área:** backend
+- **Sintoma:** bug **pré-existente** (não introduzido pelo commit `d91b9b3`): `Number(preco_base.replace(',', '.'))` transformava `"1.234,56"` em `"1.234.56"` → `NaN`. Na prática, **todo preço acima de mil exportado do Excel pt-BR era rejeitado** na importação em lote — exatamente nos produtos de maior valor.
+- **Causa raiz:** confirmada — o `replace` trocava apenas a **primeira** vírgula e nunca removia o separador de milhar.
+- **Correção aplicada:** helper `parseImportPrice` (`products.service.ts:55`), usado em `:288`. Regra: havendo os dois separadores, o mais à direita é o decimal e o outro é milhar; `NaN` para qualquer entrada que não seja estritamente numérica após a normalização.
+- **Arquivos alterados:** `backend/src/products/products.service.ts:44` (`THOUSANDS_GROUPED`), `:55` (`parseImportPrice`), `:288` (uso), `backend/src/products/products.service.spec.ts`
+- **Testes/validações executadas:** **12 casos** cobrindo `parseImportPrice` dentro da suíte backend **260/260** desta sessão; lint e build limpos. Helper reverificado por leitura direta por este agente.
+- **Resultado:** PASS_COM_RESSALVA
+- **Ressalvas / decisões registradas (são decisões, não detalhes):**
+  1. **`"1.234"` continua sendo lido como 1.234, não 1234.** É ambíguo (milhar ou decimal) e mudar isso **multiplicaria preço por mil silenciosamente**. Preservado o comportamento existente, que é o lado seguro do erro. Rever só com decisão explícita do usuário.
+  2. **Gap real introduzido pela primeira versão desta própria correção e fechado antes do fim:** o parser aceitava `"12,,50"` como **1250**. Não era fixture ruim — a regra "várias vírgulas = separador de milhar" não validava o **agrupamento**. Passou a exigir `^-?\d{1,3}([.,]\d{3})+$` antes de remover separador. Regex ancorada nas duas pontas, sem quantificador aninhado — **linear, sem ReDoS**.
+  3. **Dados já importados antes do fix podem estar faltando produtos — não auditado.** Nenhum backfill foi feito.
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
+
+### BUG-0026 — `overrides` de `multer`/`express`/`body-parser` na raiz + bump e dedup de `typeorm`: advisories HIGH alcançáveis eliminados sem trocar de major
+- **Problema relacionado:** PROB-0071 (FECHADO), PROB-0068
+- **Data:** 2026-07-22
+- **Área:** segurança / infra
+- **Sintoma:** `multer@2.0.2` com advisory HIGH afetando `<=2.1.1`, **alcançável** pelo `FileInterceptor` de `POST /produtos/importacao`; junto dele, advisories de `express`/`qs`/`path-to-regexp`/`body-parser` na mesma árvore de runtime.
+- **Causa raiz:** confirmada — `@nestjs/platform-express@10.4.22` fixa `multer`, `express` e `body-parser` em **versões exatas**, então patch só chega por `overrides`.
+- **Correção aplicada:** bloco `overrides` (`multer: ^2.2.0`, `express: ^4.22.2`, `body-parser: ^1.20.6`) no `package.json` **da raiz** — o npm só honra overrides na raiz em workspaces (verificado em teste isolado) — acompanhado de um bloco `comments.overrides` no mesmo arquivo, documentando o motivo de cada um e **a condição de remoção** (migração para NestJS 11). `typeorm` bumpado para `^0.3.31` em `backend/package.json`.
+- **Arquivos alterados:** `package.json` (raiz — `overrides` + `comments`), `package-lock.json` (raiz), `backend/package.json`
+- **Testes/validações executadas:** suíte completa verde nos três workspaces (shared **8/8**, backend **260/260**, frontend **29/29**), lint e build limpos. `npm audit --omit=dev --workspace=backend`: **20 → 13** (critical 0, high 6, moderate 7). Versões efetivas confirmadas por `npm ls` e reconferidas em disco por este agente: `multer@2.2.0`, `express@4.22.2`, `body-parser@1.20.6`, `qs@6.15.3`, `path-to-regexp@0.1.13`, `typeorm@0.3.31` (cópia única). **Verificação funcional além do build:** teste temporário com Nest + supertest subindo um `FileInterceptor` real — upload multipart chegou com buffer íntegro e arquivo de 6 MB recebeu **413**.
+- **Resultado:** PASS_COM_RESSALVA
+- **Ressalvas / ARMADILHAS que vão morder de novo:**
+  1. **`npm install` NÃO aplica os overrides.** O lockfile já tinha a árvore materializada e o npm 10.9.8 não re-resolve. **Editar o lock na mão removeu `express`/`multer`/`body-parser` da árvore** — a aplicação não subiria. O que funcionou: `npm update multer express body-parser typeorm path-to-regexp`, que re-resolve só o alvo sem regenerar o lock inteiro. **Deletar o `package-lock.json` foi descartado de propósito** (re-resolveria todos os `^` do expo/react-native).
+  2. **`body-parser` precisou de override próprio.** `platform-express@10.4.22` depende dele **direto e em versão exata** (`1.20.4`); o override de `express` **não alcança**.
+  3. **O bump de `typeorm` criou duas cópias em disco** (`node_modules/typeorm@0.3.28` pelo peer do `@nestjs/typeorm` + `backend/node_modules/typeorm@0.3.31`). **Duas instâncias de TypeORM no mesmo processo duplicam o metadata storage e quebrariam em produção.** `npm update typeorm` deduplicou; estado atual reconferido (uma única cópia, `backend/node_modules/typeorm` não existe mais). **Conferir cópia única após qualquer `npm install` futuro** — BACKLOG-0044.
+  4. **O teste que provou o multer funcionando sob platform-express 10 foi removido — não está no diff.** Candidato a guarda permanente: BACKLOG-0043.
+  5. Os `overrides` forçam versão em **toda** a árvore, inclusive fora do backend; a suíte verde reduz, mas não elimina, o risco de regressão em pacote sem cobertura.
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.
+
+### BUG-0027 — Teste de regressão de PROB-0062 reescrito: `require('fs')` inline quebrava o lint; virou teste comportamental de DTO
+- **Problema relacionado:** PROB-0062, BUG-0022
+- **Data:** 2026-07-22
+- **Área:** backend / qualidade
+- **Sintoma:** **problema introduzido pelo próprio trabalho desta sessão.** A guarda de regressão escrita em `backend/src/orders/orders.service.spec.ts` (para impedir que `status` voltasse ao DTO de pedido) lia o arquivo do DTO com `require('fs')` inline — isso quebrava `npm run lint --workspace=backend` com **2 erros `@typescript-eslint/no-var-requires`**.
+- **Causa raiz:** confirmada — teste baseado em **inspeção textual do fonte**, o que além de violar a regra de lint é frágil: passaria a falhar por qualquer reformatação e não valida comportamento nenhum.
+- **Correção aplicada:** substituído por teste **comportamental**, que é estritamente melhor: valida `CreateOrderDto`/`UpdateOrderDto` com `plainToInstance` + `validate` usando **o mesmo par de opções do `ValidationPipe` global** (`whitelist: true, forbidNonWhitelisted: true`) e assere que `status` aparece entre as propriedades rejeitadas. Passou de **1 teste frágil para 3** (corpo válido aceito, `status` rejeitado no create, `status` rejeitado no update).
+- **Arquivos alterados:** `backend/src/orders/orders.service.spec.ts` (`:3` `import 'reflect-metadata'`, `:236` opções do pipe, `:250`/`:255`/`:262` os três casos)
+- **Testes/validações executadas:** lint backend **limpo** (era o sintoma); suíte backend **260/260**. Estado final reverificado por leitura direta por este agente.
+- **Resultado:** PASS
+- **Ressalvas — duas armadilhas que afetam QUALQUER teste futuro de DTO neste repo:**
+  1. É preciso `import 'reflect-metadata';` **antes** dos imports de DTO no spec. Sem isso os decorators não registram metadata e a validação vira ruído (`Reflect.getMetadata is not a function` / 23 erros espúrios).
+  2. A constante `orderUuid` usada no resto do spec (`bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb`) **não é um UUID v4 válido** e não passa em `@IsUUID('4')` — falta o nibble de versão. Qualquer teste novo que valide DTO com uuid precisa de um v4 de verdade.
+- **Commit:** `f85809f` — "fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes" (2026-07-22 15:56, autor Allan Carvalho). **Correção de fato feita por este agente:** a orientação recebida para este registro dizia "nada foi commitado, manter `Commit: pendente`", mas `git show --stat f85809f` mostra as 22 alterações desta sessão (código + docs do primeiro passe) **já commitadas em `master`** — o handoff estava desatualizado. Verificado por este agente; nenhum commit foi feito por ele.

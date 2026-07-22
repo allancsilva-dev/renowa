@@ -8,6 +8,8 @@ Registro central de problemas. Mantido pelo `docs-reporter`. IDs sequenciais (`P
 
 **Enquadramento: o produto vai para produção depois desta rodada.** Isso eleva a severidade de todo achado que hoje é "só dev" mas **não foi verificado em produção** — nenhuma verificação contra o banco de produção foi feita nesta sessão.
 
+> **CORREÇÃO DE FATO (segundo passe de registro, verificada por `git log`/`git show --stat`):** o parágrafo abaixo, escrito no primeiro passe, **está desatualizado**. Tudo o que esta sessão produziu **foi commitado** como **`f85809f`** — _"fix: bloqueadores da revisao do fluxo comercial + restauracao de invariantes"_, 2026-07-22 15:56, 22 arquivos (código + docs do primeiro passe), incluindo `0031_restore_schema_invariants.sql`, `verify-schema.ts` e o bloco `overrides` do `package.json` da raiz. As entradas de BUGFIX_LOG desta sessão (BUG-0019 a BUG-0027) foram atualizadas de `pendente` para `f85809f`. **Este agente não fez nenhum commit** — apenas registrou o estado real. O parágrafo original fica preservado abaixo como snapshot histórico do primeiro passe.
+
 **Estado de commit: NADA foi commitado nesta sessão. Tudo está no working tree** (confirmado por `git status --porcelain` no momento deste registro: `backend/package.json`, `backend/src/app.module.ts`, `backend/src/faturamento/faturamento.service.ts`, `backend/src/orders/dto/create-order.dto.ts`, `backend/src/orders/orders.service.ts`, `backend/src/orders/orders.service.spec.ts`, `frontend/src/pages/PedidoForm.tsx`, `package.json`/`package-lock.json` na raiz modificados; `backend/src/database/migrations/0031_restore_schema_invariants.sql` e `backend/src/database/verify-schema.ts` não rastreados).
 
 - **Suíte de testes (execução real nesta sessão):** baseline do commit `d91b9b3` confirmado — shared 8/8 (1 suite), backend **236/236** (38 suites), frontend 29/29 (8 arquivos); lint e build limpos nos três workspaces. Após as correções desta sessão, `orders`+`faturamento` foram de 26 → **29 testes** (total esperado do backend: 239, sujeito a subir com o trabalho em andamento).
@@ -17,8 +19,10 @@ Registro central de problemas. Mantido pelo `docs-reporter`. IDs sequenciais (`P
 - **Achado novo de alta severidade: a infra de sync das migrations `0008`/`0009` não existe no banco de dev**, apesar de ambas constarem como aplicadas em `schema_migrations` — **PROB-0061**. Consequência transversal: **`schema_migrations` não é evidência confiável do que existe no banco, em nenhum ambiente.**
 - **Dois bloqueadores da máquina de estados de pedido, achados e corrigidos nesta sessão:** PROB-0062 (`status` gravável via POST/PUT contornando a permissão `pedidos.liberar` criada por este mesmo commit) e PROB-0063 (`DELETE /pedidos/:uuid` sem checagem de faturamento, deixando nota/comissão órfãs e impossíveis de corrigir). Ver BUG-0022 e BUG-0023.
 - **Cinco achados novos ABERTOS, não corrigidos nesta sessão:** PROB-0064 (mass assignment em `PATCH /produtos` e `PATCH /transportadoras` — **única falha identificada com quebra real de isolamento multi-tenant**, pré-existente), PROB-0065 (caminho de sync ignora a máquina de estados nova), PROB-0066 (`PATCH /financeiro/comissoes/:uuid` legado contorna a máquina de estados), PROB-0067 (PII completa de cliente exposta a quem só tem `faturamento.ver` — relevante LGPD), PROB-0068 (**NestJS 10.4.22 é fim de linha** — gate de produção).
-- **Três frentes EM_ANDAMENTO no momento deste registro:** PROB-0069 (substituição de `xlsx@0.18.5` por `papaparse` + limite de linhas durante o parse + `@Throttle`), PROB-0070 (bug pré-existente de parse de `preco_base` em formato pt-BR) e PROB-0071 (`overrides` de `multer`/`express` + bump de `typeorm`).
-- Relatório completo da sessão: [REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md](REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md). 18 itens novos de backlog: BACKLOG-0024 a BACKLOG-0041.
+- **~~Três frentes EM_ANDAMENTO~~ → as três FECHARAM ainda nesta sessão (segundo passe, 2026-07-22):** PROB-0069 (`xlsx@0.18.5` → `papaparse`, importação passa a ser **só CSV**, limite de linhas **durante** o parse, `@Throttle` 5/min, BOM/Windows-1252/`;`), PROB-0070 (`parseImportPrice` corrigindo o bug pré-existente que rejeitava **todo preço acima de mil** exportado do Excel pt-BR) e PROB-0071 (`overrides` de `multer`/`express`/`body-parser` na raiz + bump e **dedup** de `typeorm`). Ver BUG-0024, BUG-0025, BUG-0026 e BUG-0027.
+- **Números finais da sessão (execução real):** shared **8/8** (1 suite); backend lint **limpo**, build **ok**, **260/260** (38 suites) — baseline do commit era 236, **+24**; frontend lint **limpo**, build **ok**, **29/29** (8 arquivos).
+- **Gate de dependências desta rodada: FECHADO.** `npm audit --omit=dev --workspace=backend` foi de **20 → 13** (critical 0, high 6, moderate 7), e os 13 restantes são **exatamente** os já triados como não-aplicáveis mais o bloco que só sai com NestJS 11. **Nenhuma vulnerabilidade alcançável permanece aberta.** Detalhe em PROB-0068; **BACKLOG-0040 é o único caminho para os 13 restantes.**
+- Relatório completo da sessão: [REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md](REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md). Itens novos de backlog: BACKLOG-0024 a BACKLOG-0046.
 
 ## Estado atual — revisão 2026-07-22 (parte 2, pós "Fluxo Comercial Completo")
 
@@ -1362,59 +1366,79 @@ Origem: implementação de grande porte, plano aprovado em `/Users/Zero/.claude/
   - `form-data` — não resolve na árvore de runtime do backend.
 - **Arquivos/módulos:** `backend/package.json` (dependências `@nestjs/*`), árvore de `node_modules`
 - **Solução proposta:** planejar a migração 10 → 11 como **item próprio com data**, não como tarefa pós-deploy (BACKLOG-0040).
-- **Solução aplicada:** nenhuma para o NestJS em si. Os advisories **alcançáveis e corrigíveis sem trocar de major** estão em tratamento — ver PROB-0069 (`xlsx`) e PROB-0071 (`multer`/`express`/`typeorm`).
-- **Evidências/comandos:** `npm audit --omit=dev` executado nesta sessão + leitura dos ranges de cada advisory.
-- **Riscos residuais:** ir para produção com 10 advisories HIGH abertos numa linha sem manutenção.
+- **Solução aplicada:** nenhuma para o NestJS em si. Os advisories **alcançáveis e corrigíveis sem trocar de major** foram todos tratados e fechados no segundo passe desta sessão — ver PROB-0069 (`xlsx` → `papaparse`) e PROB-0071 (`multer`/`express`/`body-parser`/`typeorm`).
+- **RESULTADO DO GATE DE DEPENDÊNCIAS DESTA RODADA (2026-07-22, segundo passe):** `npm audit --omit=dev --workspace=backend` foi de **20 → 13** achados (critical 0, high 6, moderate 7). Os 13 restantes são **exatamente** os já triados acima como não-aplicáveis (`brace-expansion`, `form-data`, `glob`, `js-yaml`, `lodash`, `picomatch`) **mais** o bloco que só sai com NestJS 11 (`@nestjs/common`, `@nestjs/config`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/typeorm`, `file-type`, `uuid`). **Nenhuma vulnerabilidade alcançável permanece aberta.** Isso **fecha o gate de dependências desta rodada** e deixa **BACKLOG-0040 (NestJS 10 → 11) como o único caminho para os 13 restantes.**
+- **Evidências/comandos:** `npm audit --omit=dev` executado nesta sessão (antes e depois) + leitura dos ranges de cada advisory.
+- **Riscos residuais:** ir para produção com 13 advisories abertos numa linha sem manutenção — **todos triados como não-alcançáveis hoje**, mas a triagem vale para o código atual: qualquer novo uso de `@nestjs/*` ou de `file-type`/`uuid` pode reabrir a exposição sem aviso.
 - **Próximo passo:** decisão do usuário sobre a data da migração; ver BACKLOG-0040.
-- **Relacionado:** PROB-0069, PROB-0071, BACKLOG-0040
+- **Relacionado:** PROB-0069, PROB-0071, BUG-0024, BUG-0026, BACKLOG-0040
 
 ### PROB-0069 — `xlsx@0.18.5` com 2 advisories HIGH sem correção no npm, recebendo upload de usuário em `POST /produtos/importacao`
 - **Data:** 2026-07-22
 - **Origem:** revisão
 - **Severidade:** HIGH
-- **Status:** EM_ANDAMENTO
+- **Status:** FECHADO (2026-07-22, segundo passe da mesma sessão)
 - **Área:** segurança / backend
 - **Sintoma:** dois advisories HIGH **sem versão corrigida disponível no registry** — prototype pollution `GHSA-4r6h-8v6p-xvw6` e ReDoS `GHSA-5pgg-2g8v-p4x9` — em uma lib que recebe **upload de usuário** em `POST /produtos/importacao`. Somado a isso, o limite `IMPORT_MAX_ROWS` é aplicado **depois** de `XLSX.read` + `sheet_to_json` materializarem o arquivo inteiro: DoS por planilha comprimida, e o limite de 5 MB do multer **não protege** porque `.xlsx` é um ZIP.
 - **Causa raiz:** confirmada — dependência sem manutenção no caminho de correção do npm, exposta diretamente a input não confiável.
 - **Impacto técnico:** superfície de ataque direta (prototype pollution/ReDoS) e DoS por descompressão em endpoint autenticado.
 - **Solução em andamento:** substituição de `xlsx@0.18.5` por **`papaparse`** — a importação passa a ser **só CSV** (`.xlsx` não é requisito; **decidido pelo usuário**). Comparação registrada: `papaparse` 5.5.4, MIT, 267 KB, **zero dependências transitivas**, publicado 2026-06. **Descartados:** `exceljs` (21,8 MB, parado desde 2024-12, puxa `unzipper` e `uuid@^8` vulnerável) e SheetJS via CDN (tira a dependência do registry, **cega o `npm audit`** e quebra proxies corporativos). No mesmo trabalho: limite de linhas aplicado **durante** o parse, `@Throttle` de 5/min na rota, e tratamento de separador `;`, BOM e latin1.
 - **Arquivos/módulos:** `backend/src/products/products.service.ts` (fluxo de importação), `backend/src/products/products.controller.ts` (rota `POST /produtos/importacao`), `backend/package.json`
-- **Evidências/comandos:** `npm audit --omit=dev` nesta sessão; leitura dos advisories e da árvore de dependências das alternativas.
-- **Riscos residuais:** mudança de contrato de importação (deixa de aceitar `.xlsx`) — precisa de comunicação a usuários e ajuste de documentação/UI.
-- **Próximo passo:** concluir a substituição; registrar o resultado (testes + BUGFIX) quando a frente fechar.
-- **Relacionado:** PROB-0068, PROB-0070, PROB-0071, BACKLOG-0033
+- **Solução aplicada (fechamento):** `xlsx` removido de `backend/package.json` (verificado por leitura direta: não há mais referência à lib fora do nome de um caso de teste); `papaparse@^5.5.4` + `@types/papaparse` no lugar; `IMPORT_ALLOWED_EXTENSIONS = ['csv']` (`products.service.ts:13`). `normalizeImportRow`, o loop de upsert e o `ImportProductsResultDto` **ficaram intactos** — a mudança é de camada de parse, não de contrato de saída.
+- **Detalhes técnicos registrados de propósito (evitam retrabalho):**
+  - **`import * as Papa from 'papaparse'`, nunca `import Papa from`.** O `tsconfig` tem `allowSyntheticDefaultImports` **sem** `esModuleInterop`: o default import compilaria e **quebraria em runtime**. Verificado em `products.service.ts:5`.
+  - **DoS corrigido no lugar certo:** `preview: IMPORT_MAX_ROWS + 1` (`:238`) limita **durante** o parse; a checagem `rows.length > IMPORT_MAX_ROWS` (`:245`) vem depois só para decidir o 400. Confirmado empiricamente que, com `header: true`, o `preview` conta **linhas de dados** (header fora), então a comparação continua exata. Há teste garantindo que 5000 linhas legítimas ainda passam.
+  - **Rate limit real:** `@Throttle({ default: { ttl: 60_000, limit: 5 } })` em `products.controller.ts:30`. Confirmado que o `UserThrottlerGuard` é `APP_GUARD` global com chave por `user.sub` — o limite é **por usuário** e vigora de fato, não é decoração.
+  - **Encoding:** `decodeCsvBuffer` (`:31`) remove BOM, decodifica com `TextDecoder('utf-8', { fatal: true })` e só cai para `windows-1252` quando o buffer **comprovadamente** não é UTF-8. Usar `fatal` em vez de procurar `` é o ponto: heurística por caractere de substituição reinterpretaria arquivo UTF-8 legítimo por engano. 3 testes (UTF-8 puro, UTF-8 com BOM, Windows-1252).
+  - **Separador `;` do Excel pt-BR:** `delimiter: ''` (auto-detecção do papaparse). Testes com `,` e com `;`.
+  - **Prototype pollution via header `__proto__` no CSV foi analisada e NÃO é explorável:** o papaparse atribui string por bracket notation e `Object.entries` só lista own properties.
+- **MUDANÇA DE CONTRATO (precisa de aviso ao usuário final — BACKLOG-0042):** `.xlsx` agora recebe **400** com `'Tipo de arquivo inválido. Utilize .csv (UTF-8).'`. **Quem já importava planilha `.xlsx` perde o fluxo.** O frontend foi atualizado no mesmo trabalho (`frontend/src/pages/Produtos.tsx`: `accept='.csv,text/csv'`, label `Arquivo (.csv)`, instrução "Arquivo > Salvar como > CSV UTF-8", as 3 colunas esperadas `codigo`/`descricao`/`preco_base`, limite de 5.000 linhas) — **mas UI não substitui comunicação a quem usa.** Shape do `ImportProductsResultDto` inalterado; **mobile não consome essa rota**.
+- **Evidências/comandos:** `npm audit --omit=dev --workspace=backend` (20 → 13 achados); suíte backend **260/260** em 38 suites (baseline do commit era 236); lint e build limpos; estado final reverificado por leitura direta de `products.service.ts`, `products.controller.ts`, `Produtos.tsx` e `backend/package.json` por este agente.
+- **Riscos residuais:** (a) **nada rodou contra Postgres real** — os testes de import usam `manager` mockado, o caminho `dataSource.transaction` + upsert não foi exercido contra banco (BACKLOG-0028); (b) **não foi testado com arquivo real exportado do Excel pt-BR** — os bytes foram simulados, o que cobre a mecânica, mas um teste manual antes do go-live é barato (BACKLOG-0045); (c) **`preview` não limita memória** — o buffer inteiro é decodificado para string antes do parse, então o bound real continua sendo o limite de 5 MB do multer; o `preview` limita o array de linhas e o loop O(n), não a string (BACKLOG-0046).
+- **Próximo passo:** commitar; comunicar a mudança de contrato (BACKLOG-0042).
+- **Relacionado:** BUG-0024, PROB-0068, PROB-0070, PROB-0071, BACKLOG-0033, BACKLOG-0042, BACKLOG-0045, BACKLOG-0046
 
 ### PROB-0070 — Parse de `preco_base` rejeita todo preço acima de mil exportado do Excel pt-BR
 - **Data:** 2026-07-22
 - **Origem:** revisão (bug pré-existente, encontrado ao trabalhar em PROB-0069)
 - **Severidade:** MEDIUM
-- **Status:** EM_ANDAMENTO
+- **Status:** FECHADO (2026-07-22, segundo passe da mesma sessão)
 - **Área:** backend
 - **Sintoma:** `backend/src/products/products.service.ts:206` faz `Number(preco_base.replace(',', '.'))` — `"1.234,56"` vira `"1.234.56"` → `NaN`. Na prática, **todo preço acima de mil exportado do Excel em pt-BR é rejeitado hoje** na importação de produtos.
 - **Causa raiz:** confirmada — troca só a vírgula decimal, sem remover o separador de milhar.
 - **Impacto técnico:** importação em lote silenciosamente incompleta ou com linhas rejeitadas, exatamente nos produtos de maior valor.
-- **Arquivos/módulos:** `backend/src/products/products.service.ts:206`
-- **Solução em andamento:** normalização correta de número pt-BR, junto da frente de PROB-0069.
-- **Evidências/comandos:** leitura do código apontada na revisão; **não reverificada por leitura direta nesta sessão** (arquivo em alteração pela frente em andamento).
-- **Riscos residuais:** dados já importados antes do fix podem estar faltando produtos — não auditado.
-- **Próximo passo:** concluir junto de PROB-0069 e registrar em BUGFIX_LOG.
-- **Relacionado:** PROB-0069
+- **Arquivos/módulos:** `backend/src/products/products.service.ts` — helper `parseImportPrice` (`:55`), usado em `:288`
+- **Solução aplicada (fechamento):** função `parseImportPrice` dedicada, com **12 casos testados**. Regra: havendo os dois separadores, o mais à direita é o decimal e o outro é milhar; retorna `NaN` para qualquer entrada que não seja estritamente numérica depois da normalização. Verificado por leitura direta por este agente.
+- **Duas DECISÕES (não detalhes de implementação) que precisam ficar registradas:**
+  1. **`"1.234"` continua sendo lido como 1.234, não 1234.** É genuinamente ambíguo (milhar ou decimal) e mudar isso **multiplicaria preço por mil silenciosamente**. Preservado o comportamento atual, que é o lado seguro do erro. Se algum dia for revisto, tem que ser com decisão explícita do usuário.
+  2. **Gap real introduzido pela primeira versão da correção e fechado antes do fim:** o parser aceitava `"12,,50"` como **1250** — não era fixture ruim, era a regra "várias vírgulas = separador de milhar" sem validar o **agrupamento**. Passou a exigir `^-?\d{1,3}([.,]\d{3})+$` (constante `THOUSANDS_GROUPED`, `:44`) antes de remover separador. **Regex ancorada nas duas pontas e sem quantificador aninhado ambíguo — linear, sem ReDoS.**
+- **Evidências/comandos:** suíte backend **260/260** nesta sessão (12 casos cobrindo `parseImportPrice`); leitura direta do helper por este agente.
+- **Riscos residuais:** **dados já importados antes do fix podem estar faltando produtos — não auditado.** Nenhum backfill/reconciliação foi feito.
+- **Próximo passo:** commitar; se houver suspeita de importação incompleta em produção, auditar produtos acima de mil reais por cliente.
+- **Relacionado:** BUG-0025, PROB-0069, BACKLOG-0045
 
 ### PROB-0071 — `multer@2.0.2` com advisory HIGH alcançável via `FileInterceptor`
 - **Data:** 2026-07-22
 - **Origem:** revisão
 - **Severidade:** HIGH
-- **Status:** EM_ANDAMENTO
+- **Status:** FECHADO (2026-07-22, segundo passe da mesma sessão)
 - **Área:** segurança / infra
 - **Sintoma:** `multer` instalado na versão 2.0.2, com advisory HIGH afetando `<=2.1.1`, **alcançável** pelo uso de `FileInterceptor` na importação de produtos.
-- **Causa raiz:** confirmada — versão transitiva desatualizada.
+- **Causa raiz:** confirmada — versão transitiva desatualizada, fixada em versão **exata** por `@nestjs/platform-express@10.4.22`.
 - **Impacto técnico:** advisory HIGH em caminho que recebe upload de usuário.
-- **Solução em andamento:** `overrides` de `multer` para `^2.2.0` e de `express` para `^4.22.2`, mais bump de `typeorm` dentro de 0.3.x.
-- **Arquivos/módulos:** `package.json` / `package-lock.json` (raiz — ambos aparecem modificados no working tree), `backend/package.json`
-- **Evidências/comandos:** `npm audit --omit=dev` nesta sessão.
-- **Riscos residuais:** `overrides` forçam versão em toda a árvore — precisa de suíte completa verde depois do bump para descartar regressão.
-- **Próximo passo:** concluir, rodar suíte completa nos três workspaces e registrar em BUGFIX_LOG.
-- **Relacionado:** PROB-0068, PROB-0069
+- **Solução aplicada (fechamento):** bloco `overrides` no `package.json` da **raiz** — `multer: ^2.2.0`, `express: ^4.22.2`, `body-parser: ^1.20.6` — acompanhado de um bloco `comments.overrides` no próprio arquivo, documentando o motivo de cada override e **a condição de remoção** (migração para NestJS 11 / `platform-express >= 11.1.28`). Verificado por leitura direta do `package.json` da raiz por este agente.
+- **Por que na raiz:** o npm só honra `overrides` no `package.json` **da raiz** em projetos com workspaces. Verificado em teste isolado nesta sessão.
+- **Versões efetivas, confirmadas por `npm ls` e reconferidas em disco por este agente:** `multer@2.2.0`, `express@4.22.2`, `body-parser@1.20.6`, `qs@6.15.3`, `path-to-regexp@0.1.13`, `typeorm@0.3.31`. (`qs` e `path-to-regexp` vêm pelo próprio `express@4.22.2`, não têm override próprio; `typeorm` foi bumpado em `backend/package.json` para `^0.3.31`.)
+- **TRÊS ACHADOS OPERACIONAIS que vão morder de novo — registrados de propósito:**
+  1. **`npm install` NÃO aplica os overrides.** O lockfile já tinha a árvore materializada e o npm 10.9.8 não re-resolve. Pior: **editar o lock na mão removeu `express`/`multer`/`body-parser` da árvore** — a aplicação não subiria. O que funcionou foi `npm update multer express body-parser typeorm path-to-regexp`, que re-resolve **só o alvo** sem regenerar o lock inteiro. **Deletar o `package-lock.json` foi descartado deliberadamente:** re-resolveria todos os `^` do expo/react-native.
+  2. **`body-parser` precisou de override próprio, além de `express`.** `@nestjs/platform-express@10.4.22` depende de `body-parser` **direto e em versão exata** (`1.20.4`), então o override de `express` **não alcança**.
+  3. **O bump de `typeorm` criou duas cópias em disco** (`node_modules/typeorm@0.3.28`, puxada pelo peer do `@nestjs/typeorm`, + `backend/node_modules/typeorm@0.3.31`). **Duas instâncias de TypeORM no mesmo processo duplicam o metadata storage e quebrariam em produção.** `npm update typeorm` deduplicou. Estado atual reconferido por este agente: existe **uma única** cópia, em `node_modules/typeorm@0.3.31`; `backend/node_modules/typeorm` não existe mais. **Conferir cópia única depois de qualquer `npm install` futuro** — virou BACKLOG-0044.
+- **Verificação extra (o ponto que build verde não cobre):** build passando **não prova** que `multer@2.2.0` funciona sob `platform-express@10`. Foi escrito um teste temporário com Nest + supertest subindo um `FileInterceptor` de verdade: **upload multipart chegou com buffer íntegro e arquivo de 6 MB recebeu 413.** **O arquivo foi removido depois — não está no diff.** Candidato a guarda permanente: BACKLOG-0043.
+- **Arquivos/módulos:** `package.json` e `package-lock.json` (raiz), `backend/package.json`
+- **Evidências/comandos:** `npm audit --omit=dev --workspace=backend` (20 → 13); `npm ls` para versões efetivas; teste temporário Nest+supertest com `FileInterceptor` (removido); suíte completa verde nos três workspaces (shared 8/8, backend 260/260, frontend 29/29), lint e build limpos.
+- **Riscos residuais:** os `overrides` forçam versão em **toda** a árvore, inclusive fora do backend — a suíte verde reduz, mas não elimina, o risco de regressão em pacote não coberto por teste. A garantia funcional do multer sob platform-express 10 **não ficou no repositório** (BACKLOG-0043). A duplicação de `typeorm` pode voltar em qualquer `npm install` (BACKLOG-0044).
+- **Próximo passo:** commitar; remover o bloco de overrides quando BACKLOG-0040 (NestJS 11) for concluído.
+- **Relacionado:** BUG-0026, PROB-0068, PROB-0069, BACKLOG-0040, BACKLOG-0043, BACKLOG-0044
 
 ---
 # MetaRenowa — fechamento P0 (21/07/2026)

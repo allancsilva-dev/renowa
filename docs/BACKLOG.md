@@ -4,6 +4,8 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 
 **Estado atual (2026-07-22, após overhaul de RBAC — ver PROBLEM_LEDGER.md#PROB-0058): 16 itens não fechados (14 ABERTO, 1 PARCIALMENTE_RESOLVIDO — BACKLOG-0009, 1 FECHADO_COM_RESSALVA — BACKLOG-0011; contagem exata por status, corrigindo texto anterior que citava 13).** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
 
+**Atualização 2026-07-22 (parte 4 — fechamento das três frentes EM_ANDAMENTO da mesma sessão):** **5 itens novos (BACKLOG-0042 a BACKLOG-0046)**, originados do fechamento de PROB-0069/0070/0071 (ver BUG-0024 a BUG-0027). Contagem revisada: **39 itens não fechados** (os 34 anteriores, cuja contagem por status **não foi rechecada nesta rodada**, mais os 5 novos, todos ABERTO). Destaque: **BACKLOG-0042 (comunicar que a importação deixou de aceitar `.xlsx`) tem impacto direto em usuário final** e BACKLOG-0045 (validar com arquivo real do Excel pt-BR) é barato e deve preceder o go-live. **O gate de dependências desta rodada está FECHADO** — `npm audit --omit=dev --workspace=backend` foi de 20 → 13 e os 13 restantes são exatamente os não-aplicáveis já triados mais o bloco que só sai com NestJS 11: **BACKLOG-0040 é o único caminho para eles.** **Estado de commit corrigido neste passe:** ao contrário do que dizia o registro anterior, o trabalho desta sessão **está commitado** como **`f85809f`** (2026-07-22 15:56, 22 arquivos) — verificado por `git show --stat`; este agente não commitou nada.
+
 **Atualização 2026-07-22 (parte 3 — revisão independente + testes + Wave 0/Wave 1 do commit `d91b9b3`):** contagem revisada — **34 itens não fechados** (os 16 anteriores, cuja contagem por status **não foi rechecada nesta rodada**, mais os 18 novos abaixo, todos ABERTO). 18 itens novos (BACKLOG-0024 a BACKLOG-0041), originados da sessão registrada em [REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md](REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md). **Enquadramento: o produto vai para produção depois desta rodada** — BACKLOG-0041 (rodar `db:verify` contra produção) e BACKLOG-0040 (migração NestJS 10 → 11) são gates de deploy, não itens de fila normal. **Nada desta sessão foi commitado.**
 
 **Atualização 2026-07-22 (pós "Fluxo Comercial Completo"):** 3 itens novos adicionados (BACKLOG-0021 a BACKLOG-0023), todos originados da crítica de design pós-implementação (`.impeccable/critique/2026-07-22T17-30-23Z__edidodetalhe-financeiro-fornecedores-asynccombobox.md`, score 23/40) e adiados por decisão explícita do usuário para uma rodada futura — ver [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) seção "Implementação Fluxo Comercial Completo" para o contexto completo da entrega.
@@ -453,6 +455,56 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Risco se ficar pendente:** subir para produção sem saber se o banco tem CHECKs de `version > 0` (base do controle de concorrência otimista), índices únicos que impedem comissão duplicada, triggers de `updated_at` e as tabelas de sync. Se qualquer um faltar, a falha aparece como corrupção silenciosa de dado real, não como erro.
 - **Status:** ABERTO
 - **Relacionado:** PROB-0059, PROB-0060, PROB-0061, BUG-0020, BUG-0021
+
+### BACKLOG-0042 — Comunicar a usuários a mudança de contrato da importação de produtos: `.xlsx` deixou de ser aceito
+- **Prioridade:** P1
+- **Área:** produto / documentação / frontend
+- **Motivo:** ao fechar PROB-0069 (BUG-0024), `POST /produtos/importacao` passou a aceitar **só `.csv`**; `.xlsx` agora recebe **400** com `'Tipo de arquivo inválido. Utilize .csv (UTF-8).'`. **Quem já importava planilha `.xlsx` perde o fluxo sem aviso prévio.** A UI foi atualizada no mesmo trabalho (`frontend/src/pages/Produtos.tsx`: `accept='.csv,text/csv'`, label `Arquivo (.csv)`, instrução "Arquivo > Salvar como > CSV UTF-8 (delimitado por vírgulas)", as 3 colunas esperadas `codigo`/`descricao`/`preco_base`, limite de 5.000 linhas) — **mas texto na tela não é comunicação de mudança de contrato.** O shape do `ImportProductsResultDto` não mudou e o **mobile não consome essa rota**, então o impacto é exclusivamente no usuário web que importa planilha.
+- **Dependências:** BUG-0024 commitado e implantado.
+- **Critério de aceite:** aviso enviado a quem usa a importação (canal a definir pelo usuário), com o passo a passo de "Salvar como > CSV UTF-8" no Excel; se houver material de apoio/treinamento do produto, atualizado no mesmo movimento.
+- **Risco se ficar pendente:** usuário tenta importar a planilha de sempre, toma 400 e conclui que o sistema quebrou — suporte evitável, e desconfiança logo depois de um deploy.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0069, BUG-0024
+
+### BACKLOG-0043 — Guarda permanente para o override de `multer` sob `platform-express@10` (o teste que provou isso foi removido)
+- **Prioridade:** P2
+- **Área:** infra / qualidade / backend
+- **Motivo:** ao fechar PROB-0071, ficou claro que **build verde não prova que `multer@2.2.0` funciona sob `@nestjs/platform-express@10.4.22`** — o override força uma versão que o pacote não declara. A prova foi feita com um teste **temporário** (Nest + supertest subindo um `FileInterceptor` real: upload multipart chegou com buffer íntegro, arquivo de 6 MB recebeu 413) e **o arquivo foi removido depois — não está no diff.** Hoje não existe nada no repositório que falhe se o override quebrar o upload.
+- **Dependências:** nenhuma; o padrão do teste já foi validado uma vez nesta sessão.
+- **Critério de aceite:** teste de integração versionado que suba um módulo Nest mínimo com `FileInterceptor`, faça upload multipart real e assere (a) buffer íntegro no handler e (b) **413** acima do limite configurado. Roda na suíte normal do backend.
+- **Risco se ficar pendente:** um `npm install`/bump futuro reverte ou altera a resolução do `multer` e a importação de produtos quebra **em produção**, sem nenhum teste vermelho antes.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0071, BUG-0026, BACKLOG-0040
+
+### BACKLOG-0044 — Item de checklist: conferir cópia única de `typeorm` após qualquer `npm install`
+- **Prioridade:** P2
+- **Área:** infra / banco
+- **Motivo:** o bump para `typeorm@0.3.31` **criou duas cópias em disco** (`node_modules/typeorm@0.3.28`, puxada pelo peer do `@nestjs/typeorm`, + `backend/node_modules/typeorm@0.3.31`). **Duas instâncias de TypeORM no mesmo processo duplicam o metadata storage e quebrariam em produção** — e nada no build ou na suíte acusa isso. `npm update typeorm` deduplicou (estado atual verificado: uma única cópia, `backend/node_modules/typeorm` não existe mais), mas a duplicação **pode voltar em qualquer `npm install`**.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** verificação de cópia única (`npm ls typeorm` ou script equivalente) incorporada ao checklist de manutenção de dependências e/ou ao CI, falhando quando houver mais de uma versão resolvida.
+- **Risco se ficar pendente:** falha em produção difícil de diagnosticar (metadata duplicada), disparada por um `npm install` de rotina que ninguém associa à causa.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0071, BUG-0026
+
+### BACKLOG-0045 — Validar a importação com arquivo real exportado do Excel pt-BR antes do go-live
+- **Prioridade:** P1
+- **Área:** backend / qualidade
+- **Motivo:** toda a cobertura de BUG-0024/BUG-0025 usa **bytes simulados** (BOM, Windows-1252, separador `;`) e `manager` mockado. Isso cobre a mecânica, mas **nenhum arquivo realmente exportado pelo Excel pt-BR foi usado**, e o caminho `dataSource.transaction` + upsert **nunca rodou contra Postgres** (ver BACKLOG-0028 para a ressalva estrutural da suíte). Um teste manual com export de verdade é barato e fecha as duas lacunas de uma vez.
+- **Dependências:** ambiente com Postgres e um `.xlsx` real salvo como CSV pelo Excel em pt-BR.
+- **Critério de aceite:** importação manual executada com arquivo exportado de verdade, conferindo (a) acentuação preservada, (b) separador detectado, (c) preços acima de mil (`1.234,56`) importados com o valor certo, (d) contagem do `ImportProductsResultDto` batendo com o arquivo. Resultado registrado.
+- **Risco se ficar pendente:** ir para produção com a correção validada só contra fixtures que o próprio time escreveu — exatamente a classe de erro que produziu PROB-0070.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0069, PROB-0070, BUG-0024, BUG-0025, BACKLOG-0028
+
+### BACKLOG-0046 — `preview` do papaparse não limita memória: bound real da importação continua sendo o limite de 5 MB do multer
+- **Prioridade:** P3
+- **Área:** backend / segurança
+- **Motivo:** o `preview: IMPORT_MAX_ROWS + 1` resolveu o loop O(n) e o array de linhas, mas **o buffer inteiro é decodificado para string antes do parse** (`decodeCsvBuffer`). Ou seja, o teto de memória do request continua sendo o limite de 5 MB do multer, não o `preview`. Isso é aceitável hoje (CSV não comprime como `.xlsx`, então o limite de 5 MB é um bound honesto — diferente do cenário de PROB-0069), mas é uma limitação **conhecida**, não uma proteção.
+- **Dependências:** mudar a assinatura do fluxo de importação para `Readable` (streaming) — não feito de propósito nesta rodada.
+- **Critério de aceite:** parse por stream, sem materializar o arquivo inteiro em string, mantendo BOM/encoding, auto-detecção de separador e o corte em `IMPORT_MAX_ROWS`; teste demonstrando memória estável com arquivo no teto do limite.
+- **Risco se ficar pendente:** baixo hoje; sobe se o limite de 5 MB do multer for aumentado sem revisitar este ponto — **aí o bound desaparece junto.**
+- **Status:** ABERTO
+- **Relacionado:** PROB-0069, BUG-0024
 
 # MetaRenowa P0 (21/07/2026)
 
