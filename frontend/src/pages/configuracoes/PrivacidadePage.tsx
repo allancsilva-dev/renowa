@@ -65,7 +65,7 @@ export default function PrivacidadePage() {
     <form onSubmit={create} className='flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4'>
       <label className='grid min-w-72 flex-1 gap-1 text-sm font-medium text-slate-700'>Cliente
         <select required disabled={clientsLoading} value={subjectUuid} onChange={(event) => setSubjectUuid(event.target.value)} className='rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'>
-          <option value=''>{clientsLoading ? 'Carregando clientes...' : 'Selecione um cliente'}</option>
+          <option value=''>{clientsLoading ? 'Carregando clientes...' : ''}</option>
           {clients.map((client) => <option key={client.uuid} value={client.uuid}>{client.razao_social}</option>)}
         </select></label>
       <label className='grid gap-1 text-sm font-medium text-slate-700'>Direito solicitado<select value={type} onChange={(event) => setType(event.target.value as typeof type)} className='rounded-lg border border-slate-300 bg-white px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'><option value='ERASURE'>Apagamento</option><option value='EXPORT'>Portabilidade</option></select></label>

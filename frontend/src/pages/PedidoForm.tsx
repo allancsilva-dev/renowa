@@ -187,13 +187,13 @@ export default function PedidoForm() {
           </label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Fornecedor *</span>
             <select value={header.fornecedor_uuid} onChange={(e) => { setHeader((h) => ({ ...h, fornecedor_uuid: e.target.value })); setItems([newItem()]); }} className={inputClass} required>
-              <option value=''>Selecione</option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
+              <option value=''></option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
             </select></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
             <input type='date' value={header.data} onChange={(e) => setHeader((h) => ({ ...h, data: e.target.value }))} className={inputClass} /></label>
           {canChooseVendor && <label className='flex flex-col gap-1'><span className={labelClass}>Vendedor</span>
             <select value={header.vendedor_uuid} onChange={(e) => setHeader((h) => ({ ...h, vendedor_uuid: e.target.value }))} className={inputClass}>
-              <option value=''>Selecione</option>{users.map((entry) => <option key={entry.authUserId} value={entry.authUserId}>{entry.name}</option>)}
+              <option value=''></option>{users.map((entry) => <option key={entry.authUserId} value={entry.authUserId}>{entry.name}</option>)}
             </select></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
             <select value={header.transportadora_uuid} onChange={(e) => setHeader((h) => ({ ...h, transportadora_uuid: e.target.value }))} className={inputClass}>

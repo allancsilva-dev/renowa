@@ -388,7 +388,7 @@ export default function ClienteForm() {
                   onChange={handleChange}
                   className={inputClass}
                 >
-                  <option value=''>Selecione</option>
+                  <option value=''></option>
                   {UFS.map((uf) => (
                     <option key={uf} value={uf}>{uf}</option>
                   ))}

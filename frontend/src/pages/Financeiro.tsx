@@ -563,7 +563,7 @@ function ComissaoAlune() {
             </div>
             <Field label='Fornecedor'>
               <select value={form.fornecedor_id} onChange={(e) => setForm((p) => ({ ...p, fornecedor_id: e.target.value }))} className={inputCls}>
-                <option value=''>Selecione</option>
+                <option value=''></option>
                 {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
               </select>
             </Field>
