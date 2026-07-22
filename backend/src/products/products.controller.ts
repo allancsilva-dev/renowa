@@ -6,7 +6,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { FindProductsQueryDto } from './dto/find-products-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -40,12 +40,10 @@ export class ProductsController {
   @Get()
   @RequirePermission('produtos.ver')
   async findAll(
-    @Query() pagination: PaginationDto,
-    @Query('search') search: string,
-    @Query('fornecedor_uuid') fornecedorUuid: string,
+    @Query() query: FindProductsQueryDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.productsService.findAll(user.tenantId, pagination, search, fornecedorUuid);
+    return this.productsService.findAll(user.tenantId, query, query.search, query.fornecedor_uuid);
   }
 
   @Get(':uuid')
