@@ -28,8 +28,10 @@ const mainNavItems: NavItem[] = [
   { to: '/produtos',      label: 'Produtos',     icon: Package },
   { to: '/fornecedores',  label: 'Fornecedores', icon: Building2 },
   { to: '/transporte',    label: 'Transporte',   icon: Truck },
-  { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign },
+  // Faturamento antes de Financeiro: segue a ordem do ciclo comercial
+  // (pedido -> faturamento -> caixa), não a ordem em que os módulos nasceram.
   { to: '/faturamento',   label: 'Faturamento',  icon: Receipt, permission: 'faturamento.ver' },
+  { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign },
 ];
 
 function getInitials(email: string): string {
