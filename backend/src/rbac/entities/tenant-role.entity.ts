@@ -13,7 +13,7 @@ import { TenantRolePermission } from './tenant-role-permission.entity';
 
 @Entity('tenant_roles')
 @Unique(['tenantId', 'id'])
-@Unique(['tenantId', 'name'])
+@Index('UQ_tenant_roles_tenant_id_name_active', ['tenantId', 'name'], { unique: true, where: 'deleted_at IS NULL' })
 @Index(['tenantId'])
 @Index(['tenantId', 'active'])
 export class TenantRole {
@@ -35,6 +35,9 @@ export class TenantRole {
 
   @Column({ type: 'boolean', default: true })
   active!: boolean;
+
+  @Column({ name: 'is_system', type: 'boolean', default: false })
+  isSystem!: boolean;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
