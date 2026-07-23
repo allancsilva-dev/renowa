@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatRole } from '@/lib/authorization';
+import logoRenowaBranco from '@/assets/logo-renowa-branco.png';
 
 interface NavItem {
   to: string;
@@ -80,7 +81,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className='flex items-center gap-3 px-5 py-6'>
         <img
-          src='/assets/logo-renowa-branco.png'
+          src={logoRenowaBranco}
           alt='Renowa'
           className='h-10 w-auto object-contain shrink-0'
         />

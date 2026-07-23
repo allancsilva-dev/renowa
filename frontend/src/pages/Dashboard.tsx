@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '@/lib/apiClient';
 import { moneyForDisplay, sumMoney } from '@/lib/decimal';
 import { useAuth } from '@/hooks/useAuth';
+import logoRenowa from '@/assets/logo-renowa.png';
 import {
   AreaChart,
   Area,
@@ -229,7 +230,7 @@ export default function Dashboard() {
 
         {/* Ações */}
         <div className='flex flex-wrap items-center gap-3'>
-          <img src='/assets/logo-renowa.png' className='hidden h-12 w-auto object-contain sm:block' alt='Renowa' />
+          <img src={logoRenowa} className='hidden h-12 w-auto object-contain sm:block' alt='Renowa' />
           <button
             type='button'
             onClick={() => setValoresOcultos((v) => !v)}

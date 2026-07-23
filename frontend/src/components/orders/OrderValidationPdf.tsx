@@ -2,6 +2,7 @@ import { Document, Image, Page, StyleSheet, Text, View } from '@react-pdf/render
 import Decimal from 'decimal.js';
 import type { Order, OrderStatus } from '@/types';
 import { qtyForDisplay } from '@/lib/decimal';
+import logoRenowa from '@/assets/logo-renowa.png';
 
 const HEADER_BY_STATUS: Record<OrderStatus, { title: string; badge: string; badgeBg: string; badgeColor: string; note: string }> = {
   em_aberto: { title: 'PEDIDO PARA VALIDAÇÃO', badge: 'AGUARDANDO VALIDAÇÃO', badgeBg: '#e6f5f3', badgeColor: '#176b62', note: 'Documento não fiscal — sujeito à conferência e aprovação' },
@@ -64,7 +65,7 @@ export function OrderValidationPdf({ order }: { order: Order }) {
   const meta = HEADER_BY_STATUS[order.status];
   return <Document title={`${meta.title} ${order.numero_pedido ?? ''}`} author='Renowa Representações'>
     <Page size='A4' orientation='portrait' style={styles.page} wrap>
-      <View style={styles.header} fixed><Image src='/assets/logo-renowa.png' style={styles.logo} /><View style={styles.titleBlock}><Text style={styles.title}>{meta.title}</Text><Text style={[styles.badge, { backgroundColor: meta.badgeBg, color: meta.badgeColor }]}>{meta.badge}</Text><Text style={styles.nonFiscal}>{meta.note}</Text></View></View>
+      <View style={styles.header} fixed><Image src={logoRenowa} style={styles.logo} /><View style={styles.titleBlock}><Text style={styles.title}>{meta.title}</Text><Text style={[styles.badge, { backgroundColor: meta.badgeBg, color: meta.badgeColor }]}>{meta.badge}</Text><Text style={styles.nonFiscal}>{meta.note}</Text></View></View>
       <Footer order={order} />
       <View style={styles.section}><Text style={styles.sectionTitle}>Dados comerciais</Text><View style={styles.infoGrid}>
         <Field wide label='Razão social' value={text(order.cliente?.razao_social)} />
