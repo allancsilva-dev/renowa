@@ -1,6 +1,8 @@
 import {
   Controller, Post, Get, Delete, Param, Body, Req, Res, HttpCode, HttpStatus,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../common/decorators/public.decorator';
@@ -17,6 +19,7 @@ import {
 import { setAuthCookies, clearAuthCookies, RT_COOKIE } from './cookie.util';
 import { PermissionsService } from '../permissions/permissions.service';
 import { LocalUser } from '../rbac/entities/local-user.entity';
+import { User } from '../users/entities/user.entity';
 
 type AuthenticatedRequest = Request & { localUser?: LocalUser };
 
@@ -30,6 +33,7 @@ export class AuthController {
     private readonly auth: NativeAuthService,
     private readonly mobileSessions: MobileSessionService,
     private readonly permissionsService: PermissionsService,
+    @InjectRepository(User) private readonly userRepo: Repository<User>,
   ) {}
 
   @Public()
@@ -96,7 +100,16 @@ export class AuthController {
       );
     }
 
-    return { sub, email, roles, tenantId, permissions };
+    let nome = email;
+    if (tenantId) {
+      const identity = await this.userRepo.findOne({
+        where: { uuid: sub, tenant_id: tenantId },
+        select: { nome: true },
+      });
+      nome = identity?.nome ?? email;
+    }
+
+    return { sub, email, nome, roles, tenantId, permissions };
   }
 
   // Preservar endpoint existente de revogar sessão mobile (regressão se removido).

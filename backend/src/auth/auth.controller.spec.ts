@@ -1,8 +1,10 @@
 import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { NativeAuthService } from './native-auth.service';
 import { MobileSessionService } from './mobile-session.service';
 import { PermissionsService } from '../permissions/permissions.service';
+import { User } from '../users/entities/user.entity';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -22,6 +24,9 @@ describe('AuthController', () => {
     listAllSlugs: jest.fn(async () => ['clientes.ver']),
     listEffectiveForRole: jest.fn(async () => ['pedidos.ver']),
   };
+  const userRepo = {
+    findOne: jest.fn(async () => ({ nome: 'Ana Vendedora' })),
+  };
 
   beforeEach(async () => {
     const mod = await Test.createTestingModule({
@@ -30,6 +35,7 @@ describe('AuthController', () => {
         { provide: NativeAuthService, useValue: auth },
         { provide: MobileSessionService, useValue: mobileSessions },
         { provide: PermissionsService, useValue: permissions },
+        { provide: getRepositoryToken(User), useValue: userRepo },
       ],
     }).compile();
     controller = mod.get(AuthController);
@@ -51,7 +57,7 @@ describe('AuthController', () => {
     );
 
     expect(permissions.listEffectiveForRole).toHaveBeenCalledWith('tenant-a', 7);
-    expect(result).toMatchObject({ permissions: ['pedidos.ver'] });
+    expect(result).toMatchObject({ permissions: ['pedidos.ver'], nome: 'Ana Vendedora' });
   });
 
   // Etapa 4: o bypass hardcoded pra role.name==='admin' foi removido — admin
