@@ -1,6 +1,9 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
+  UseInterceptors, UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { TransportService } from './transport.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -8,6 +11,8 @@ import { RequirePermission } from '../common/decorators/require-permission.decor
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { CreateTransportDto } from './dto/create-transport.dto';
 import { UpdateTransportDto } from './dto/update-transport.dto';
+
+const MAX_IMPORT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */
 @Controller('transportadoras')
@@ -18,6 +23,18 @@ export class TransportController {
   @RequirePermission('transportadoras.criar')
   async create(@Body() dto: CreateTransportDto, @CurrentUser() user: RequestUser) {
     return this.transportService.create(dto, user.tenantId);
+  }
+
+  /** Upload + parse são caros: limite agressivo para conter abuso/DoS. */
+  @Post('importacao')
+  @RequirePermission('transportadoras.criar')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @UseInterceptors(FileInterceptor('arquivo', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  async importar(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.transportService.importFromFile(file, user.tenantId);
   }
 
   @Get()

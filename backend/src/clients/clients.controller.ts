@@ -9,7 +9,11 @@ import {
   Query,
   HttpCode,
   HttpStatus,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -17,6 +21,8 @@ import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
+
+const MAX_IMPORT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Visualizar: todos | Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO
@@ -29,6 +35,18 @@ export class ClientsController {
   @RequirePermission('clientes.criar')
   async create(@Body() dto: CreateClientDto, @CurrentUser() user: RequestUser) {
     return this.clientsService.create(dto, user);
+  }
+
+  /** Upload + parse são caros: limite agressivo para conter abuso/DoS. */
+  @Post('importacao')
+  @RequirePermission('clientes.criar')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  @UseInterceptors(FileInterceptor('arquivo', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  async importar(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.clientsService.importFromFile(file, user.tenantId);
   }
 
   @Get()

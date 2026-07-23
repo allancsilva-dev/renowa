@@ -1,10 +1,12 @@
 import { useState, useCallback } from 'react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
+import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import api from '@/lib/apiClient';
 import Dialog from '@/components/ui/Dialog';
 import { withGeneratedUuid } from '@/lib/entityPayload';
+import { importTransportadoras } from '@/services/import';
 import type { PaginatedResponse, Transport } from '@/types';
 
 interface NovaTransportadoraForm {
@@ -45,6 +47,7 @@ export default function Transporte() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [editingUuid, setEditingUuid] = useState<string | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
@@ -111,7 +114,14 @@ export default function Transporte() {
 
   return (
     <div className='space-y-4'>
-      <div className='flex justify-end'>
+      <div className='flex justify-end gap-2'>
+        <button
+          onClick={() => setIsImportOpen(true)}
+          className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+        >
+          <Upload className='h-4 w-4' />
+          Importar
+        </button>
         <button
           onClick={() => { setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); }}
           className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
@@ -131,6 +141,24 @@ export default function Transporte() {
         onPageChange={goToPage}
         emptyTitle='Nenhuma transportadora cadastrada'
       />
+
+      {isImportOpen && (
+        <ImportCsvDialog
+          title='Importar transportadoras'
+          importFn={importTransportadoras}
+          onImported={reload}
+          onClose={() => setIsImportOpen(false)}
+          help={
+            <>
+              O arquivo precisa ter uma linha de cabeçalho com{' '}
+              <code className='rounded bg-slate-100 px-1'>razao_social</code> (obrigatório) e, opcionalmente,{' '}
+              <code className='rounded bg-slate-100 px-1'>cnpj</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>telefone</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>endereco_completo</code>. Registros com o mesmo CNPJ são atualizados.
+            </>
+          }
+        />
+      )}
 
       {/* Modal */}
       {isOpen && (

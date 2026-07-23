@@ -1,16 +1,21 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Transport } from './entities/transport.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { CreateTransportDto } from './dto/create-transport.dto';
 import { UpdateTransportDto } from './dto/update-transport.dto';
+import { ImportResultDto } from '../common/csv/import-result.dto';
+import { importCnpjEntity, parseCsvRows, pick } from '../common/csv/csv-import.util';
+
+const IMPORT_MAX_ROWS = 5000;
 
 @Injectable()
 export class TransportService {
   constructor(
     @InjectRepository(Transport)
     private readonly transportRepo: Repository<Transport>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(
@@ -64,5 +69,40 @@ export class TransportService {
   async remove(uuid: string, tenantId: string): Promise<void> {
     const t = await this.findOne(uuid, tenantId);
     await this.transportRepo.softDelete(t.id);
+  }
+
+  /**
+   * Importação em massa (.csv). Upsert por CNPJ dentro do tenant; falhas por
+   * linha não interrompem o processamento.
+   */
+  async importFromFile(
+    file: Express.Multer.File | undefined,
+    tenantId: string,
+  ): Promise<ImportResultDto> {
+    const rows = parseCsvRows(file, IMPORT_MAX_ROWS);
+
+    return this.dataSource.transaction((manager) =>
+      importCnpjEntity<Transport>({
+        rows,
+        repo: manager.getRepository(Transport),
+        tenantId,
+        buildFields: (row) => {
+          const razao_social = pick(row, 'razao_social', 'razão_social', 'razao social');
+          const cnpj = pick(row, 'cnpj');
+          const chave = razao_social ?? cnpj ?? '';
+          if (!razao_social) return { erro: 'Razão social é obrigatória.', chave };
+          return {
+            chave,
+            cnpj,
+            fields: {
+              razao_social,
+              cnpj: cnpj ?? undefined,
+              telefone: pick(row, 'telefone'),
+              endereco_completo: pick(row, 'endereco_completo', 'endereço_completo', 'endereco', 'endereço'),
+            },
+          };
+        },
+      }),
+    );
   }
 }

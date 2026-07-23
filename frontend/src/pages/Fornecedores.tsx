@@ -1,10 +1,12 @@
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
+import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { fetchSuppliers, deleteSupplier } from '@/services/suppliers.service';
+import { importSuppliers } from '@/services/import';
 import { getApiErrorMessage } from '@/lib/errors';
 import type { Supplier } from '@/types';
 
@@ -15,6 +17,7 @@ export default function Fornecedores() {
 
   const [rowActionError, setRowActionError] = useState<string | null>(null);
   const [deletingUuid, setDeletingUuid] = useState<string | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
@@ -99,13 +102,22 @@ export default function Fornecedores() {
           />
         </div>
 
-        <button
-          onClick={() => navigate('/fornecedores/novo')}
-          className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
-        >
-          <Plus className='h-4 w-4' />
-          Novo Fornecedor
-        </button>
+        <div className='flex items-center gap-2'>
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+          >
+            <Upload className='h-4 w-4' />
+            Importar
+          </button>
+          <button
+            onClick={() => navigate('/fornecedores/novo')}
+            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
+          >
+            <Plus className='h-4 w-4' />
+            Novo Fornecedor
+          </button>
+        </div>
       </div>
 
       {rowActionError && (
@@ -125,6 +137,31 @@ export default function Fornecedores() {
         emptyTitle='Nenhum fornecedor cadastrado'
         emptyDescription='Clique em "Novo Fornecedor" para começar.'
       />
+
+      {isImportOpen && (
+        <ImportCsvDialog
+          title='Importar fornecedores'
+          importFn={importSuppliers}
+          onImported={reload}
+          onClose={() => setIsImportOpen(false)}
+          help={
+            <>
+              O arquivo precisa ter uma linha de cabeçalho com{' '}
+              <code className='rounded bg-slate-100 px-1'>razao_social</code> (obrigatório) e, opcionalmente,{' '}
+              <code className='rounded bg-slate-100 px-1'>cnpj</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>endereco</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>numero</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>complemento</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>bairro</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>cidade</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>uf</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>cep</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>telefone</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>inscricao_estadual</code>. Registros com o mesmo CNPJ são atualizados.
+            </>
+          }
+        />
+      )}
     </div>
   );
 }

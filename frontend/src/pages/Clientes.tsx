@@ -1,16 +1,19 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
+import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { fetchClients } from '@/services/clients.service';
+import { importClientes } from '@/services/import';
 import type { Client } from '@/types';
 
 export default function Clientes() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
@@ -66,13 +69,22 @@ export default function Clientes() {
           />
         </div>
 
-        <button
-          onClick={() => navigate('/clientes/novo')}
-          className='flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
-        >
-          <Plus className='h-4 w-4' />
-          Novo Cliente
-        </button>
+        <div className='flex items-center gap-2'>
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+          >
+            <Upload className='h-4 w-4' />
+            Importar
+          </button>
+          <button
+            onClick={() => navigate('/clientes/novo')}
+            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
+          >
+            <Plus className='h-4 w-4' />
+            Novo Cliente
+          </button>
+        </div>
       </div>
 
       {/* Conteúdo */}
@@ -87,6 +99,40 @@ export default function Clientes() {
         emptyTitle='Nenhum cliente cadastrado'
         emptyDescription='Clique em "Novo Cliente" para começar.'
       />
+
+      {isImportOpen && (
+        <ImportCsvDialog
+          title='Importar clientes'
+          importFn={importClientes}
+          onImported={reload}
+          onClose={() => setIsImportOpen(false)}
+          help={
+            <>
+              O arquivo precisa ter uma linha de cabeçalho com{' '}
+              <code className='rounded bg-slate-100 px-1'>razao_social</code> (obrigatório). Colunas opcionais:{' '}
+              <code className='rounded bg-slate-100 px-1'>cnpj</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>email</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>tel</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>endereco</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>numero</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>complemento</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>bairro</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>cidade</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>uf</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>cep</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>contato</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>inscricao_estadual</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>suframa</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>pgt_padrao</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>prazo</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>local_entrega</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>observacao</code>,{' '}
+              <code className='rounded bg-slate-100 px-1'>transportadora_cnpj</code> (vincula a transportadora existente).
+              Registros com o mesmo CNPJ são atualizados.
+            </>
+          }
+        />
+      )}
     </div>
   );
 }

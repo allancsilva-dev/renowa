@@ -7,6 +7,10 @@ import { UpdateClientDto } from './dto/update-client.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { ImportResultDto } from '../common/csv/import-result.dto';
+import { importCnpjEntity, onlyDigits, parseCsvRows, pick } from '../common/csv/csv-import.util';
+
+const IMPORT_MAX_ROWS = 5000;
 
 @Injectable()
 export class ClientsService {
@@ -128,6 +132,92 @@ export class ClientsService {
       await manager.getRepository(Client).softDelete(client.id);
       await this.audit.record({ tenantId, actor: user, action: 'DELETE', resourceType: 'cliente',
         resourceUuid: uuid, purpose: 'Exclusão operacional de cliente' }, manager);
+    });
+  }
+
+  /**
+   * Importação em massa (.csv). Upsert por CNPJ dentro do tenant. A
+   * transportadora é resolvida por CNPJ ou razão social; se não encontrada,
+   * o campo fica nulo (a linha não é rejeitada). Falhas por linha não
+   * interrompem o processamento.
+   */
+  async importFromFile(
+    file: Express.Multer.File | undefined,
+    tenantId: string,
+  ): Promise<ImportResultDto> {
+    const rows = parseCsvRows(file, IMPORT_MAX_ROWS);
+
+    return this.dataSource.transaction(async (manager) => {
+      const resolveTransportId = async (
+        cnpjRef: string | undefined,
+        nomeRef: string | undefined,
+      ): Promise<number | null> => {
+        const digits = onlyDigits(cnpjRef);
+        if (digits) {
+          const byCnpj = await manager.query(
+            `SELECT id FROM transportadoras
+             WHERE regexp_replace(COALESCE(cnpj, ''), '\\D', '', 'g') = $1
+               AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1`,
+            [digits, tenantId],
+          ) as Array<{ id: number }>;
+          if (byCnpj[0]) return byCnpj[0].id;
+        }
+        if (nomeRef) {
+          const byNome = await manager.query(
+            `SELECT id FROM transportadoras
+             WHERE lower(razao_social) = lower($1)
+               AND tenant_id = $2 AND deleted_at IS NULL LIMIT 1`,
+            [nomeRef, tenantId],
+          ) as Array<{ id: number }>;
+          if (byNome[0]) return byNome[0].id;
+        }
+        return null;
+      };
+
+      return importCnpjEntity<Client>({
+        rows,
+        repo: manager.getRepository(Client),
+        tenantId,
+        buildFields: async (row) => {
+          const razao_social = pick(row, 'razao_social', 'razão_social', 'razao social');
+          const cnpj = pick(row, 'cnpj');
+          const chave = razao_social ?? cnpj ?? '';
+          if (!razao_social) return { erro: 'Razão social é obrigatória.', chave };
+          const uf = pick(row, 'uf');
+          if (uf !== undefined && uf.length !== 2) return { erro: 'UF deve ter 2 letras.', chave };
+
+          const transportadora_id = await resolveTransportId(
+            pick(row, 'transportadora_cnpj', 'transportadora cnpj'),
+            pick(row, 'transportadora', 'transportadora_razao_social'),
+          );
+
+          return {
+            chave,
+            cnpj,
+            fields: {
+              razao_social,
+              cnpj: cnpj ?? undefined,
+              email: pick(row, 'email', 'e-mail'),
+              tel: pick(row, 'tel', 'telefone'),
+              endereco: pick(row, 'endereco', 'endereço'),
+              numero: pick(row, 'numero', 'número'),
+              complemento: pick(row, 'complemento'),
+              bairro: pick(row, 'bairro'),
+              cidade: pick(row, 'cidade'),
+              uf,
+              cep: pick(row, 'cep'),
+              contato: pick(row, 'contato'),
+              inscricao_estadual: pick(row, 'inscricao_estadual', 'inscrição_estadual', 'ie'),
+              suframa: pick(row, 'suframa'),
+              pgt_padrao: pick(row, 'pgt_padrao', 'pagamento_padrao'),
+              prazo: pick(row, 'prazo'),
+              local_entrega: pick(row, 'local_entrega'),
+              observacao: pick(row, 'observacao', 'observação', 'obs'),
+              transportadora_id: transportadora_id ?? undefined,
+            },
+          };
+        },
+      });
     });
   }
 }

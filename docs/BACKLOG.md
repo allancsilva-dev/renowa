@@ -440,6 +440,16 @@
 - **Status:** ABERTO
 - **Relacionado:** PROB-0069, BUG-0024
 
+### BACKLOG-0047 — Importação CSV de Pedidos
+- **Prioridade:** P2
+- **Área:** backend / frontend
+- **Motivo:** a rodada de import CSV entregou Produtos, Fornecedores, Transporte e Clientes (entidades planas com upsert por chave natural). Pedidos ficou de fora por ser estruturalmente diferente: número gerado por sequence (`pedidos_numero_seq`), quatro FKs (cliente/vendedor/fornecedor/transportadora), itens aninhados (`order-item`) e totais recalculados por `order-calculation.ts` — não cabe no padrão `importCnpjEntity`.
+- **Dependências:** decisão de formato do arquivo (uma linha por item com cabeçalho do pedido repetido **vs.** só cabeçalho sem itens); política de resolução de FKs por CNPJ/código e de numeração (usar `numero_pedido` externo vs. sempre gerar novo).
+- **Critério de aceite:** endpoint `POST /pedidos/importacao` que agrupa itens por chave do pedido, resolve FKs no tenant, recalcula totais pelo cálculo canônico, acumula erros por linha sem interromper, e respeita isolamento tenant; tela com dialog e tabela de resultado; testes cobrindo agrupamento, FK inexistente e recálculo.
+- **Risco se ficar pendente:** carga inicial de pedidos continua manual; baixo impacto operacional imediato.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0046
+
 # MetaRenowa P0 (21/07/2026)
 
 - Implementado: contrato server-side de cálculo, migration dos campos, criação/edição transacional, integração de cadastros e PDF de validação.

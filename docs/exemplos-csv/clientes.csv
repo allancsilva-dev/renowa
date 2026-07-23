@@ -1,0 +1,5 @@
+razao_social;cnpj;email;tel;endereco;numero;complemento;bairro;cidade;uf;cep;contato;inscricao_estadual;pgt_padrao;prazo;local_entrega;observacao;transportadora_cnpj
+Comercial Andrade Ltda;14.725.836/0001-68;compras@andrade.com.br;(11) 3555-9000;Av. Paulista;1500;Conj. 42;Bela Vista;São Paulo;SP;01310-100;Marcos Andrade;110.987.654.321;Boleto;28 dias;Doca 2;Cliente preferencial;99.888.777/0001-00
+Distribuidora Litoral ME;96.385.274/0001-15;financeiro@litoral.com;(48) 3555-4400;Rua do Porto;77;;Estreito;Florianópolis;SC;88075-010;Ana Beatriz;;PIX;À vista;;;78.945.612/0001-44
+Loja do Zé;;zedaloja@gmail.com;(31) 98888-1234;Rua das Flores;22;;Savassi;Belo Horizonte;MG;30140-071;José Carlos;;Dinheiro;À vista;;Sem transportadora vinculada;
+Mercado Central S.A.;45.678.912/0001-55;contato@mercadocentral.com;(21) 3555-6600;Av. Brasil;9000;Bloco B;Penha;Rio de Janeiro;RJ;21012-350;Renata Lima;;Boleto;15 dias;;Transportadora inexistente vira nula;00.000.000/0000-00

@@ -2,41 +2,20 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
-import * as Papa from 'papaparse';
 import { Product } from './entities/product.entity';
 import { money } from '../common/decimal/decimal';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { ImportProductsResultDto, ImportProductRowError } from './dto/import-products-result.dto';
+import { parseCsvRows, normalizeRowKeys, pick } from '../common/csv/csv-import.util';
 
 const IMPORT_MAX_ROWS = 5000;
-const IMPORT_ALLOWED_EXTENSIONS = ['csv'];
-const UTF8_BOM = [0xef, 0xbb, 0xbf];
 
 interface ImportedRow {
   codigo?: string;
   descricao?: string;
   preco_base?: string;
-}
-
-/**
- * Excel pt-BR gera CSV em dois formatos incompatíveis entre si:
- * - "CSV UTF-8": UTF-8 COM BOM (o BOM entraria no nome da 1ª coluna).
- * - "CSV (separado por vírgulas)": Windows-1252, onde "Descrição" não é
- *   UTF-8 válido e viraria mojibake se decodificado como UTF-8.
- * Decodifica em UTF-8 estrito e só cai para Windows-1252 quando o buffer
- * comprovadamente não é UTF-8 — assim arquivo UTF-8 legítimo nunca é
- * reinterpretado por engano.
- */
-function decodeCsvBuffer(buffer: Buffer): string {
-  const hasBom = buffer.length >= 3 && UTF8_BOM.every((byte, i) => buffer[i] === byte);
-  const body = hasBom ? buffer.subarray(UTF8_BOM.length) : buffer;
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(body);
-  } catch {
-    return new TextDecoder('windows-1252').decode(body);
-  }
 }
 
 // Agrupamento de milhar válido: "1.234", "1.234.567". Ancorado nas duas
@@ -92,19 +71,11 @@ function parseImportPrice(raw: string): number {
 }
 
 function normalizeImportRow(row: Record<string, unknown>): ImportedRow {
-  const normalized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(row)) {
-    normalized[key.trim().toLowerCase()] = value;
-  }
-  const toTrimmedString = (value: unknown): string | undefined =>
-    value === undefined || value === null || value === '' ? undefined : String(value).trim();
-
+  const normalized = normalizeRowKeys(row);
   return {
-    codigo: toTrimmedString(normalized['codigo']),
-    descricao: toTrimmedString(normalized['descricao'] ?? normalized['descrição']),
-    preco_base: toTrimmedString(
-      normalized['preco_base'] ?? normalized['preço_base'] ?? normalized['preco'] ?? normalized['preço'],
-    ),
+    codigo: normalized['codigo'],
+    descricao: pick(normalized, 'descricao', 'descrição'),
+    preco_base: pick(normalized, 'preco_base', 'preço_base', 'preco', 'preço'),
   };
 }
 
@@ -219,35 +190,9 @@ export class ProductsService {
     fornecedorUuid: string | undefined,
     tenantId: string,
   ): Promise<ImportProductsResultDto> {
-    if (!file) throw new BadRequestException('Arquivo obrigatório.');
     if (!fornecedorUuid) throw new BadRequestException('Fornecedor é obrigatório para importação.');
 
-    const extension = (file.originalname.split('.').pop() ?? '').toLowerCase();
-    if (!IMPORT_ALLOWED_EXTENSIONS.includes(extension)) {
-      throw new BadRequestException('Tipo de arquivo inválido. Utilize .csv (UTF-8).');
-    }
-
-    let rows: Record<string, unknown>[];
-    try {
-      const parsed = Papa.parse<Record<string, unknown>>(decodeCsvBuffer(file.buffer), {
-        header: true,
-        // Auto-detecção: Excel pt-BR salva CSV com ';' em vez de ','.
-        delimiter: '',
-        skipEmptyLines: 'greedy',
-        transformHeader: (header) => header.trim(),
-        // Limita DURANTE o parse: o array de linhas nunca passa de
-        // IMPORT_MAX_ROWS + 1, que é o suficiente para detectar o excesso
-        // logo abaixo sem materializar o arquivo inteiro.
-        preview: IMPORT_MAX_ROWS + 1,
-      });
-      rows = parsed.data;
-    } catch {
-      throw new BadRequestException('Não foi possível ler o arquivo enviado.');
-    }
-
-    if (rows.length > IMPORT_MAX_ROWS) {
-      throw new BadRequestException(`Arquivo excede o limite de ${IMPORT_MAX_ROWS} linhas.`);
-    }
+    const rows = parseCsvRows(file, IMPORT_MAX_ROWS);
 
     return this.dataSource.transaction(async (manager) => {
       const fornecedorRows = await manager.query(
