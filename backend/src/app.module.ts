@@ -8,7 +8,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
-import { AutoProvisionGuard } from './common/guards/auto-provision.guard';
+import { LocalUserContextGuard } from './common/guards/local-user-context.guard';
 import { PermissionGuard } from './common/guards/permission.guard';
 
 import { AuthModule } from './auth/auth.module';
@@ -93,8 +93,8 @@ import { RedisThrottlerStorage } from './common/throttling/redis-throttler.stora
     // Guard global — JwtAuthGuard roda antes do Interceptor (fluxo correto)
     { provide: APP_GUARD, useClass: JwtAuthGuard },
 
-    // Auto-provision local do usuário por tenant (controlado por PROVISION_MODE)
-    { provide: APP_GUARD, useClass: AutoProvisionGuard },
+    // Resolve req.localUser a partir do JWT. Fail-closed: não cria usuário.
+    { provide: APP_GUARD, useClass: LocalUserContextGuard },
 
     // Validação de permissões declaradas via @RequirePermission
     { provide: APP_GUARD, useClass: PermissionGuard },

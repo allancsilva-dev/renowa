@@ -6,6 +6,7 @@ import * as Papa from 'papaparse';
 import { Product } from './entities/product.entity';
 import { money } from '../common/decimal/decimal';
 import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { ImportProductsResultDto, ImportProductRowError } from './dto/import-products-result.dto';
 
@@ -181,7 +182,7 @@ export class ProductsService {
     return product;
   }
 
-  async update(uuid: string, dto: Partial<CreateProductDto>, tenantId: string): Promise<Product> {
+  async update(uuid: string, dto: UpdateProductDto, tenantId: string): Promise<Product> {
     const product = await this.findOne(uuid, tenantId);
     const { fornecedor_uuid: _f, uuid: _u, preco_base, ipi_perc, ...rest } = dto;
     Object.assign(product, rest);

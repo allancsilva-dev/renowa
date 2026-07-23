@@ -44,6 +44,18 @@ export async function runMigrations(): Promise<void> {
 
       await client.query('BEGIN');
       try {
+        // `0000_baseline.sql` é dump do pg_dump e traz
+        // `set_config('search_path', '', false)`. O terceiro argumento `false`
+        // faz valer para a SESSÃO inteira, e o runner usa UMA conexão para
+        // todos os arquivos: sem este reset, toda migration seguinte com nome
+        // não-qualificado (`ALTER TABLE produtos`) morre com
+        // `3F000: no schema has been selected to create in`.
+        //
+        // O sintoma só aparece em banco VAZIO, porque é o único cenário em que
+        // o baseline roda junto com as demais. Rodar `db:migrate` uma segunda
+        // vez "consertava" — o baseline já estava registrado e não reexecutava.
+        // Era o provisionamento do zero quebrado (BACKLOG-0039).
+        await client.query('SET search_path TO public');
         await client.query(sql);
         await client.query(
           'INSERT INTO public.schema_migrations (name, checksum) VALUES ($1, $2)',

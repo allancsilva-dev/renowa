@@ -1,0 +1,35 @@
+# Contexto de build é a raiz do monorepo. Sem este arquivo o contexto passa de
+# 1 GB (node_modules + docs com imagens/PDF).
+#
+# ATENÇÃO: não ignorar `*/package.json` — os 4 manifestos de workspace precisam
+# entrar no contexto, senão `npm ci` recusa o lockfile.
+node_modules
+**/node_modules
+
+dist
+**/dist
+build
+**/*.tsbuildinfo
+
+.git
+.github
+.claude
+.agents
+.impeccable
+
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+docs
+plans
+backups
+*.dump
+*.dump.sha256
+
+**/.DS_Store
+*.log
+coverage
+.expo
+web-build

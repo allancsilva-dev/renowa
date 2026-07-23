@@ -1,8 +1,24 @@
+# Deploy de produção — ver docs/DEPLOY_HOSTINGER.md.
+#
+# `RENOWA_VERSION` marca a imagem (use o SHA do commit). Sem tag não existe
+# artefato conhecido-bom para voltar: rollback vira rebuild do source, minutos
+# fora do ar. Com tag, rollback é trocar a variável e `up -d`.
+# ATENÇÃO: rollback de imagem NÃO desfaz migration — o runner é forward-only.
+# Mudança destrutiva de schema precisa ser compatível com a versão anterior.
+x-logging: &logging
+  # json-file sem limite cresce até encher o disco da VPS, e disco cheio
+  # derruba o Postgres junto.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
     container_name: Renowa-DB
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -24,6 +40,8 @@ services:
     image: redis:7-alpine
     container_name: Renowa-Redis
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 256m
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - renowa-redis-data:/data
@@ -37,9 +55,19 @@ services:
 
   api:
     build:
-      context: ./backend
+      # Contexto na RAIZ: o backend depende do workspace privado
+      # `@renowa/shared`, que não existe no registry npm. Com contexto
+      # ./backend o `npm ci` falhava com 404 e a imagem nunca buildava.
+      context: .
+      dockerfile: backend/Dockerfile
+    image: renowa-api:${RENOWA_VERSION:-latest}
     container_name: Renowa-API
     restart: unless-stopped
+    logging: *logging
+    # Sem teto, um pico na API leva o Postgres junto por OOM no mesmo host.
+    mem_limit: 768m
+    # PID 1 com reaping: garante que o SIGTERM chegue ao enableShutdownHooks.
+    init: true
     env_file:
       - ./backend/.env
     environment:
@@ -55,11 +83,12 @@ services:
     ports:
       - "127.0.0.1:3083:3000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      # /health/ready toca o banco; /health responde mesmo com o banco fora.
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     networks:
       renowa: {}
       api_gateway:
@@ -67,11 +96,15 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: /api
+    image: renowa-web:${RENOWA_VERSION:-latest}
     container_name: Renowa-Web
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 128m
     depends_on:
       api:
         condition: service_healthy
@@ -86,6 +119,8 @@ services:
     image: postgres:16-alpine
     container_name: Renowa-Backup
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 256m
     environment:
       PGHOST: db
       PGPORT: 5432

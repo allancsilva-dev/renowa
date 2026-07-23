@@ -97,6 +97,7 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
     origem: '0024',
   },
   { tabela: 'itens_pedido', nome: 'itens_pedido_ipi_perc_range', validado: false, expressao: 'ipi_perc >= 0 AND ipi_perc <= 100', origem: '0024' },
+  { tabela: 'produtos', nome: 'produtos_ipi_perc_range', validado: false, expressao: 'ipi_perc >= 0 AND ipi_perc <= 100', origem: '0032' },
   {
     tabela: 'pedidos',
     nome: 'pedidos_status_check',

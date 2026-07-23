@@ -10,7 +10,8 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "test": "jest",
     "db:migrate": "node -e \"require('./dist/database/migrate').runMigrations().then(() => process.exit(0)).catch((error) => { console.error(error); process.exit(1); })\"",
-    "db:verify": "node dist/database/verify-schema.js"
+    "db:verify": "node dist/database/verify-schema.js",
+    "db:bootstrap": "node dist/database/bootstrap-tenant.js"
   },
   "dependencies": {
     "@renowa/shared": "*",

@@ -1,21 +1,13 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { TransportService } from './transport.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
-import { IsCnpj } from '../common/validators/brazilian-document.validators';
-
-class CreateTransportDto {
-  @IsUUID('4') uuid: string;
-  @IsNotEmpty() @IsString() razao_social: string;
-  @IsOptional() @IsString() @IsCnpj() cnpj?: string;
-  @IsOptional() @IsString() telefone?: string;
-  @IsOptional() @IsString() endereco_completo?: string;
-}
+import { CreateTransportDto } from './dto/create-transport.dto';
+import { UpdateTransportDto } from './dto/update-transport.dto';
 
 /** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */
 @Controller('transportadoras')
@@ -48,7 +40,7 @@ export class TransportController {
   @RequirePermission('transportadoras.editar')
   async update(
     @Param('uuid') uuid: string,
-    @Body() dto: Partial<CreateTransportDto>,
+    @Body() dto: UpdateTransportDto,
     @CurrentUser() user: RequestUser,
   ) {
     return this.transportService.update(uuid, dto, user.tenantId);

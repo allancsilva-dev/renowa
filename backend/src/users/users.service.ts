@@ -177,24 +177,6 @@ export class UsersService {
     });
   }
 
-  async createLocalUser(params: {
-    tenantId: string;
-    authUserId: string;
-    email: string;
-    roleId: number;
-  }): Promise<LocalUser> {
-    const created = this.localUserRepo.create({
-      tenantId: params.tenantId,
-      authUserId: params.authUserId,
-      email: params.email,
-      roleId: params.roleId,
-      active: true,
-      lastLoginAt: null,
-    });
-
-    return this.localUserRepo.save(created);
-  }
-
   async touchLocalUserLastLogin(localUserId: number): Promise<void> {
     await this.localUserRepo.update(localUserId, {
       lastLoginAt: new Date(),
