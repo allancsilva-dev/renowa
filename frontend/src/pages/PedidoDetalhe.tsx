@@ -4,7 +4,7 @@ import { ArrowLeft, FileDown, Pencil, Unlock, XCircle } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
 import { fetchOrder, liberarOrder, updateOrderStatus } from '@/services/orders.service';
 import { orderStatusLabel, orderStatusColor, type Order } from '@/types';
-import { moneyForDisplay } from '@/lib/decimal';
+import { moneyForDisplay, qtyForDisplay } from '@/lib/decimal';
 import { getApiErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/format';
 import { useAuth } from '@/hooks/useAuth';
@@ -45,8 +45,8 @@ export default function PedidoDetalhe() {
     setStatusSaving(true);
     setStatusError(null);
     try {
-      const updated = await liberarOrder(uuid, order.version);
-      setOrder(updated);
+      await liberarOrder(uuid, order.version);
+      load();
     } catch (err) {
       setStatusError(getApiErrorMessage(err));
     } finally {
@@ -60,8 +60,8 @@ export default function PedidoDetalhe() {
     setStatusSaving(true);
     setStatusError(null);
     try {
-      const updated = await updateOrderStatus(uuid, 'cancelado', order.version);
-      setOrder(updated);
+      await updateOrderStatus(uuid, 'cancelado', order.version);
+      load();
     } catch (err) {
       setStatusError(getApiErrorMessage(err));
     } finally {
@@ -80,9 +80,10 @@ export default function PedidoDetalhe() {
       const blob = await pdf(<OrderValidationPdf order={persisted} />).toBlob();
       const url = URL.createObjectURL(blob);
       if (previewWindow) previewWindow.location.href = url;
+      const filePrefix = persisted.status === 'em_aberto' || persisted.status === 'liberado' ? 'pedido-validacao-renowa' : 'pedido-renowa';
       const link = document.createElement('a');
       link.href = url;
-      link.download = `pedido-validacao-renowa-${persisted.numero_pedido ?? persisted.uuid}.pdf`;
+      link.download = `${filePrefix}-${persisted.numero_pedido ?? persisted.uuid}.pdf`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
@@ -100,6 +101,8 @@ export default function PedidoDetalhe() {
 
   const canLiberar = canLiberarPedido(hasPermission, order.status);
   const canCancelar = canCancelarPedido(hasPermission, order.status);
+  const notas = order.notas ?? [];
+  const divergencia = moneyForDisplay(order.divergencia ?? '0');
 
   return (
     <div className='max-w-4xl mx-auto space-y-4'>
@@ -124,7 +127,7 @@ export default function PedidoDetalhe() {
           </div>
           <div className='flex flex-wrap items-center gap-2'>
             <button type='button' onClick={() => navigate(`/pedidos/${order.uuid}/editar`)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button>
-            <button type='button' onClick={generatePdf} disabled={pdfLoading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : 'Gerar PDF para validação'}</button>
+            <button type='button' onClick={generatePdf} disabled={pdfLoading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : order.status === 'em_aberto' || order.status === 'liberado' ? 'Gerar PDF para validação' : 'Baixar PDF do pedido'}</button>
             {canLiberar && (
               <button type='button' onClick={handleLiberar} disabled={statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
                 <Unlock className='h-4 w-4' />{statusSaving ? 'Liberando...' : 'Liberar pedido'}
@@ -193,9 +196,9 @@ export default function PedidoDetalhe() {
                 {order.itens.map((item) => (
                   <tr key={item.uuid} className='border-b last:border-0'>
                     <td className='px-4 py-2'>{item.produto?.descricao ?? item.descricao_manual ?? '—'}</td>
-                    <td className='px-4 py-2 text-right'>{item.qtd_caixas ?? '—'}</td>
-                    <td className='px-4 py-2 text-right'>{item.qtd_unitaria ?? '—'}</td>
-                    <td className='px-4 py-2 text-right'>{item.qtd_total ?? '—'}</td>
+                    <td className='px-4 py-2 text-right'>{item.qtd_caixas != null ? qtyForDisplay(item.qtd_caixas) : '—'}</td>
+                    <td className='px-4 py-2 text-right'>{item.qtd_unitaria != null ? qtyForDisplay(item.qtd_unitaria) : '—'}</td>
+                    <td className='px-4 py-2 text-right'>{item.qtd_total != null ? qtyForDisplay(item.qtd_total) : '—'}</td>
                     <td className='px-4 py-2 text-right'>{item.preco_unitario != null ? BRL.format(moneyForDisplay(item.preco_unitario)) : '—'}</td>
                     <td className='px-4 py-2 text-right'>{item.desconto_perc != null ? `${item.desconto_perc}%` : '—'}</td>
                     <td className='px-4 py-2 text-right'>{item.ipi_perc != null ? `${item.ipi_perc}%` : '—'}</td>
@@ -207,6 +210,51 @@ export default function PedidoDetalhe() {
           </div>
         )}
       </div>
+
+      {notas.length > 0 && (
+        <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6'>
+          <h2 className='text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1'>Notas fiscais</h2>
+          <p className='text-xs text-slate-600 mb-4'>Notas registradas no faturamento deste pedido.</p>
+
+          <div className='grid grid-cols-1 gap-4 sm:grid-cols-2 text-sm mb-4'>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Total faturado</p>
+              <p className='text-slate-800'>{BRL.format(moneyForDisplay(order.total_faturado ?? '0'))}</p>
+            </div>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Divergência</p>
+              <p className={divergencia === 0 ? 'text-slate-800' : divergencia > 0 ? 'text-slate-800 font-semibold' : 'text-red-600 font-medium'}>
+                {BRL.format(divergencia)}
+              </p>
+            </div>
+          </div>
+
+          <div className='overflow-x-auto rounded-lg border'>
+            <table className='min-w-[640px] w-full text-sm'>
+              <thead>
+                <tr className='border-b bg-primary text-white'>
+                  <th className='px-4 py-2 text-left font-semibold'>Número</th>
+                  <th className='px-4 py-2 text-left font-semibold'>Série</th>
+                  <th className='px-4 py-2 text-left font-semibold'>Emissão</th>
+                  <th className='px-4 py-2 text-right font-semibold'>Valor</th>
+                  <th className='px-4 py-2 text-left font-semibold'>Observação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {notas.map((nota) => (
+                  <tr key={nota.uuid} className='border-b last:border-0'>
+                    <td className='px-4 py-2 font-mono'>{nota.numero_nota}</td>
+                    <td className='px-4 py-2'>{nota.serie ?? '—'}</td>
+                    <td className='px-4 py-2'>{formatDate(nota.data_emissao)}</td>
+                    <td className='px-4 py-2 text-right font-medium'>{BRL.format(moneyForDisplay(nota.valor))}</td>
+                    <td className='px-4 py-2 max-w-xs truncate'>{nota.observacao ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

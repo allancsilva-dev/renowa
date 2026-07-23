@@ -43,7 +43,7 @@ export class OrdersController {
   @Get(':uuid')
   @RequirePermission('pedidos.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
-    return this.ordersService.findOne(uuid, user);
+    return this.ordersService.findOneDetalhe(uuid, user);
   }
 
   @Put(':uuid')

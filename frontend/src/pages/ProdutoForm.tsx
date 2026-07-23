@@ -11,6 +11,7 @@ type FormFields = {
   codigo: string;
   descricao: string;
   preco_base: string;
+  ipi_perc: string;
   fornecedor_uuid: string;
   fornecedor_label: string;
 };
@@ -19,6 +20,7 @@ const empty: FormFields = {
   codigo: '',
   descricao: '',
   preco_base: '',
+  ipi_perc: '',
   fornecedor_uuid: '',
   fornecedor_label: '',
 };
@@ -28,6 +30,7 @@ function toFields(p: Product): FormFields {
     codigo: p.codigo ?? '',
     descricao: p.descricao,
     preco_base: p.preco_base != null ? String(p.preco_base) : '',
+    ipi_perc: p.ipi_perc != null ? String(p.ipi_perc) : '',
     fornecedor_uuid: p.fornecedor?.uuid ?? '',
     fornecedor_label: p.fornecedor?.razao_social ?? '',
   };
@@ -90,6 +93,7 @@ export default function ProdutoForm() {
       codigo: form.codigo.trim() || null,
       descricao: form.descricao.trim(),
       preco_base: form.preco_base !== '' ? Number(form.preco_base) : null,
+      ipi_perc: form.ipi_perc !== '' ? Number(form.ipi_perc) : null,
       fornecedor_uuid: form.fornecedor_uuid,
     };
 
@@ -199,6 +203,24 @@ export default function ProdutoForm() {
               onChange={handleChange}
               placeholder='0.00'
               min={0}
+              step='0.01'
+              className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+            />
+          </div>
+
+          <div className='flex flex-col gap-1'>
+            <label htmlFor='produto-ipi' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+              IPI (%)
+            </label>
+            <input
+              type='number'
+              id='produto-ipi'
+              name='ipi_perc'
+              value={form.ipi_perc}
+              onChange={handleChange}
+              placeholder='0.00'
+              min={0}
+              max={100}
               step='0.01'
               className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
             />

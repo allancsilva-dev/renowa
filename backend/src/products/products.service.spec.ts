@@ -262,3 +262,46 @@ describe('ProductsService#importFromFile — CSV do Excel pt-BR', () => {
     });
   });
 });
+
+describe('ProductsService#create/#update — ipi_perc', () => {
+  function buildServiceWithRepo(existing: Record<string, unknown> | null = null) {
+    const saved: any[] = [];
+    const productRepo = {
+      create: jest.fn((value: any) => value),
+      save: jest.fn(async (value: any) => {
+        saved.push(value);
+        return value;
+      }),
+      findOne: jest.fn(async () => existing),
+    };
+    const dataSource = { query: jest.fn().mockResolvedValue([{ id: 7 }]) } as any;
+    const service = new ProductsService(productRepo as any, dataSource);
+    return { service, saved };
+  }
+
+  it('normaliza ipi_perc para 2 casas decimais ao criar', async () => {
+    const { service, saved } = buildServiceWithRepo();
+    await service.create(
+      { uuid: 'p1', fornecedor_uuid: 'f1', descricao: 'Produto', ipi_perc: 12 } as any,
+      'tenant1',
+    );
+    expect(saved[0].ipi_perc).toBe('12.00');
+  });
+
+  it('mantém ipi_perc nulo quando não informado na criação', async () => {
+    const { service, saved } = buildServiceWithRepo();
+    await service.create(
+      { uuid: 'p1', fornecedor_uuid: 'f1', descricao: 'Produto' } as any,
+      'tenant1',
+    );
+    expect(saved[0].ipi_perc).toBeNull();
+  });
+
+  it('atualiza ipi_perc de um produto existente', async () => {
+    const { service, saved } = buildServiceWithRepo({
+      id: 7, uuid: 'p1', tenant_id: 'tenant1', ipi_perc: '5.00',
+    });
+    await service.update('p1', { ipi_perc: 18.5 } as any, 'tenant1');
+    expect(saved[0].ipi_perc).toBe('18.50');
+  });
+});

@@ -3,20 +3,30 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { CreateOrderDto, CreateOrderItemDto, UpdateOrderDto } from './dto/create-order.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { optimisticSoftDelete, optimisticUpdate } from '../common/persistence/optimistic-concurrency';
 import { calculateOrderItem, calculateOrderTotals } from './order-calculation';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
+import { decimal, money } from '../common/decimal/decimal';
 
 type ReferenceTable = 'clientes' | 'usuarios' | 'fornecedores' | 'transportadoras' | 'produtos';
+
+/** Pedido com as notas fiscais emitidas — usado no detalhe do pedido (GET /pedidos/:uuid). */
+export type OrderDetalhe = Order & {
+  notas: NotaFiscal[];
+  total_faturado: string;
+  divergencia: string;
+};
 
 @Injectable()
 export class OrdersService {
   constructor(
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private readonly itemRepo: Repository<OrderItem>,
+    @InjectRepository(NotaFiscal) private readonly notaRepo: Repository<NotaFiscal>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -259,6 +269,31 @@ export class OrdersService {
     const order = await qb.getOne();
     if (!order) throw new NotFoundException(`Pedido ${uuid} não encontrado.`);
     return order;
+  }
+
+  /**
+   * Detalhe do pedido com as notas fiscais emitidas. O faturamento só devolve
+   * o status para o pedido (ver FaturamentoService#recalculateOrderStatus); é
+   * aqui que número, série, emissão e valor das notas voltam para a tela de
+   * Pedidos — inclusive depois que o pedido sai da fila de faturamento.
+   */
+  async findOneDetalhe(uuid: string, user: RequestUser): Promise<OrderDetalhe> {
+    const order = await this.findOne(uuid, user);
+
+    const notas = await this.notaRepo.find({
+      where: { pedido_id: order.id, tenant_id: user.tenantId, deleted_at: IsNull() },
+      order: { data_emissao: 'DESC', created_at: 'DESC' },
+    });
+
+    const valorPedido = decimal(order.total_com_imposto ?? order.total_sem_imposto ?? 0);
+    const totalFaturado = money(notas.reduce((acc, n) => acc.plus(decimal(n.valor)), decimal(0)));
+
+    return {
+      ...order,
+      notas,
+      total_faturado: totalFaturado,
+      divergencia: money(valorPedido.minus(totalFaturado)),
+    };
   }
 
   /**

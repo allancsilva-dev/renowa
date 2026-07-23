@@ -5,6 +5,8 @@ import {
   IsNumber,
   IsPositive,
   IsUUID,
+  Min,
+  Max,
 } from 'class-validator';
 
 export class CreateProductDto {
@@ -20,4 +22,7 @@ export class CreateProductDto {
 
   @IsOptional() @IsNumber() @IsPositive()
   preco_base?: number;
+
+  @IsOptional() @IsNumber() @Min(0) @Max(100)
+  ipi_perc?: number;
 }

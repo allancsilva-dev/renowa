@@ -1,18 +1,9 @@
 import api from '@/lib/apiClient';
-import type { ApiResponse, Order, PaginatedResponse } from '@/types';
+import type { ApiResponse, NotaFiscal, Order, PaginatedResponse } from '@/types';
 
-export interface NotaFiscal {
-  uuid: string;
-  version: number;
-  pedido_id: number;
-  numero_nota: string;
-  serie: string | null;
-  valor: string;
-  data_emissao: string | null;
-  observacao: string | null;
-  created_at: string;
-  updated_at: string;
-}
+// Definida em @/types porque o detalhe do pedido também a expõe — reexportada
+// aqui para manter os imports das telas de Faturamento.
+export type { NotaFiscal } from '@/types';
 
 export interface FaturamentoPedidoRow {
   uuid: string;

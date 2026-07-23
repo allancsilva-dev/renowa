@@ -7,7 +7,7 @@ import { fetchClients } from '@/services/clients.service';
 import { orderStatusLabel, orderStatusColor, type Order, type OrderStatus, type Product, type Supplier, type Transport } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
-import { moneyForDisplay } from '@/lib/decimal';
+import { moneyForDisplay, qtyForDisplay } from '@/lib/decimal';
 import { previewItem, previewOrder } from '@/lib/orderCalculation';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
@@ -23,7 +23,7 @@ type HeaderForm = {
 type ItemForm = {
   uuid: string; produto_uuid: string; codigo_manual: string; descricao_manual: string;
   qtd_caixas: string; qtd_unitaria: string; preco_unitario: number | null;
-  desconto_perc: string; aplicar_ipi: boolean; ipi_perc: string;
+  desconto_perc: string; ipi_perc: string;
 };
 
 type TenantUser = { authUserId: string; name: string; active: boolean };
@@ -36,7 +36,7 @@ const emptyHeader: HeaderForm = {
 
 const newItem = (): ItemForm => ({
   uuid: crypto.randomUUID(), produto_uuid: '', codigo_manual: '', descricao_manual: '',
-  qtd_caixas: '1', qtd_unitaria: '1', preco_unitario: null, desconto_perc: '0', aplicar_ipi: false, ipi_perc: '',
+  qtd_caixas: '1', qtd_unitaria: '1', preco_unitario: null, desconto_perc: '0', ipi_perc: '0',
 });
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -55,8 +55,7 @@ function orderToForm(order: Order): { header: HeaderForm; items: ItemForm[] } {
       uuid: item.uuid, produto_uuid: item.produto?.uuid ?? '', codigo_manual: item.codigo_manual ?? item.produto?.codigo ?? '',
       descricao_manual: item.descricao_manual ?? item.produto?.descricao ?? '', qtd_caixas: item.qtd_caixas ?? '0',
       qtd_unitaria: item.qtd_unitaria ?? '0', preco_unitario: item.preco_unitario == null ? null : Number(item.preco_unitario),
-      desconto_perc: item.desconto_perc ?? '0', aplicar_ipi: item.ipi_perc != null,
-      ipi_perc: item.ipi_perc ?? '',
+      desconto_perc: item.desconto_perc ?? '0', ipi_perc: item.ipi_perc ?? '0',
     })),
   };
 }
@@ -121,8 +120,7 @@ export default function PedidoForm() {
     return () => { active = false; };
   }, [header.fornecedor_uuid]);
 
-  const calculationItems = items.map((item) => ({ ...item, ipi_perc: item.aplicar_ipi ? item.ipi_perc : '0' }));
-  const totals = previewOrder(calculationItems);
+  const totals = previewOrder(items);
   // Transportadora vinculada — tel/end exibidos automaticamente (§3.2), read-only
   const selectedTransport = transports.find((t) => t.uuid === header.transportadora_uuid);
   const readonlyClass = 'min-h-11 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500 outline-none';
@@ -149,6 +147,7 @@ export default function PedidoForm() {
       ...item, produto_uuid: productUuid, codigo_manual: product?.codigo ?? item.codigo_manual,
       descricao_manual: product?.descricao ?? item.descricao_manual,
       preco_unitario: product?.preco_base == null ? item.preco_unitario : Number(product.preco_base),
+      ipi_perc: product?.ipi_perc == null ? item.ipi_perc : String(product.ipi_perc),
     } : item));
   }
 
@@ -196,7 +195,7 @@ export default function PedidoForm() {
         descricao_manual: item.descricao_manual || null, qtd_caixas: Number(item.qtd_caixas || 0),
         qtd_unitaria: Number(item.qtd_unitaria || 0), preco_unitario: item.preco_unitario ?? 0,
         desconto_perc: Number(item.desconto_perc || 0),
-        ipi_perc: item.aplicar_ipi ? Number(item.ipi_perc || 0) : undefined,
+        ipi_perc: Number(item.ipi_perc || 0),
       })),
       ...(isEdit ? { version } : {}),
     };
@@ -277,7 +276,7 @@ export default function PedidoForm() {
       <section className='rounded-lg border border-slate-200 bg-white p-5 shadow-sm'>
         <div className='mb-4 flex items-center justify-between'><h2 className='text-lg font-semibold text-slate-900'>Itens</h2>
           <button type='button' disabled={locked} onClick={() => setItems((current) => [...current, newItem()])} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40'><Plus className='h-4 w-4' />Adicionar item</button></div>
-        <div className='space-y-4'>{items.map((item, index) => { const calculated = previewItem({ ...item, ipi_perc: item.aplicar_ipi ? item.ipi_perc : '0' }); return <div key={item.uuid} className='rounded-lg border border-slate-200 p-4'>
+        <div className='space-y-4'>{items.map((item, index) => { const calculated = previewItem(item); return <div key={item.uuid} className='rounded-lg border border-slate-200 p-4'>
           <div className='mb-3 flex justify-between'><strong className='text-sm text-slate-800'>Item {index + 1}</strong><button type='button' aria-label={`Remover item ${index + 1}`} disabled={items.length === 1 || locked}
             onClick={() => setItems((current) => current.filter((entry) => entry.uuid !== item.uuid))} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-40'><Trash2 className='h-4 w-4' /></button></div>
           <div className='grid gap-3 md:grid-cols-4'>
@@ -288,14 +287,8 @@ export default function PedidoForm() {
             <label className='flex flex-col gap-1'><span className={labelClass}>Unidades por caixa</span><input disabled={locked} type='number' min='0' step='0.001' value={item.qtd_unitaria} onChange={(e) => updateItem(item.uuid, { qtd_unitaria: e.target.value })} className={inputClass} required /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Preço unitário</span><InputMoney disabled={locked} value={item.preco_unitario} onChange={(value) => updateItem(item.uuid, { preco_unitario: value })} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Desconto (%)</span><input disabled={locked} type='number' min='0' max='100' step='0.01' value={item.desconto_perc} onChange={(e) => updateItem(item.uuid, { desconto_perc: e.target.value })} className={inputClass} /></label>
-            <div className='flex flex-col gap-2'>
-              <label className='flex min-h-11 items-center gap-2 text-sm font-medium text-slate-700'>
-                <input disabled={locked} type='checkbox' checked={item.aplicar_ipi} onChange={(e) => updateItem(item.uuid, { aplicar_ipi: e.target.checked, ipi_perc: e.target.checked ? item.ipi_perc || '0' : '' })} className='h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary' />
-                Aplicar IPI
-              </label>
-              {item.aplicar_ipi && <label className='flex flex-col gap-1'><span className={labelClass}>IPI (%)</span><input disabled={locked} type='number' min='0' max='100' step='0.01' value={item.ipi_perc} onChange={(e) => updateItem(item.uuid, { ipi_perc: e.target.value })} className={inputClass} /></label>}
-            </div>
-            <div className='md:col-span-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700'><span>{item.qtd_caixas || 0} cx × {item.qtd_unitaria || 0} un = <strong>{calculated.qtd_total}</strong></span><span>Sem IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_sem_imposto))}</strong></span><span>Com IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_com_imposto))}</strong></span></div>
+            <label className='flex flex-col gap-1'><span className={labelClass}>IPI (%)</span><input disabled={locked} type='number' min='0' max='100' step='0.01' value={item.ipi_perc} onChange={(e) => updateItem(item.uuid, { ipi_perc: e.target.value })} className={inputClass} /></label>
+            <div className='md:col-span-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700'><span>{qtyForDisplay(item.qtd_caixas || 0)} cx × {qtyForDisplay(item.qtd_unitaria || 0)} un = <strong>{qtyForDisplay(calculated.qtd_total)}</strong></span><span>Sem IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_sem_imposto))}</strong></span><span>Com IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_com_imposto))}</strong></span></div>
           </div></div>; })}</div>
         <div className='mt-5 flex justify-end gap-8 border-t border-slate-200 pt-4 text-right'><div><span className='block text-xs text-slate-600'>Total sem imposto</span><strong>{BRL.format(moneyForDisplay(totals.semImposto))}</strong></div><div><span className='block text-xs text-slate-600'>Total com imposto</span><strong className='text-lg text-slate-900'>{BRL.format(moneyForDisplay(totals.comImposto))}</strong></div></div>
       </section>

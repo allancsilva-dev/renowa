@@ -26,4 +26,7 @@ export class Product extends VersionedBaseEntity {
 
   @Column({ name: 'preco_base', type: 'decimal', precision: 10, scale: 2, nullable: true })
   preco_base: string | null;
+
+  @Column({ name: 'ipi_perc', type: 'decimal', precision: 5, scale: 2, nullable: true })
+  ipi_perc: string | null;
 }

@@ -81,6 +81,20 @@ export interface OrderItem {
   total_com_imposto: string | null;
 }
 
+/** Nota fiscal emitida contra um pedido — registrada em Faturamento, exibida também no detalhe do pedido. */
+export interface NotaFiscal {
+  uuid: string;
+  version: number;
+  pedido_id: number;
+  numero_nota: string;
+  serie: string | null;
+  valor: string;
+  data_emissao: string | null;
+  observacao: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Order {
   uuid: string;
   version: number;
@@ -104,6 +118,10 @@ export interface Order {
   observacao: string | null;
   tipo_faturamento: string | null;
   itens: OrderItem[];
+  /** Notas fiscais e totais de faturamento — presentes somente no GET /pedidos/:uuid. */
+  notas?: NotaFiscal[];
+  total_faturado?: string;
+  divergencia?: string;
   created_at: string;
   updated_at: string;
 }
@@ -116,6 +134,7 @@ export interface Product {
   codigo: string | null;
   descricao: string;
   preco_base: string | null;
+  ipi_perc: string | null;
   fornecedor?: Supplier | null;
 }
 

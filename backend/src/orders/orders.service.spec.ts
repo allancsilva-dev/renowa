@@ -42,7 +42,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const order = { id: 1, uuid: orderUuid };
       const findQb = queryBuilder({ getOne: jest.fn().mockResolvedValue(order) });
       const orderRepo = { createQueryBuilder: jest.fn().mockReturnValue(findQb) } as any;
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, {} as any);
 
       await expect(service.findOne(orderUuid, vendedorA)).resolves.toBe(order);
       expect(findQb.andWhere).toHaveBeenCalledWith(
@@ -54,7 +54,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     it('retorna 404 (não 403) quando o pedido pertence a outro vendedor do mesmo tenant', async () => {
       const findQb = queryBuilder({ getOne: jest.fn().mockResolvedValue(undefined) });
       const orderRepo = { createQueryBuilder: jest.fn().mockReturnValue(findQb) } as any;
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, {} as any);
 
       await expect(service.findOne(orderUuid, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -63,7 +63,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const order = { id: 1, uuid: orderUuid };
       const findQb = queryBuilder({ getOne: jest.fn().mockResolvedValue(order) });
       const orderRepo = { createQueryBuilder: jest.fn().mockReturnValue(findQb) } as any;
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, {} as any);
 
       await expect(service.findOne(orderUuid, admin)).resolves.toBe(order);
       expect(findQb.andWhere).not.toHaveBeenCalledWith(
@@ -77,7 +77,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     it('rejeita qualquer status diferente de cancelado', async () => {
       const orderRepo = { createQueryBuilder: jest.fn() } as any;
       const dataSource = { query: jest.fn() } as any;
-      const service = new OrdersService(orderRepo, {} as any, dataSource);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSource);
 
       await expect(
         service.updateStatus(orderUuid, 'liberado', 1, admin),
@@ -88,7 +88,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     it('bloqueia cancelamento quando há notas fiscais ativas', async () => {
       const orderRepo = {} as any;
       const dataSource = { query: jest.fn().mockResolvedValue([{ total: 1 }]) } as any;
-      const service = new OrdersService(orderRepo, {} as any, dataSource);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSource);
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(
@@ -99,7 +99,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     it('retorna 404 ao tentar cancelar pedido de outro vendedor', async () => {
       const orderRepo = {} as any;
       const dataSource = { query: jest.fn() } as any;
-      const service = new OrdersService(orderRepo, {} as any, dataSource);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSource);
       jest.spyOn(service, 'findOne').mockRejectedValue(new NotFoundException());
 
       await expect(
@@ -115,7 +115,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const lookupBuilder = queryBuilder();
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
       const dataSource = { query: jest.fn().mockResolvedValue([{ total: 0 }]) } as any;
-      const service = new OrdersService(orderRepo, {} as any, dataSource);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSource);
       jest.spyOn(service, 'findOne')
         .mockResolvedValueOnce({ id: 1, uuid: orderUuid, status: 'em_aberto' } as any)
         .mockResolvedValueOnce(reloaded as any);
@@ -133,7 +133,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1, raw: [saved] }) });
       const lookupBuilder = queryBuilder();
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, {} as any);
       jest.spyOn(service, 'findOne')
         .mockResolvedValueOnce({ id: 1, uuid: orderUuid, status: 'em_aberto' } as any)
         .mockResolvedValueOnce(reloaded as any);
@@ -143,7 +143,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
 
     it('bloqueia liberação de pedido que não está em_aberto (409)', async () => {
       const orderRepo = {} as any;
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, {} as any);
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid, status: 'liberado' } as any);
 
       await expect(service.liberar(orderUuid, 1, admin)).rejects.toBeInstanceOf(ConflictException);
@@ -151,7 +151,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
 
     it('retorna 404 ao tentar liberar pedido de outro vendedor', async () => {
       const orderRepo = {} as any;
-      const service = new OrdersService(orderRepo, {} as any, {} as any);
+      const service = new OrdersService(orderRepo, {} as any, {} as any, {} as any);
       jest.spyOn(service, 'findOne').mockRejectedValue(new NotFoundException());
 
       await expect(service.liberar(orderUuid, 1, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
@@ -170,7 +170,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
         query: jest.fn().mockResolvedValue([{ id: 10 }]),
       };
       const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
-      const service = new OrdersService({} as any, {} as any, dataSource);
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
 
       await expect(
         service.update(orderUuid, { version: 1, itens: [] } as any, admin),
@@ -185,7 +185,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     }
 
     it('retorna 404 ao tentar apagar pedido de outro vendedor', async () => {
-      const service = new OrdersService({} as any, {} as any, dataSourceWithNotas(0));
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSourceWithNotas(0));
       jest.spyOn(service, 'findOne').mockRejectedValue(new NotFoundException());
 
       await expect(service.remove(orderUuid, 1, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
@@ -195,7 +195,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 0 }) });
       const lookupBuilder = queryBuilder({ getRawOne: jest.fn().mockResolvedValue(undefined) });
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
-      const service = new OrdersService(orderRepo, {} as any, dataSourceWithNotas(0));
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(0));
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
@@ -210,7 +210,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1 }) });
       const lookupBuilder = queryBuilder();
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
-      const service = new OrdersService(orderRepo, {} as any, dataSourceWithNotas(0));
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(0));
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, vendedorA)).resolves.toBeUndefined();
@@ -219,11 +219,68 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     it('bloqueia exclusão de pedido com nota fiscal ativa (nota/comissão órfã no caixa)', async () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1 }) });
       const orderRepo = repoForWrite(updateBuilder, queryBuilder());
-      const service = new OrdersService(orderRepo, {} as any, dataSourceWithNotas(1));
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(1));
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, admin)).rejects.toBeInstanceOf(ConflictException);
       expect(updateBuilder.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findOneDetalhe', () => {
+    function serviceComNotas(notas: any[]) {
+      const notaRepo = { find: jest.fn().mockResolvedValue(notas) } as any;
+      const service = new OrdersService({} as any, {} as any, notaRepo, {} as any);
+      return { service, notaRepo };
+    }
+
+    const pedido = { id: 7, uuid: orderUuid, total_com_imposto: '1000.00', total_sem_imposto: '900.00' };
+
+    it('anexa as notas e calcula total faturado e divergência', async () => {
+      const notas = [{ uuid: 'n1', valor: '400.00' }, { uuid: 'n2', valor: '250.50' }];
+      const { service, notaRepo } = serviceComNotas(notas);
+      jest.spyOn(service, 'findOne').mockResolvedValue(pedido as any);
+
+      const detalhe = await service.findOneDetalhe(orderUuid, admin);
+
+      expect(detalhe.notas).toBe(notas);
+      expect(detalhe.total_faturado).toBe('650.50');
+      expect(detalhe.divergencia).toBe('349.50');
+      // Escopo obrigatório: tenant + pedido + notas não apagadas.
+      expect(notaRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ pedido_id: 7, tenant_id: admin.tenantId }),
+        }),
+      );
+    });
+
+    it('devolve totais zerados quando o pedido não tem nota', async () => {
+      const { service } = serviceComNotas([]);
+      jest.spyOn(service, 'findOne').mockResolvedValue(pedido as any);
+
+      const detalhe = await service.findOneDetalhe(orderUuid, admin);
+
+      expect(detalhe.notas).toEqual([]);
+      expect(detalhe.total_faturado).toBe('0.00');
+      expect(detalhe.divergencia).toBe('1000.00');
+    });
+
+    it('usa total_sem_imposto quando não há total_com_imposto', async () => {
+      const { service } = serviceComNotas([{ uuid: 'n1', valor: '100.00' }]);
+      jest.spyOn(service, 'findOne').mockResolvedValue({ ...pedido, total_com_imposto: null } as any);
+
+      await expect(service.findOneDetalhe(orderUuid, admin)).resolves.toMatchObject({
+        total_faturado: '100.00',
+        divergencia: '800.00',
+      });
+    });
+
+    it('propaga o 404 do findOne — vendedor sem ownership não vê as notas', async () => {
+      const { service, notaRepo } = serviceComNotas([{ uuid: 'n1', valor: '100.00' }]);
+      jest.spyOn(service, 'findOne').mockRejectedValue(new NotFoundException());
+
+      await expect(service.findOneDetalhe(orderUuid, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
+      expect(notaRepo.find).not.toHaveBeenCalled();
     });
   });
 

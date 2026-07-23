@@ -103,6 +103,11 @@ export default function Produtos() {
       cell: (row: Product) => row.preco_base != null ? BRL.format(moneyForDisplay(row.preco_base)) : '—',
     },
     {
+      key: 'ipi_perc',
+      header: 'IPI',
+      cell: (row: Product) => row.ipi_perc != null ? `${row.ipi_perc}%` : '—',
+    },
+    {
       key: 'acoes',
       header: 'Ações',
       cell: (row: Product) => (

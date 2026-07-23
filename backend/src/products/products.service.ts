@@ -132,6 +132,7 @@ export class ProductsService {
     const product = this.productRepo.create({
       ...rest,
       preco_base: rest.preco_base === undefined ? null : money(rest.preco_base),
+      ipi_perc: rest.ipi_perc === undefined ? null : money(rest.ipi_perc),
       uuid,
       fornecedor_id,
       tenant_id: tenantId,
@@ -182,9 +183,10 @@ export class ProductsService {
 
   async update(uuid: string, dto: Partial<CreateProductDto>, tenantId: string): Promise<Product> {
     const product = await this.findOne(uuid, tenantId);
-    const { fornecedor_uuid: _f, uuid: _u, preco_base, ...rest } = dto;
+    const { fornecedor_uuid: _f, uuid: _u, preco_base, ipi_perc, ...rest } = dto;
     Object.assign(product, rest);
     if (preco_base !== undefined) product.preco_base = money(preco_base);
+    if (ipi_perc !== undefined) product.ipi_perc = money(ipi_perc);
     if (Object.prototype.hasOwnProperty.call(dto, 'fornecedor_uuid')) {
       if (!dto.fornecedor_uuid) {
         product.fornecedor_id = null;

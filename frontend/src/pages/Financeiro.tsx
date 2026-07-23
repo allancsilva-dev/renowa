@@ -326,30 +326,55 @@ function FluxoCaixa() {
 function Empresas() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [ano, setAno] = useState(now.getFullYear());
+  const [fornecedorId, setFornecedorId] = useState('');
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [grupos, setGrupos] = useState<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Comissao[] }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    api.get('/fornecedores?limit=100').then((r) => {
+      setFornecedores((r.data as { data: Fornecedor[] }).data ?? r.data ?? []);
+    }).catch(() => {});
+  }, []);
+
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
+    const params = new URLSearchParams({ mes: String(mes), ano: String(ano) });
+    if (fornecedorId) params.set('fornecedor_id', fornecedorId);
     api
-      .get(`/financeiro/comissoes/por-empresa?mes=${mes}&ano=${ano}`)
+      .get(`/financeiro/comissoes/por-empresa?${params.toString()}`)
       .then((r) => setGrupos((r.data as { data: typeof grupos }).data ?? r.data ?? []))
       .catch(() => { setGrupos([]); setError('Não foi possível carregar vendas por empresa.'); })
       .finally(() => setLoading(false));
-  }, [mes, ano]);
+  }, [mes, ano, fornecedorId]);
 
   useEffect(() => { load(); }, [load]);
 
+  const sel = 'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-primary';
+
   return (
     <div className='space-y-5'>
-      <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      <div className='flex flex-wrap items-center gap-2'>
+        <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+        <select
+          value={fornecedorId}
+          onChange={(e) => setFornecedorId(e.target.value)}
+          aria-label='Filtrar por empresa'
+          className={sel}
+        >
+          <option value=''>Todas as empresas</option>
+          {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
+        </select>
+      </div>
       <WriteError message={error} />
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
       ) : grupos.length === 0 ? (
-        <div className='py-10 text-center text-sm text-slate-400'>Nenhuma venda registrada no período</div>
+        <div className='py-10 text-center text-sm text-slate-400'>
+          {fornecedorId ? 'Esta empresa não teve vendas no período' : 'Nenhuma venda registrada no período'}
+        </div>
       ) : (
         grupos.map((g) => (
           <div key={g.fornecedor_id} className='space-y-2'>
