@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
+import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { fetchClients } from '@/services/clients.service';
@@ -103,6 +104,7 @@ export default function Clientes() {
       {isImportOpen && (
         <ImportCsvDialog
           title='Importar clientes'
+          template={{ filename: 'modelo-clientes.csv', header: CSV_TEMPLATE_HEADERS.clientes }}
           importFn={importClientes}
           onImported={reload}
           onClose={() => setIsImportOpen(false)}

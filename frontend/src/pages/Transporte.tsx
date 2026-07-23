@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
+import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import api from '@/lib/apiClient';
 import Dialog from '@/components/ui/Dialog';
@@ -145,6 +146,7 @@ export default function Transporte() {
       {isImportOpen && (
         <ImportCsvDialog
           title='Importar transportadoras'
+          template={{ filename: 'modelo-transporte.csv', header: CSV_TEMPLATE_HEADERS.transporte }}
           importFn={importTransportadoras}
           onImported={reload}
           onClose={() => setIsImportOpen(false)}

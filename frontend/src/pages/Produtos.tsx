@@ -11,6 +11,7 @@ import { fetchSuppliers } from '@/services/suppliers.service';
 import { getApiErrorMessage } from '@/lib/errors';
 import type { Product, Supplier } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
+import { CSV_TEMPLATE_HEADERS, downloadCsvTemplate } from '@/lib/csvTemplate';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -229,6 +230,13 @@ export default function Produtos() {
                 <code className='rounded bg-slate-100 px-1'>descricao</code> e{' '}
                 <code className='rounded bg-slate-100 px-1'>preco_base</code>. Máximo de 5.000 linhas.
               </p>
+              <button
+                type='button'
+                onClick={() => downloadCsvTemplate('modelo-produtos.csv', CSV_TEMPLATE_HEADERS.produtos)}
+                className='self-start text-sm font-medium text-primary underline-offset-2 hover:underline'
+              >
+                Baixar modelo (.csv)
+              </button>
             </div>
 
             {importResult && (

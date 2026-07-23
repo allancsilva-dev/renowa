@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
+import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { fetchSuppliers, deleteSupplier } from '@/services/suppliers.service';
@@ -141,6 +142,7 @@ export default function Fornecedores() {
       {isImportOpen && (
         <ImportCsvDialog
           title='Importar fornecedores'
+          template={{ filename: 'modelo-fornecedores.csv', header: CSV_TEMPLATE_HEADERS.fornecedores }}
           importFn={importSuppliers}
           onImported={reload}
           onClose={() => setIsImportOpen(false)}

@@ -1,19 +1,22 @@
 import { useState, type ReactNode } from 'react';
 import Dialog from '@/components/ui/Dialog';
 import { getApiErrorMessage } from '@/lib/errors';
+import { downloadCsvTemplate } from '@/lib/csvTemplate';
 import type { ImportResult } from '@/services/import';
 
 interface ImportCsvDialogProps {
   title: string;
   /** Ajuda com as colunas esperadas, exibida abaixo do seletor de arquivo. */
   help: ReactNode;
+  /** Modelo .csv baixável (só cabeçalho). Omitido = sem botão de download. */
+  template?: { filename: string; header: string };
   importFn: (file: File) => Promise<ImportResult>;
   /** Chamado após uma importação bem-sucedida (ex.: recarregar a lista). */
   onImported: () => void;
   onClose: () => void;
 }
 
-export default function ImportCsvDialog({ title, help, importFn, onImported, onClose }: ImportCsvDialogProps) {
+export default function ImportCsvDialog({ title, help, template, importFn, onImported, onClose }: ImportCsvDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +65,15 @@ export default function ImportCsvDialog({ title, help, importFn, onImported, onC
             No Excel, use <strong>Arquivo &gt; Salvar como &gt; CSV UTF-8 (delimitado por vírgulas)</strong>.{' '}
             {help} Máximo de 5.000 linhas.
           </p>
+          {template && (
+            <button
+              type='button'
+              onClick={() => downloadCsvTemplate(template.filename, template.header)}
+              className='self-start text-sm font-medium text-primary underline-offset-2 hover:underline'
+            >
+              Baixar modelo (.csv)
+            </button>
+          )}
         </div>
 
         {result && (
