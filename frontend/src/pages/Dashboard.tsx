@@ -28,6 +28,8 @@ import {
   Plus,
   AlertCircle,
   RefreshCw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -142,6 +144,15 @@ export default function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(canViewFinance);
   const [error, setError] = useState<string | null>(null);
+  const [valoresOcultos, setValoresOcultos] = useState<boolean>(
+    () => localStorage.getItem('dashboard_valores_ocultos') === '1',
+  );
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_valores_ocultos', valoresOcultos ? '1' : '0');
+  }, [valoresOcultos]);
+
+  const showMoney = (v: number) => (valoresOcultos ? 'R$ ••••••' : fmt(v));
 
   const load = useCallback(async () => {
     if (!canViewFinance) return;
@@ -221,6 +232,17 @@ export default function Dashboard() {
           <img src='/assets/logo-renowa.png' className='hidden h-12 w-auto object-contain sm:block' alt='Renowa' />
           <button
             type='button'
+            onClick={() => setValoresOcultos((v) => !v)}
+            aria-pressed={valoresOcultos}
+            aria-label={valoresOcultos ? 'Mostrar valores' : 'Ocultar valores'}
+            title={valoresOcultos ? 'Mostrar valores' : 'Ocultar valores'}
+            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+          >
+            {valoresOcultos ? <EyeOff className='h-4 w-4' /> : <Eye className='h-4 w-4' />}
+            {valoresOcultos ? 'Mostrar' : 'Ocultar'}
+          </button>
+          <button
+            type='button'
             onClick={handleExport}
             disabled={!data}
             className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50'
@@ -265,7 +287,7 @@ export default function Dashboard() {
         {/* Col 1: Evolução de Venda (~65%) */}
         <Card className='col-span-12 lg:col-span-8'>
           <CardHeader title='Evolução de Venda' />
-          <div className='px-5 py-4'>
+          <div className={`px-5 py-4 ${valoresOcultos ? 'blur-sm select-none pointer-events-none' : ''}`}>
             <ResponsiveContainer width='100%' height={220}>
               <AreaChart data={salesData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                 <defs>
@@ -282,7 +304,7 @@ export default function Dashboard() {
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 11, fill: '#6B7280' }}
+                  tick={valoresOcultos ? false : { fontSize: 11, fill: '#6B7280' }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={(v: number) => `R$${(v / 1000).toFixed(0)}k`}
@@ -309,9 +331,9 @@ export default function Dashboard() {
         <Card className='col-span-12 lg:col-span-4'>
           <CardHeader title='Resumo' />
           <div className='px-5'>
-            <MetricRow label='Faturamento' value={loading ? '—' : fmt(faturamento)} caption='Vendas registradas' />
-            <MetricRow label='Custos' value={loading ? '—' : fmt(custos)} caption='Fixos e rotativos' />
-            <MetricRow label='Comissões' value={loading ? '—' : fmt(comissoes)} caption='Total acumulado' />
+            <MetricRow label='Faturamento' value={loading ? '—' : showMoney(faturamento)} caption='Vendas registradas' />
+            <MetricRow label='Custos' value={loading ? '—' : showMoney(custos)} caption='Fixos e rotativos' />
+            <MetricRow label='Comissões' value={loading ? '—' : showMoney(comissoes)} caption='Total acumulado' />
           </div>
         </Card>
       </div>
@@ -341,7 +363,7 @@ export default function Dashboard() {
         />
         <KpiCard
           title='Inadimplência em Aberto'
-          value={loading ? '—' : fmt(inadimplencia)}
+          value={loading ? '—' : showMoney(inadimplencia)}
           subtitle={inadimplencia > 0 ? 'Requer atenção' : 'Nenhum valor em aberto'}
           icon={Wallet}
           iconBg={inadimplencia > 0 ? '#B91C1C' : '#2A9D8F'}
@@ -458,7 +480,7 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className='py-2.5 text-right text-xs font-semibold text-slate-900 whitespace-nowrap'>
-                        {fmt(moneyForDisplay(row.valor))}
+                        {showMoney(moneyForDisplay(row.valor))}
                       </td>
                       <td className='py-2.5 text-right'>
                         <span
