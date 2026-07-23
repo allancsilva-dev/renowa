@@ -10,6 +10,32 @@ export function normalizeRoles(roles: readonly string[] | undefined): string[] {
   return [...new Set(roles.map(normalizeRole).filter(Boolean))];
 }
 
+/** Rótulos amigáveis para os papéis conhecidos (chave em lowercase). */
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrador',
+  superadmin: 'Super administrador',
+  viewer: 'Visualizador',
+  gerente: 'Gerente',
+  vendedor: 'Vendedor',
+  financeiro: 'Financeiro',
+  operador: 'Operador',
+};
+
+/**
+ * Formata um papel para exibição. Papéis conhecidos usam rótulo próprio;
+ * papéis custom (por tenant) caem no title-case (`equipe_vendas` → `Equipe Vendas`).
+ */
+export function formatRole(role: string): string {
+  const normalized = normalizeRole(role);
+  if (!normalized) return '';
+  if (ROLE_LABELS[normalized]) return ROLE_LABELS[normalized];
+  return normalized
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 export function hasRole(roles: readonly string[] | undefined, target: string): boolean {
   const normalizedTarget = normalizeRole(target);
   return normalizedTarget.length > 0

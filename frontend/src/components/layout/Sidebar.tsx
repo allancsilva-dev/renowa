@@ -12,6 +12,7 @@ import {
   Receipt,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { formatRole } from '@/lib/authorization';
 
 interface NavItem {
   to: string;
@@ -60,7 +61,7 @@ const itemBase: React.CSSProperties = {
 export default function Sidebar() {
   const { user, logout, hasPermission } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
-  const role = user?.roles?.[0] ?? '';
+  const roleLabel = user?.roles?.[0] ? formatRole(user.roles[0]) : '';
   // Configurações reúne telas com permissões próprias (usuários/perfis,
   // auditoria, privacidade) — mostra o link se o usuário tiver qualquer uma.
   const canSeeConfiguracoes = hasPermission('usuarios.gerenciar')
@@ -118,12 +119,14 @@ export default function Sidebar() {
             </li>
           ))}
         </ul>
+      </nav>
 
-        {/* Separador antes de Configurações */}
-        <div className='my-3 border-t border-white/10' />
-
+      {/* Rodapé do usuário */}
+      <div className='border-t border-white/10 p-4'>
+        {/* Configurações no fim da sidebar */}
         {canSeeConfiguracoes && <NavLink
           to='/configuracoes'
+          className='mb-2'
           style={({ isActive }) => ({
             ...itemBase,
             color: isActive ? '#1B7468' : 'rgba(255,255,255,0.82)',
@@ -147,10 +150,7 @@ export default function Sidebar() {
           <Settings size={20} />
           Configurações
         </NavLink>}
-      </nav>
 
-      {/* Rodapé do usuário */}
-      <div className='border-t border-white/10 p-4'>
         {/* Info do usuário */}
         <div className='mb-3 flex items-center gap-3'>
           <div
@@ -161,11 +161,11 @@ export default function Sidebar() {
           </div>
           <div className='min-w-0 flex-1'>
             <p className='truncate text-sm font-medium text-white'>
-              {user?.email ?? 'Usuário'}
+              {user?.nome ?? user?.email ?? 'Usuário'}
             </p>
-            {role && (
+            {roleLabel && (
               <p className='truncate text-xs' style={{ color: 'rgba(255,255,255,0.75)' }}>
-                {role}
+                {roleLabel}
               </p>
             )}
           </div>

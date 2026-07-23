@@ -5,6 +5,7 @@ import { z } from 'zod';
 export interface AuthUser {
   sub: string;
   email: string;
+  nome?: string;
   roles: string[];
   tenantId: string;
   permissions: string[];
