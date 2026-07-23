@@ -63,3 +63,14 @@ Thumbs.db
 web-build/
 android/
 ios/
+
+# Tooling de IA / artefatos de dev — não fazem parte do produto
+.agents/
+.impeccable/
+plans/
+.claude/settings.local.json
+.claude/skills/
+# .claude/agents/ segue versionado (subagentes Renowa do time)
+
+# Material-fonte do cliente — fora do repo (mover pra Drive/storage)
+docs/Renowa/

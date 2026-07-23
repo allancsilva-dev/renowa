@@ -1,14 +1,6 @@
 # BACKLOG — Renowa
 
-Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs `BACKLOG-NNNN`. Referência cruzada com [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) por ID.
-
-**Estado atual (2026-07-22, após overhaul de RBAC — ver PROBLEM_LEDGER.md#PROB-0058): 16 itens não fechados (14 ABERTO, 1 PARCIALMENTE_RESOLVIDO — BACKLOG-0009, 1 FECHADO_COM_RESSALVA — BACKLOG-0011; contagem exata por status, corrigindo texto anterior que citava 13).** Relatórios, planos e prompts em outros arquivos são históricos; execução deve partir deste backlog e do `PROBLEM_LEDGER.md`.
-
-**Atualização 2026-07-22 (parte 4 — fechamento das três frentes EM_ANDAMENTO da mesma sessão):** **5 itens novos (BACKLOG-0042 a BACKLOG-0046)**, originados do fechamento de PROB-0069/0070/0071 (ver BUG-0024 a BUG-0027). Contagem revisada: **39 itens não fechados** (os 34 anteriores, cuja contagem por status **não foi rechecada nesta rodada**, mais os 5 novos, todos ABERTO). Destaque: **BACKLOG-0042 (comunicar que a importação deixou de aceitar `.xlsx`) tem impacto direto em usuário final** e BACKLOG-0045 (validar com arquivo real do Excel pt-BR) é barato e deve preceder o go-live. **O gate de dependências desta rodada está FECHADO** — `npm audit --omit=dev --workspace=backend` foi de 20 → 13 e os 13 restantes são exatamente os não-aplicáveis já triados mais o bloco que só sai com NestJS 11: **BACKLOG-0040 é o único caminho para eles.** **Estado de commit corrigido neste passe:** ao contrário do que dizia o registro anterior, o trabalho desta sessão **está commitado** como **`f85809f`** (2026-07-22 15:56, 22 arquivos) — verificado por `git show --stat`; este agente não commitou nada.
-
-**Atualização 2026-07-22 (parte 3 — revisão independente + testes + Wave 0/Wave 1 do commit `d91b9b3`):** contagem revisada — **34 itens não fechados** (os 16 anteriores, cuja contagem por status **não foi rechecada nesta rodada**, mais os 18 novos abaixo, todos ABERTO). 18 itens novos (BACKLOG-0024 a BACKLOG-0041), originados da sessão registrada em [REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md](REVIEW_REPORTS/2026-07-22_fullstack_review_fluxo-comercial-completo-wave0-wave1.md). **Enquadramento: o produto vai para produção depois desta rodada** — BACKLOG-0041 (rodar `db:verify` contra produção) e BACKLOG-0040 (migração NestJS 10 → 11) são gates de deploy, não itens de fila normal. **Nada desta sessão foi commitado.**
-
-**Atualização 2026-07-22 (pós "Fluxo Comercial Completo"):** 3 itens novos adicionados (BACKLOG-0021 a BACKLOG-0023), todos originados da crítica de design pós-implementação (`.impeccable/critique/2026-07-22T17-30-23Z__edidodetalhe-financeiro-fornecedores-asynccombobox.md`, score 23/40) e adiados por decisão explícita do usuário para uma rodada futura — ver [PROBLEM_LEDGER.md](PROBLEM_LEDGER.md) seção "Implementação Fluxo Comercial Completo" para o contexto completo da entrega.
+> Contém apenas itens **não fechados**. Registros fechados foram removidos na limpeza pré-produção (2026-07-23); o histórico permanece no git.
 
 ## Formato de entrada
 
@@ -27,51 +19,6 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 ---
 
 ## Itens
-
-### BACKLOG-0001 — Migrar cursor de sync de offset para `updated_at`
-- **Prioridade:** P2
-- **Área:** backend
-- **Motivo:** cursor de sync por offset (CHANGELOG #13) tem limitação conhecida — inserções/atualizações concorrentes durante a paginação podem pular ou repetir itens. Plano é migrar para cursor por `updated_at` na v2.0.
-- **Dependências:** definição de âncora temporal estável (já existe `server_time` em todo response — CHANGELOG #12).
-- **Critério de aceite:** pull de sync usa cursor por `updated_at`; teste de regressão cobre concorrência (inserção durante paginação não perde item).
-- **Risco se ficar pendente:** em volume alto de escrita concorrente, cliente mobile pode não receber registros ou receber duplicados.
-- **Status:** FECHADO
-- **Verificado em:** 2026-07-12 (commit `a2b787d`)
-- **Solução aplicada:** backend adotou alternativa superior ao cursor por `updated_at`: change feed monotônico com `revision`, keyset pagination e `highWatermark` estável. Testes cobrem paginação e concorrência. Migração/robustez do cliente permanece em BACKLOG-0005.
-- **Relacionado:** PROB-0008, PROB-0018
-
-### BACKLOG-0002 — Remover segredos do git e rotacionar credenciais
-- **Prioridade:** P0
-- **Área:** segurança
-- **Motivo:** `backend/env_renowa.txt` com segredos de produção reais versionado (PROB-0002).
-- **Dependências:** acesso ao provedor de DB e ao ZonaDevAuth para rotação.
-- **Critério de aceite:** arquivo fora do índice e do histórico; `.gitignore` cobre o padrão; DB password, `RENOWA_JWT_SECRET` e `AUTH_INTERNAL_SECRET` rotacionados; deploy validado com novos segredos.
-- **Risco se ficar pendente:** takeover total do DB e forja de JWT para qualquer tenant.
-- **Status:** FECHADO
-- **Decisão:** encerrado por decisão explícita do usuário em 2026-07-12; riscos residuais aceitos.
-- **Relacionado:** PROB-0002
-
-### BACKLOG-0003 — Whitelist de colunas por entidade no serviço de sync
-- **Prioridade:** P0
-- **Área:** backend
-- **Motivo:** SQL injection de identificador + mass-assignment no push (PROB-0003, PROB-0019).
-- **Dependências:** mapa de colunas graváveis por entidade.
-- **Critério de aceite:** chaves do payload validadas/mapeadas contra whitelist; chave desconhecida rejeitada; teste cobre payload com chave maliciosa (`"`).
-- **Risco se ficar pendente:** injeção de SQL e escrita cross-tenant por usuário autenticado.
-- **Status:** FECHADO
-- **Relacionado:** PROB-0003, PROB-0019
-
-### BACKLOG-0004 — Reescrever migrations para schema completo e válido
-- **Prioridade:** P0
-- **Área:** banco
-- **Motivo:** migration 001 não cria tabelas, tem sintaxe inválida e índice em coluna inexistente; `mobile_sessions`/`parceiros_comerciais` ausentes (PROB-0004/0005/0006/0013/0033).
-- **Dependências:** decisão sobre modelo de `comissoes` (FK para pedido?) e RBAC (PROB-0034).
-- **Critério de aceite:** deploy limpo em banco vazio com `synchronize:false` sobe sem erro; schema resultante == entidades; smoke test de sessão mobile e parceiros passa.
-- **Risco se ficar pendente:** produção não sobe do zero; divergência dev↔prod mascara bugs.
-- **Status:** FECHADO
-- **Verificado em:** 2026-07-12
-- **Solução aplicada:** baseline efetiva `0000_baseline.sql` cobre schema completo; runner aceita migrations de quatro dígitos; migrations legadas inválidas de três dígitos são ignoradas. PROB-0004/0005/0006/0013/0033 estão fechados.
-- **Relacionado:** PROB-0004, PROB-0005, PROB-0006, PROB-0013, PROB-0033
 
 ### BACKLOG-0005 — Redesenhar cursor e resolução de conflito do sync
 - **Prioridade:** P1
@@ -145,19 +92,6 @@ Próximos passos e itens não tratados agora. Mantido pelo `docs-reporter`. IDs 
 - **Risco se ficar pendente:** erro de cadastro em pedido só é corrigível recriando o pedido (ou via acesso direto ao banco) — atrito operacional e risco de dado incorreto persistir em produção.
 - **Status:** ABERTO
 - **Relacionado:** PROB-0046, PROB-0044, PROB-0040
-
-### BACKLOG-0011 — Clique-through autenticado real das telas novas (Fornecedores, criação de pedido com itens)
-- **Prioridade:** P1
-- **Área:** frontend / backend
-- **Motivo:** PROB-0045 (Fornecedores) e PROB-0046 (criação de pedido com itens) foram verificados nesta rodada só por build/lint e leitura de código — o banco de dev local está vazio e não há endpoint de auto-registro, então não foi possível logar como usuário real e percorrer os fluxos ponta a ponta no navegador.
-- **Dependências:** ambiente de desenvolvimento com usuário/tenant de teste seedado (ou endpoint de auto-registro habilitado só em dev).
-- **Critério de aceite:** login real na tela `Fornecedores` com criar/editar/remover fornecedor confirmado visualmente; criação de pedido com itens em `PedidoForm.tsx` gerando pedido com produto/valor corretos, conferido em `PedidoDetalhe.tsx`; total por item conferido contra a fórmula assumida (ou corrigido, se o negócio apontar fórmula diferente).
-- **Risco se ficar pendente:** telas novas podem ter bugs de integração (contrato de API, formatação, estado) que build/lint/testes unitários não capturam; risco maior concentrado no cálculo de `total_item` de pedidos, ainda não validado com o negócio.
-- **Status:** FECHADO_COM_RESSALVA
-- **Atualizado em:** 2026-07-21
-- **Solução aplicada:** clique-through real feito no Safari (via osascript) com usuário admin seedado localmente (`backend/scripts/create-admin.ts`) e permissões seedadas manualmente a partir de `0000_baseline.sql:1496-1520` (banco de dev estava vazio — ver BACKLOG-0012). CRUD de fornecedor confirmado visualmente (criar/editar/remover, campo `razao_social`+`cnpj` com máscara). Criação de pedido com itens confirmada (cliente+produto+quantidade+preço), total client-side conferiu com o total do backend no cenário testado, detalhe do pedido e troca de status funcionando. Nesse processo foram encontrados e corrigidos 3 bugs novos que só um navegador real revela — ver PROB-0049/0050/0051.
-- **Saldo:** a fórmula de `total_item` (PROB-0046) continua **não confirmada com o dono do produto** — o teste manual só provou que cliente e servidor concordam entre si, não que a fórmula está correta para o negócio.
-- **Relacionado:** PROB-0045, PROB-0046, PROB-0049, PROB-0050, PROB-0051, BACKLOG-0012
 
 ### BACKLOG-0012 — Seed do catálogo de `permissions` em ambiente de desenvolvimento local
 - **Prioridade:** P1
