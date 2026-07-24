@@ -506,7 +506,7 @@ export default function ClienteForm() {
               <div className='flex flex-col gap-1'>
                 <label htmlFor='transportadora_uuid' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Transportadora</label>
                 <select id='transportadora_uuid' name='transportadora_uuid' value={form.transportadora_uuid} onChange={handleChange} className={inputClass}>
-                  <option value=''>Sem transportadora</option>
+                  <option value=''></option>
                   {transports.map((transport) => <option key={transport.uuid} value={transport.uuid}>{transport.razao_social}</option>)}
                 </select>
               </div>

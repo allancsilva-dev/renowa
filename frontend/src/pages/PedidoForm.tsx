@@ -259,7 +259,7 @@ export default function PedidoForm() {
             </select></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
             <select disabled={locked} value={header.transportadora_uuid} onChange={(e) => setHeader((h) => ({ ...h, transportadora_uuid: e.target.value }))} className={inputClass}>
-              <option value=''>Sem transportadora</option>{transports.map((entry) => <option key={entry.uuid} value={entry.uuid}>{entry.razao_social}</option>)}
+              <option value=''></option>{transports.map((entry) => <option key={entry.uuid} value={entry.uuid}>{entry.razao_social}</option>)}
             </select></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Tel. Transporte</span>
             <input value={selectedTransport?.telefone ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} /></label>
@@ -280,7 +280,7 @@ export default function PedidoForm() {
           <div className='mb-3 flex justify-between'><strong className='text-sm text-slate-800'>Item {index + 1}</strong><button type='button' aria-label={`Remover item ${index + 1}`} disabled={items.length === 1 || locked}
             onClick={() => setItems((current) => current.filter((entry) => entry.uuid !== item.uuid))} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-40'><Trash2 className='h-4 w-4' /></button></div>
           <div className='grid gap-3 md:grid-cols-4'>
-            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><select disabled={locked} value={item.produto_uuid} onChange={(e) => chooseProduct(item.uuid, e.target.value)} className={inputClass}><option value=''>Item manual</option>{products.map((product) => <option key={product.uuid} value={product.uuid}>{product.codigo ? `${product.codigo} — ` : ''}{product.descricao}</option>)}</select></label>
+            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><select disabled={locked} value={item.produto_uuid} onChange={(e) => chooseProduct(item.uuid, e.target.value)} className={inputClass}><option value=''></option>{products.map((product) => <option key={product.uuid} value={product.uuid}>{product.codigo ? `${product.codigo} — ` : ''}{product.descricao}</option>)}</select></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Código</span><input disabled={locked} value={item.codigo_manual} onChange={(e) => updateItem(item.uuid, { codigo_manual: e.target.value })} className={inputClass} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Descrição</span><input disabled={locked} value={item.descricao_manual} onChange={(e) => updateItem(item.uuid, { descricao_manual: e.target.value })} className={inputClass} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Caixas</span><input disabled={locked} type='number' min='0' step='0.001' value={item.qtd_caixas} onChange={(e) => updateItem(item.uuid, { qtd_caixas: e.target.value })} className={inputClass} required /></label>
