@@ -77,24 +77,26 @@ export default function Pedidos() {
   return (
     <div className='space-y-4'>
       <div className='flex flex-wrap items-center justify-between gap-4'>
-        <input
-          type='search'
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder='Cliente, CNPJ ou número'
-          aria-label='Buscar pedidos'
-          className='min-h-11 min-w-64 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
-        />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as OrderStatus | '')}
-          className='rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40'
-        >
-          <option value=''>Todos os status</option>
-          {(Object.keys(orderStatusLabel) as OrderStatus[]).map((s) => (
-            <option key={s} value={s}>{orderStatusLabel[s]}</option>
-          ))}
-        </select>
+        <div className='flex flex-wrap items-center gap-3'>
+          <input
+            type='search'
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder='Cliente, CNPJ ou número'
+            aria-label='Buscar pedidos'
+            className='min-h-11 min-w-64 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+          />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as OrderStatus | '')}
+            className='rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40'
+          >
+            <option value=''>Todos os status</option>
+            {(Object.keys(orderStatusLabel) as OrderStatus[]).map((s) => (
+              <option key={s} value={s}>{orderStatusLabel[s]}</option>
+            ))}
+          </select>
+        </div>
 
         <button
           onClick={() => navigate('/pedidos/novo')}
