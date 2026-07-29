@@ -10,12 +10,33 @@
 - Portabilidade JSON entregue no momento da execução, sem persistir nova cópia de PII.
 - SQLite mobile permanece fora do escopo por instrução do projeto.
 
-## Inventário inicial de PII
+## Inventário de PII
 
-- `clientes`: razão social, CNPJ, e-mail, telefone, endereço, contato, inscrições e observações.
-- `usuarios` / `local_users`: nome, e-mail, identificador de autenticação e status.
-- `pedidos`: local de entrega e observações podem conter PII livre; exigem futura classificação/restrição de conteúdo.
-- Audit log: identificadores técnicos e nomes de campos; valores de PII são proibidos.
+**Fonte da verdade: `backend/src/privacy/pii-registry.ts`.** Não mantenha lista de
+tabelas aqui.
+
+O inventário deixou de ser prosa em 2026-07-29 (PROB-0075). O que existia antes era
+uma lista de quatro linhas que não citava `notas_fiscais`, `parceiros_comerciais`,
+`transportadoras`, `pedido_fotos` nem as tabelas de SAC — e três dessas guardavam PII
+de titular fora do alcance do apagamento. Uma foto de nota fiscal, com nome, CNPJ e
+endereço no próprio pixel, sobrevivia intacta em `bytea` a um ERASURE concluído com
+sucesso.
+
+O registro é executável: o SQL do apagamento é **gerado** a partir dele, e
+`pii-registry.spec.ts` reprova a build se alguma entidade com `tenant_id` não estiver
+classificada — em `PII_REGISTRY`, com o vínculo até o titular e o que apagar em cada
+coluna, ou em `TABELAS_SEM_PII`, com a justificativa de por que não guarda PII de
+titular. Omitir deixou de ser silencioso.
+
+Ao criar tabela nova com `tenant_id`, classifique-a. O teste vai cobrar.
+
+### Limite conhecido
+
+`parceiros_comerciais.nome_parceiro` é nome de pessoa física de um **terceiro**, que
+não é `CLIENT` nem `USER`. O `lgpd_requests_subject_type_check` só aceita esses dois
+tipos, então esse dado não tem tipo de titular nem caminho de solicitação. Está
+declarado em `TABELAS_SEM_PII` com essa ressalva explícita, não como isenção. Ver
+PROB-0076.
 
 ## ADR-001 — Audit log append-only
 

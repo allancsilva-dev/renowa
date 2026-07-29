@@ -450,6 +450,117 @@
 - **Status:** ABERTO
 - **Relacionado:** BACKLOG-0046
 
+### BACKLOG-0048 — Auditar `UNIQUE(tenant_id, id)` nas tabelas anteriores à `0021`
+- **Prioridade:** P2
+- **Área:** banco / segurança
+- **Motivo:** `itens_pedido` não tinha esse índice, e por isso o PostgreSQL recusou a FK composta de tenant vinda de `pedido_fotos` (PROB-0073). O índice é o **alvo exigido** por toda FK `(tenant_id, x) -> (tenant_id, id)` — sem ele, a próxima feature que precisar referenciar uma tabela antiga esbarra no mesmo erro, e o atalho (criar a FK só por `id`) abriria referência cross-tenant.
+- **Dependências:** nenhuma. `0034` já resolveu o caso de `itens_pedido`.
+- **Critério de aceite:** levantamento de todas as tabelas tenant-scoped sem `UNIQUE(tenant_id, id)`; migration criando o índice onde faltar; **`db:verify` passa a checar essa invariante** (hoje ele valida CHECKs, índices únicos parciais, tabelas e triggers — não este índice), de modo que a lacuna falhe no gate em vez de só aparecer na próxima FK.
+- **Risco se ficar pendente:** o mecanismo de isolamento multi-tenant no nível do banco continua indisponível para as tabelas antigas, e a falha só se manifesta no meio de uma implementação futura.
+- **Status:** **FECHADO (2026-07-29)** — fechado por BACKLOG-0052. Nota: o levantamento apontava nove tabelas porque foi feito num banco onde `sync_outbox` não existia (drift de PROB-0059 no dev, corrigido em 2026-07-29). Com os objetos restaurados são **dez**; a décima é `sync_outbox`, isenta com justificativa escrita — fila drenada e apagada a cada pull, incapaz de ser alvo de FK por construção.
+- **Relacionado:** PROB-0073, PROB-0011, PROB-0012, BACKLOG-0006, BACKLOG-0052
+
+### BACKLOG-0049 — Validar fotos / pedido externo / SAC ponta a ponta contra PostgreSQL real pela UI
+- **Prioridade:** P1
+- **Área:** backend / frontend / banco
+- **Motivo:** as três frentes de 2026-07-29 foram validadas por lint, build, 405 testes de backend (mock puro), 43 de frontend e por `db:migrate` + `db:verify` + smoke SQL das constraints em banco descartável. **Faltou o fluxo pela interface**, porque o banco de dev está bloqueado para migrar (PROB-0072). Vale lembrar que foi justamente o teste contra banco real — e não a suíte mockada — que revelou a FK impossível de `pedido_fotos` (PROB-0073).
+- **Dependências:** ~~PROB-0072~~ **RESOLVIDO em 2026-07-29** — o banco de dev está em `0037` com `db:verify` limpo, e `pedido_fotos`, `chamados_sac` e `itens_chamado_sac` existem lá. **Este item está desbloqueado**; falta a validação manual pela UI, que é do usuário.
+- **Critério de aceite:** (a) pedido interno com 3 fotos, duas nomeadas com o código de itens e uma com nome aleatório — vínculo automático nas duas primeiras, "não vinculada" na terceira, e as três no PDF; (b) pedido externo criado → liberado → nota fiscal parcial em `/faturamento` → status vira `parcialmente_faturado`, divergência bate com o valor informado e a comissão é gerada; (c) chamado SAC com 3 itens — numeração sequencial, TOTAL igual à soma das linhas, matriz de transições respeitada e papel impresso no layout do print; (d) usuário sem `sac.ver` não vê o item na sidebar **e** é barrado ao digitar `/sac` na URL.
+- **Risco se ficar pendente:** ir para produção com três features cujo caminho real de request nunca foi exercitado — exatamente a classe de erro que PROB-0073 representa.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0072, PROB-0073, BACKLOG-0028
+
+### BACKLOG-0050 — Decidir concessão de permissões de SAC a `vendedor` e `financeiro`
+- **Prioridade:** P3
+- **Área:** backend / segurança
+- **Motivo:** os 4 slugs novos (`sac.ver|criar|editar|deletar`) nasceram concedidos **apenas** a `admin` e `gestao` (migration `0035` + `DEFAULT_ROLE_PERMISSIONS`), por decisão conservadora e fail-closed. Na prática quem abre chamado de pós-venda tende a ser o vendedor que atende o cliente.
+- **Dependências:** decisão de negócio do usuário.
+- **Critério de aceite:** definição de quais perfis recebem quais slugs; se a decisão mudar o provisionamento automático, atualizar `shared/src/permissions/catalog.ts` + `catalog.spec.ts` (hoje há teste afirmando que `vendedor` e `financeiro` **não** recebem SAC) e migration de seed. Concessão pontual a um tenant pode ser feita pela tela de Perfis, sem código.
+- **Risco se ficar pendente:** baixo — o módulo funciona; só admin/gestao enxergam. O risco é operacional (vendedor pede para alguém abrir o chamado por ele).
+- **Status:** ABERTO
+- **Relacionado:** PROB-0072
+
+### BACKLOG-0051 — Migrar fotos de pedido para bucket quando o volume justificar
+- **Prioridade:** P3
+- **Área:** banco / infra
+- **Motivo:** as fotos são gravadas em `bytea` no PostgreSQL (`pedido_fotos.conteudo`) — decisão deliberada de 2026-07-29: zero infra nova, mesmo backup e mesma transação do pedido, soft delete e purga LGPD cobrindo a foto sem job externo. O custo é o peso no banco, hoje limitado por downscale no cliente, teto de 3 MB por foto e 10 fotos por pedido.
+- **Dependências:** nenhuma técnica. O gatilho é volume: acompanhar `pg_total_relation_size('pedido_fotos')` e o tamanho do dump.
+- **Critério de aceite:** implementação alternativa de storage gravando linhas novas com `storage_backend = 'r2'` e `storage_key` preenchido — **sem migrar dado existente** (as colunas e o CHECK `pedido_fotos_storage_check` já suportam os dois backends convivendo) e **sem alterar contrato de API nem telas**; expurgo do objeto remoto no soft delete e na purga LGPD, que hoje são cobertos de graça pelo banco.
+- **Risco se ficar pendente:** crescimento do banco e do tempo de backup proporcional ao uso de fotos. Nenhum risco funcional.
+- **Status:** ABERTO
+- **Ressalva atualizada (2026-07-29):** o critério de aceite acima dizia que soft delete e purga LGPD "hoje são cobertos de graça pelo banco". Não eram (PROB-0075) e **passaram a ser** — mas por código, não de graça: a purga vem de `pii-registry.ts` + `0037` (`storage_backend = 'purgado'`) e a cascata do soft delete de `orders.service.ts` (BACKLOG-0055). Consequência para este item: **migrar para bucket agora exige trabalho explícito nos dois pontos** — o plano de purga em `pii-registry.ts` zera `conteudo` e `storage_key`, mas nada apaga o objeto remoto, e a cascata de soft delete idem. Revisar o critério de aceite para incluir o expurgo do objeto no bucket nos dois fluxos.
+- **Relacionado:** PROB-0075, BACKLOG-0054
+
+### BACKLOG-0052 — Migration `0036` (`UNIQUE(tenant_id, id)`) + invariante no `db:verify`
+- **Prioridade:** P2
+- **Área:** banco / segurança
+- **Motivo:** a auditoria de 2026-07-29 fechou o levantamento pedido por BACKLOG-0048: nove tabelas tenant-scoped sem `UNIQUE(tenant_id, id)` (`comissoes`, `financeiro_movimentacao`, `inadimplencia`, `lgpd_requests`, `local_users`, `mobile_sessions`, `parceiros_comerciais`, `pii_audit_events`, `tenant_role_permissions`). Nenhuma é alvo de FK composta hoje, então é risco latente e não brecha ativa — mas é exatamente o que travou a `0034` (PROB-0073), e o `db:verify` continua cego para o invariante.
+- **Dependências:** nenhuma. Migration `0036` e o trecho do verificador estão prontos em `docs/REVIEW_REPORTS/2026-07-29_audit_fotos-pedido-externo-sac.md` §6.1 e §6.3.
+- **Critério de aceite:** `0036` aplicada (aditiva, idempotente, sem `BEGIN/COMMIT` próprio); `verify-schema.ts` ganha seção que reprova tabela tenant-scoped sem `UNIQUE(tenant_id, id)` **total** (índice único parcial não conta — `indpred IS NULL`); `db:verify` passa limpo em banco descartável migrado do zero. **Ordem obrigatória: a migration antes da checagem** — ligar a checagem primeiro reprova todo ambiente.
+- **Risco se ficar pendente:** a próxima FK composta contra uma dessas tabelas falha com SQLSTATE 42830 no meio de uma implementação, e o atalho (FK só por `id`) abriria referência cross-tenant.
+- **Ponto a decidir na implementação:** `pii_audit_events` e `mobile_sessions` são tabelas de escrita alta; um índice único a mais pesa em `INSERT`. O escopo "todas as nove" foi decidido em favor da uniformidade do invariante.
+- **Status:** **FECHADO (2026-07-29)** — `0036_unique_tenant_id.sql` aplicada e `verify-schema.ts` com **duas** seções novas: `[5/6]` FKs para tabela de tenant sem `tenant_id` na chave (a violação de isolamento em si, que o PostgreSQL não impede; hoje 0 casos, 26 FKs compostas) e `[6/6]` a prontidão `UNIQUE(tenant_id, id)`. A query de §6.3 foi corrigida em dois pontos antes do uso: `indnkeyatts` no lugar de `indnatts` (em PG11+ `indnatts` conta chave **mais** colunas INCLUDE) e `indisvalid AND indisready` (índice inválido de `CREATE INDEX CONCURRENTLY` abortado satisfaria a busca). Evidência: `db:verify` reprovou as nove antes da migration e passou limpo depois, em `renowa_fix` provisionado do zero e no banco de dev.
+- **Relacionado:** PROB-0073, BACKLOG-0048, BACKLOG-0006
+
+### BACKLOG-0053 — Testes de integração HTTP dos caminhos que nunca foram exercitados
+- **Prioridade:** P1
+- **Área:** backend
+- **Motivo:** a auditoria de 2026-07-29 confirmou por leitura que os pontos suspeitos (hidratação de `item_uuid`, `select: false` do `conteudo`, `StreamableFile` + interceptor, `@Body('item_uuid')` em multipart, rotas de pedido externo) estão corretos — mas **nenhum rodou por HTTP**. A suíte atual mocka o QueryBuilder inteiro (`order-photos.service.spec.ts:39-43`, `getMany` devolve `[]`), então a hidratação da relação `item` não tem cobertura nenhuma. Se ela quebrar numa atualização de TypeORM, toda foto vinculada passa a aparecer como "não vinculada" na UI e no PDF, **em silêncio**.
+- **Dependências:** nenhuma — `supertest` já é devDependency do backend. Não depende de PROB-0072 (usa banco descartável, não o de dev).
+- **Critério de aceite:** testes de integração cobrindo (a) `GET /pedidos/:uuid/fotos` devolvendo `item_uuid` preenchido para foto vinculada e `null` para não vinculada, contra PostgreSQL real; (b) `GET …/fotos/:fotoUuid/conteudo` com bytes idênticos ao enviado e os headers `Content-Type`, `Content-Disposition: inline`, `X-Content-Type-Options: nosniff` e `Cache-Control`; (c) `POST …/fotos` multipart com `item_uuid` chegando ao handler; (d) a listagem **não** trazendo `conteudo`; (e) `POST /pedidos/externos` e `PUT /pedidos/externos/:uuid` resolvendo para os handlers certos.
+- **Risco se ficar pendente:** a classe de defeito silencioso que a auditoria só conseguiu descartar lendo o fonte de `node_modules/typeorm` — insustentável como método de verificação.
+- **Status:** ABERTO
+- **Dependência nova explicitada (2026-07-29):** o `ci.yml` **não tem** `services: postgres`, e `backend/jest.config.js` usa `rootDir: 'src'` com `testRegex: '.*\\.spec\\.ts$'` — um teste que precise de banco entra na suíte hermética e a quebra em qualquer máquina sem container. Precisa de config Jest separada **e** do serviço no CI, além de bootstrap de módulo e stub de auth. Sessão própria.
+- **Relacionado:** PROB-0072, BACKLOG-0049
+
+### BACKLOG-0054 — Registro executável de tabelas com PII, spec de `privacy.service.ts` e política de retenção
+- **Prioridade:** P1
+- **Área:** LGPD / backend
+- **Motivo:** três tabelas novas (`pedido_fotos`, `chamados_sac`, `itens_chamado_sac`) ficaram fora do ERASURE sem que nada acusasse (PROB-0075), porque o SQL de `privacy.service.ts:69-98` é literal e o inventário de PII vive em prosa (`docs/LGPD_ARCHITECTURE.md:13-18`) — já desatualizado, sem `notas_fiscais`, `parceiros_comerciais` nem `transportadoras`. As constantes de `privacy.service.ts:9-12` parecem um registro mas só alimentam o audit log. Além disso, o único fluxo destrutivo do sistema **não tem spec**, e não existe job de retenção em lugar nenhum (`grep -rniE "Cron|@Interval|ScheduleModule"` em `backend/src` sem hit real) — `pii_audit_events` cresce sem limite.
+- **Dependências:** os prazos de retenção seguem como pendência jurídica (`docs/LGPD_ARCHITECTURE.md:48-52`). O registro e a spec não dependem disso.
+- **Critério de aceite:** registro em código das tabelas/colunas com PII, **dirigindo** o SQL de ERASURE e EXPORT em vez de conviver com ele; teste que falha quando uma tabela nova com `tenant_id` e coluna de texto livre não está classificada; spec de `privacy.service.ts` cobrindo os dois ramos (CLIENT e USER) contra banco real, incluindo `pedido_fotos` e as duas tabelas de SAC.
+- **Risco se ficar pendente:** cada tabela nova repete a omissão, e o sistema continua afirmando na documentação uma cobertura de purga que o código não tem.
+- **Status:** **PARCIAL (2026-07-29)** — escopo reduzido ao que resta.
+- **Entregue:** registro executável `backend/src/privacy/pii-registry.ts` **dirigindo** o SQL de ERASURE (não mais convivendo com ele); `pii-registry.spec.ts`, que varre `*.entity.ts` e reprova a build se entidade com `tenant_id` não estiver classificada — puro `fs`, roda no CI atual sem banco; `privacy.service.spec.ts` cobrindo os dois ramos com mock de `manager.query`, escrita **antes** do refactor para provar equivalência do SQL das seis tabelas já cobertas; smoke contra PostgreSQL real provando que o SQL gerado não viola CHECK nem `NOT NULL`. `docs/LGPD_ARCHITECTURE.md` deixou de listar tabelas em prosa e aponta para o registro.
+- **Resta:** (a) spec de `privacy.service.ts` contra **banco real** — o que existe é mock de `manager.query`, que assere o SQL emitido e não que ele faz o que promete no schema; (b) **política de retenção**, ainda inexistente: `pii_audit_events` cresce sem limite e não há `Cron`/`ScheduleModule` no backend. Prazos seguem como pendência jurídica.
+- **Relacionado:** PROB-0075, PROB-0076, BACKLOG-0051, BACKLOG-0055
+
+### BACKLOG-0055 — Soft delete não desce para `pedido_fotos` nem `itens_chamado_sac`
+- **Prioridade:** P2
+- **Área:** backend / banco
+- **Motivo:** `optimisticSoftDelete` (`backend/src/common/persistence/optimistic-concurrency.ts:82`) marca **uma** linha. Excluído o pedido, `pedido_fotos` fica com `deleted_at IS NULL`; o mesmo vale para `itens_chamado_sac` quando o chamado é excluído (`sac.service.ts:241`). As FKs são todas `NO ACTION`. O ocultamento depende de cada query lembrar do filtro (`order-photos.service.ts:86`, `:216`, `:230`), então qualquer query nova que esqueça ressuscita os filhos. A guarda de `notas_fiscais` (`orders.service.ts:449-464`) mostra que o padrão foi reconhecido e não estendido.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** exclusão de pedido marca `deleted_at` também nas fotos, e exclusão de chamado nos itens — ou guarda explícita equivalente à de notas fiscais; teste cobrindo os dois casos.
+- **Risco se ficar pendente:** filhos órfãos ativos no banco, invisíveis só por convenção; e, no caso das fotos, bytes com PII sobrevivendo à exclusão do pedido (interage com PROB-0075).
+- **Status:** **FECHADO (2026-07-29)** — `orders.service.remove` e `sac.service.remove` passaram a rodar em `dataSource.transaction`, com `manager.getRepository(...)` no `optimisticSoftDelete` (o repositório fica ligado ao manager e participa da transação) e um `UPDATE` de cascata logo depois, filtrando `deleted_at IS NULL` para não re-marcar filho já apagado e inflar `version`. A cascata vem **depois** do soft delete do pai: conflito de `version` aborta a transação e nenhum filho fica marcado sem o pai.
+- **Ganho colateral:** `remove` de pedidos rodava fora de transação, com TOCTOU entre `countNotasAtivas` e o soft delete — uma nota emitida no intervalo passava despercebida. `countNotasAtivas` ganhou parâmetro opcional de `EntityManager` e a checagem entrou na mesma transação, fechando a janela.
+- **Evidência:** `npm test --workspace=backend -- orders sac` → 83 passed, com casos novos para cascata das fotos, cascata dos itens de SAC, rollback em conflito de `version` e bloqueio por nota fiscal ativa sem marcar as fotos.
+- **Relacionado:** PROB-0075, BACKLOG-0054
+
+### BACKLOG-0056 — Frontend: erro 409 sem mensagem útil e timeout único para blobs
+- **Prioridade:** P3
+- **Área:** frontend
+- **Motivo:** `getApiErrorMessage` (`frontend/src/lib/errors.ts:12`) não tem ramo para **409** e só aproveita `backendMessage` em 400/403 — "pedido já liberado" e "limite de 10 fotos atingido" (`order-photos.service.ts:168`, `:175`) chegam ao usuário como *"Recurso em uso — não pode ser removido"*, exibido direto no painel (`OrderPhotosPanel.tsx:77`). Separadamente, `getBlob` herda o timeout fixo de 10 s de `send` (`apiClient.ts:60`), e tanto os thumbs (`OrderPhotosPanel.tsx:47-50`) quanto o PDF (`PedidoDetalhe.tsx:86-89`) baixam todas as fotos em `Promise.all`.
+- **Dependências:** nenhuma. O **formato** de erro do `getBlob` já está correto (`apiClient.ts:126` produz `{ response: { status, data } }`, que é o que `getApiErrorMessage` espera) — só o mapeamento de status e o timeout precisam de ajuste.
+- **Critério de aceite:** 409 usa `backendMessage` quando existe; timeout de `getBlob` configurável e maior que o de JSON; teste cobrindo o mapeamento de 409.
+- **Risco se ficar pendente:** o usuário recebe uma mensagem que descreve outra coisa, e o download de fotos pode abortar em rede lenta sem explicação.
+- **Status:** **FECHADO (2026-07-29)** — 409 passou a usar `backendMessage || '<texto atual>'`, como 400/403; `ApiRequestOptions` ganhou `timeoutMs` e `requestBlob` passou a usar 30 s por padrão, contra os 10 s de JSON, porque thumbs e PDF baixam até 10 fotos em `Promise.all` compartilhando a mesma janela.
+- **Correção ao enunciado:** `frontend/src/lib/errors.test.ts` **já existia** e continha `'mantém os textos fixos de 422/404/409'`, que fixava justamente o comportamento a corrigir — o teste protegia o defeito. Foi editado, não criado: 409 saiu do grupo de textos fixos e ganhou dois casos (com e sem `backendMessage`).
+- **Relacionado:** nenhum
+
+### BACKLOG-0057 — Paridade real dos testes de cálculo do SAC
+- **Prioridade:** P3
+- **Área:** backend / frontend / shared
+- **Motivo:** a aritmética de `backend/src/sac/sac-calculation.ts` e `frontend/src/lib/sacCalculation.ts` é **idêntica** (auditoria de 2026-07-29 conferiu rounding, casas, ordem das operações e o total sobre já-arredondados). Mas o comentário de `frontend/src/lib/sacCalculation.test.ts:4-8` afirma que os casos de teste são os mesmos dos dois lados e **não são**: faltam no frontend `1.005 → 1.01` e string vinda do banco (`'2.500'`); falta no backend o caso de string vazia. Como os runners são diferentes (Jest / Vitest), nada força a sincronia — a garantia é uma afirmação que ninguém verifica. Há ainda uma divergência real de comportamento: o frontend coalesce `''` para 0 (`sacCalculation.ts:16`), o backend só coalesce nullish e `new Decimal('')` lança (`sac-calculation.ts:22-25`); hoje sem caminho de runtime porque o DTO exige `@IsNumber` (`create-sac-ticket.dto.ts:25,27`).
+- **Dependências:** nenhuma.
+- **Critério de aceite:** casos realmente espelhados — preferencialmente uma fixture única em `shared/` consumida pelos dois runners, para que a divergência quebre o build em vez de depender de disciplina; tratamento de `''` alinhado nos dois lados (ou o comentário corrigido para descrever a diferença deliberada).
+- **Risco se ficar pendente:** baixo hoje. O risco é a afirmação falsa no comentário dar confiança indevida quando alguém alterar um dos lados.
+- **Status:** **FECHADO (2026-07-29)** — fixture única `shared/src/sac/calculation-cases.ts` (dado puro, sem dependência de runner), re-exportada em `shared/src/index.ts` e iterada por Jest no backend e Vitest no frontend. Cobre os casos que faltavam de cada lado: `1.005 → 1.01`, string vinda do banco (`'2.500'`), string vazia, valor unitário arredondado antes de multiplicar e total sobre já-arredondados. O comentário falso do frontend foi reescrito para descrever o mecanismo real.
+- **Divergência de comportamento alinhada:** o backend passou a coalescer `''` para 0. `?? 0` não cobre string vazia e `new Decimal('')` **lança** — sem caminho HTTP hoje (o DTO exige `@IsNumber`), mas um import de CSV ou migração chamando o service direto derrubava o servidor com 500 em vez de 400.
+- **O critério de aceite exigia quebrar o build, e não quebrava:** o `ci.yml` rodava **apenas** `npm test --workspace=backend`. Sem isso a fixture seria teatro. Foram acrescentados `npm test --workspace=shared` e `npm test --workspace=frontend`, e o `AGENTS.md` passou a listar os dois nos comandos canônicos — antes só citava lint e build do frontend, espelhando a mesma lacuna.
+- **Relacionado:** nenhum
+
+
 # MetaRenowa P0 (21/07/2026)
 
 - Implementado: contrato server-side de cálculo, migration dos campos, criação/edição transacional, integração de cadastros e PDF de validação.
