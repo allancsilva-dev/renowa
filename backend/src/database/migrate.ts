@@ -6,6 +6,30 @@ import { Client } from 'pg';
 const MIGRATION_FILE = /^\d{4}_[a-z0-9_-]+\.sql$/;
 const ADVISORY_LOCK_ID = 1_984_060_912;
 
+/**
+ * Migrations cujo ARQUIVO mudou depois de já terem sido aplicadas, e cujo
+ * checksum antigo continua sendo aceito porque o efeito no schema é idêntico.
+ *
+ * `0007`: o commit 0f066ae removeu o BEGIN/COMMIT interno do arquivo (o COMMIT
+ * encerrava a transação EXTERNA do runner antes do INSERT em schema_migrations,
+ * BACKLOG-0035). Só controle de transação mudou — nenhum DDL. Confirmado no
+ * catálogo: coluna `version` NOT NULL DEFAULT 1 e `<tabela>_version_check`
+ * presentes nas 5 tabelas. Sem esta entrada, TODO banco provisionado antes de
+ * 0f066ae — dev e produção — fica travado. Ver PROB-0072.
+ *
+ * A versão antiga está preservada em `migrations/.superseded/` e
+ * `migrations-hygiene.spec.ts` prova que este hash corresponde a ela e que a
+ * única diferença para o arquivo atual é controle de transação.
+ *
+ * Entrada nova aqui é exceção, não rotina: só entra quando a alteração do
+ * arquivo comprovadamente não mexeu em DDL.
+ */
+export const CHECKSUMS_SUPERSEDIDOS: Record<string, readonly string[]> = {
+  '0007_optimistic_concurrency.sql': [
+    'f5d5654ce8b0c55c54f4c127c1f1123fa1b3f642f4fa5e3586454227a5de4c63',
+  ],
+};
+
 export async function runMigrations(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL é obrigatória para migrations');
@@ -36,7 +60,10 @@ export async function runMigrations(): Promise<void> {
       );
 
       if (applied.rowCount) {
-        if (applied.rows[0].checksum !== checksum) {
+        const registrado = applied.rows[0].checksum;
+        const aceito =
+          registrado === checksum || (CHECKSUMS_SUPERSEDIDOS[file] ?? []).includes(registrado);
+        if (!aceito) {
           throw new Error(`Migration já aplicada foi alterada: ${file}`);
         }
         continue;
