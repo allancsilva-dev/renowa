@@ -18,9 +18,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # `npm ci` dispara o postinstall da raiz, que builda `shared` — sem isso
+      # `@renowa/shared` não resolve para backend nem frontend.
       - run: npm ci
       - run: npm run lint --workspace=backend
       - run: npm test --workspace=backend -- --runInBand
       - run: npm run build --workspace=backend
+      # BACKLOG-0057: `shared` e `frontend` tinham suíte e o CI nunca a rodava.
+      # A fixture compartilhada de cálculo do SAC só vale como garantia de
+      # paridade se a divergência quebrar a build dos dois lados.
+      - run: npm test --workspace=shared
       - run: npm run lint --workspace=frontend
       - run: npm run build --workspace=frontend
+      - run: npm test --workspace=frontend
