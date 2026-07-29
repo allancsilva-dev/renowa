@@ -7,10 +7,10 @@ import {
 } from './catalog';
 
 describe('PERMISSION_CATALOG', () => {
-  it('has exactly 28 entries, one per PermissionSlug value', () => {
+  it('has exactly 32 entries, one per PermissionSlug value', () => {
     const enumSlugs = Object.values(PermissionSlug);
-    expect(enumSlugs).toHaveLength(28);
-    expect(PERMISSION_CATALOG).toHaveLength(28);
+    expect(enumSlugs).toHaveLength(32);
+    expect(PERMISSION_CATALOG).toHaveLength(32);
     expect(new Set(PERMISSION_SLUGS)).toEqual(new Set(enumSlugs));
   });
 
@@ -57,6 +57,20 @@ describe('DEFAULT_ROLE_PERMISSIONS', () => {
     expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(PermissionSlug.PedidosLiberar);
     expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(PermissionSlug.FaturamentoVer);
     expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(PermissionSlug.FaturamentoEditar);
+  });
+
+  // SAC nasce só para admin/gestao (migration 0035). Conceder a vendedor ou
+  // financeiro é decisão de negócio a ser feita pela tela de Perfis, não por
+  // provisionamento automático.
+  it('does not grant vendedor or financeiro any sac permission by default', () => {
+    const sacSlugs = [
+      PermissionSlug.SacVer, PermissionSlug.SacCriar,
+      PermissionSlug.SacEditar, PermissionSlug.SacDeletar,
+    ];
+    for (const slug of sacSlugs) {
+      expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(slug);
+      expect(DEFAULT_ROLE_PERMISSIONS.financeiro).not.toContain(slug);
+    }
   });
 });
 

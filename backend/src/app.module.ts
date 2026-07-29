@@ -14,6 +14,7 @@ import { PermissionGuard } from './common/guards/permission.guard';
 import { AuthModule } from './auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
 import { OrdersModule } from './orders/orders.module';
+import { SacModule } from './sac/sac.module';
 import { ProductsModule } from './products/products.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { FinanceModule } from './finance/finance.module';
@@ -76,6 +77,7 @@ import { RedisThrottlerStorage } from './common/throttling/redis-throttler.stora
     AuthModule,
     ClientsModule,
     OrdersModule,
+    SacModule,
     ProductsModule,
     SuppliersModule,
     FinanceModule,

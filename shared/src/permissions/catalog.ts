@@ -9,6 +9,7 @@ export enum PermissionModule {
   USUARIOS = 'usuarios',
   AUDITORIA = 'auditoria',
   PRIVACIDADE = 'privacidade',
+  SAC = 'sac',
 }
 
 export enum PermissionSlug {
@@ -49,6 +50,11 @@ export enum PermissionSlug {
   AuditoriaVer = 'auditoria.ver',
 
   PrivacidadeGerenciar = 'privacidade.gerenciar',
+
+  SacVer = 'sac.ver',
+  SacCriar = 'sac.criar',
+  SacEditar = 'sac.editar',
+  SacDeletar = 'sac.deletar',
 }
 
 export interface PermissionCatalogEntry {
@@ -95,6 +101,11 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { slug: PermissionSlug.AuditoriaVer, module: PermissionModule.AUDITORIA, description: 'Visualizar trilha de auditoria' },
 
   { slug: PermissionSlug.PrivacidadeGerenciar, module: PermissionModule.PRIVACIDADE, description: 'Gerenciar solicitações de privacidade (LGPD)' },
+
+  { slug: PermissionSlug.SacVer, module: PermissionModule.SAC, description: 'Visualizar chamados de SAC' },
+  { slug: PermissionSlug.SacCriar, module: PermissionModule.SAC, description: 'Abrir chamados de SAC' },
+  { slug: PermissionSlug.SacEditar, module: PermissionModule.SAC, description: 'Editar chamados de SAC e alterar o status' },
+  { slug: PermissionSlug.SacDeletar, module: PermissionModule.SAC, description: 'Remover chamados de SAC' },
 ] as const;
 
 export const PERMISSION_SLUGS: readonly PermissionSlug[] = PERMISSION_CATALOG.map((entry) => entry.slug);
