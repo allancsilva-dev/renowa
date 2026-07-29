@@ -1,11 +1,12 @@
 import api from '@/lib/apiClient';
-import type { Order, PaginatedResponse, ApiResponse, OrderStatus } from '@/types';
+import type { Order, PaginatedResponse, ApiResponse, OrderStatus, OrderOrigem } from '@/types';
 
 export async function fetchOrders(params: {
   page?: number;
   limit?: number;
   status?: OrderStatus;
   search?: string;
+  origem?: OrderOrigem;
 }): Promise<PaginatedResponse<Order>> {
   const { data } = await api.get<PaginatedResponse<Order>>('/pedidos', { params });
   return data;
@@ -32,5 +33,17 @@ export async function saveOrder(payload: Record<string, unknown>, uuid?: string)
   const response = uuid
     ? await api.put<ApiResponse<Order>>(`/pedidos/${uuid}`, payload)
     : await api.post<ApiResponse<Order>>('/pedidos', payload);
+  return response.data.data;
+}
+
+/**
+ * Pedido externo tem rota própria: o corpo é outro (sem itens, com número de
+ * origem, sistema e valor). O backend recusa com 409 se a rota não bater com a
+ * origem do pedido.
+ */
+export async function saveExternalOrder(payload: Record<string, unknown>, uuid?: string): Promise<Order> {
+  const response = uuid
+    ? await api.put<ApiResponse<Order>>(`/pedidos/externos/${uuid}`, payload)
+    : await api.post<ApiResponse<Order>>('/pedidos/externos', payload);
   return response.data.data;
 }

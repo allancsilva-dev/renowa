@@ -9,7 +9,11 @@ export function getApiErrorMessage(error: unknown): string {
   // do backend já é destinada ao usuário final, então mostra ela em vez de
   // um texto genérico.
   if (status === 400 || status === 403) return backendMessage || 'Usuário não tem acesso ao Renowa';
-  if (status === 409) return 'Recurso em uso — não pode ser removido';
+  // BACKLOG-0056: o 409 do backend carrega a razão exata do conflito — "Pedido
+  // já liberado", "limite de 10 fotos por pedido", "pedido possui notas fiscais
+  // ativas". O texto fixo apagava todas elas e virava "não pode ser removido"
+  // mesmo quando o usuário não tinha tentado remover nada.
+  if (status === 409) return backendMessage || 'Recurso em uso — não pode ser removido';
   if (status === 404) return 'Recurso não encontrado';
 
   return 'Erro inesperado. Tente novamente.';

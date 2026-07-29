@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, Unlock } from 'lucide-react';
+import { ImagePlus, Plus, Trash2, Unlock, X } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchOrder, liberarOrder, saveOrder } from '@/services/orders.service';
 import { fetchClients } from '@/services/clients.service';
@@ -13,6 +13,8 @@ import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
+import { uploadOrderPhoto } from '@/services/orderPhotos.service';
+import OrderPhotosPanel from '@/components/orders/OrderPhotosPanel';
 
 type HeaderForm = {
   data: string; cliente_uuid: string; vendedor_uuid: string; fornecedor_uuid: string;
@@ -90,6 +92,11 @@ export default function PedidoForm() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liberando, setLiberando] = useState(false);
+  /**
+   * Fotos escolhidas antes de o pedido existir. Só sobem depois que o POST
+   * retorna o uuid — enviar antes criaria foto órfã se o save falhasse.
+   */
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -200,7 +207,13 @@ export default function PedidoForm() {
       ...(isEdit ? { version } : {}),
     };
     try {
-      const saved = await saveOrder(payload, uuid); navigate(`/pedidos/${saved.uuid}`);
+      const saved = await saveOrder(payload, uuid);
+      // Fotos por último: o pedido já está salvo, então uma falha aqui não
+      // desfaz o save — o usuário reenvia pela tela de detalhe.
+      for (const file of pendingPhotos) {
+        await uploadOrderPhoto(saved.uuid, file);
+      }
+      navigate(`/pedidos/${saved.uuid}`);
     } catch (reason) { setError(getApiErrorMessage(reason)); }
     finally { setLoading(false); }
   }
@@ -292,6 +305,65 @@ export default function PedidoForm() {
           </div></div>; })}</div>
         <div className='mt-5 flex justify-end gap-8 border-t border-slate-200 pt-4 text-right'><div><span className='block text-xs text-slate-600'>Total sem imposto</span><strong>{BRL.format(moneyForDisplay(totals.semImposto))}</strong></div><div><span className='block text-xs text-slate-600'>Total com imposto</span><strong className='text-lg text-slate-900'>{BRL.format(moneyForDisplay(totals.comImposto))}</strong></div></div>
       </section>
+
+      {/* Em edição o painel fala direto com a API; na criação o pedido ainda
+          não existe, então os arquivos ficam em memória até o save. */}
+      {isEdit && uuid ? (
+        <OrderPhotosPanel
+          orderUuid={uuid}
+          editable={!locked}
+          itemLabels={Object.fromEntries(items.map((item) => [
+            item.uuid,
+            item.codigo_manual || item.descricao_manual || 'Item',
+          ]))}
+        />
+      ) : (
+        <section className='rounded-lg border border-slate-200 bg-white p-5 shadow-sm'>
+          <div className='mb-4 flex flex-wrap items-center justify-between gap-3'>
+            <div>
+              <h2 className='text-lg font-semibold text-slate-900'>Fotos</h2>
+              <p className='mt-1 text-xs text-slate-600'>
+                Nomeie o arquivo com o código do item para vincular automaticamente. Enviadas ao salvar o pedido.
+              </p>
+            </div>
+            <label className='flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'>
+              <ImagePlus className='h-4 w-4' />
+              Adicionar fotos
+              <input
+                type='file'
+                accept='image/jpeg,image/png,image/webp'
+                multiple
+                className='hidden'
+                onChange={(event) => {
+                  const escolhidos = Array.from(event.target.files ?? []);
+                  event.target.value = '';
+                  setPendingPhotos((current) => [...current, ...escolhidos]);
+                }}
+              />
+            </label>
+          </div>
+          {pendingPhotos.length === 0 ? (
+            <p className='text-sm text-slate-500'>Nenhuma foto selecionada.</p>
+          ) : (
+            <ul className='flex flex-wrap gap-2'>
+              {pendingPhotos.map((file, index) => (
+                <li key={`${file.name}-${index}`} className='flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700'>
+                  <span className='max-w-48 truncate' title={file.name}>{file.name}</span>
+                  <button
+                    type='button'
+                    aria-label={`Remover ${file.name}`}
+                    onClick={() => setPendingPhotos((current) => current.filter((_, i) => i !== index))}
+                    className='rounded p-1 text-slate-500 hover:bg-red-50 hover:text-red-700'
+                  >
+                    <X className='h-3 w-3' />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       <div className='flex justify-end gap-3'><button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button><button type='submit' disabled={loading || locked || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button></div>
     </form>
   );

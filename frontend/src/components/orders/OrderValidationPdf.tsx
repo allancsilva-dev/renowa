@@ -1,6 +1,6 @@
 import { Document, Image, Page, StyleSheet, Text, View } from '@react-pdf/renderer';
 import Decimal from 'decimal.js';
-import type { Order, OrderStatus } from '@/types';
+import type { Order, OrderPhoto, OrderStatus } from '@/types';
 import { qtyForDisplay } from '@/lib/decimal';
 import logoRenowa from '@/assets/logo-renowa.png';
 
@@ -42,6 +42,10 @@ const styles = StyleSheet.create({
   colIpi: { width: '6%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colVlrComImp: { width: '9.5%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colTotalSemImp: { width: '12%', textAlign: 'right', paddingLeft: 3 },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  photoCard: { width: '33.33%', padding: 4 },
+  photoImage: { height: 120, objectFit: 'contain', borderWidth: 0.5, borderColor: '#94a3b8' },
+  photoCaption: { marginTop: 2, fontSize: 6, color: '#64748b' },
   totals: { marginTop: 12, marginLeft: '55%', width: '45%', borderWidth: 0.7, borderColor: '#94a3b8', padding: 8 },
   totalLine: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }, finalLine: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1.2, borderTopColor: '#2A9D8F', paddingTop: 6, marginTop: 2, fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#0D2B2B' },
 });
@@ -57,12 +61,29 @@ function Field({ label, value, wide }: { label: string; value: string; wide?: bo
   return <View style={[styles.cell, wide ? styles.w100 : styles.w25]}><Text style={styles.label}>{label}</Text><Text style={styles.value}>{value}</Text></View>;
 }
 
-export function OrderValidationPdf({ order }: { order: Order }) {
+/** Foto já resolvida em data URL — o PDF é montado no cliente e não resolve URL autenticada. */
+export type OrderPdfPhoto = OrderPhoto & { dataUrl: string };
+
+export function OrderValidationPdf({ order, fotos = [] }: { order: Order; fotos?: OrderPdfPhoto[] }) {
+  // Pedido externo não tem itens nem decomposição de desconto/IPI: o valor é
+  // informado direto. A tabela de itens e o quadro de totais analíticos dão
+  // lugar ao bloco de origem e a um total único.
+  const isExterno = (order.origem ?? 'interno') === 'externo';
   const gross = order.itens.reduce((sum, item) => sum.plus(new Decimal(item.qtd_total ?? 0).mul(item.preco_unitario ?? 0)), new Decimal(0));
   const withoutTax = new Decimal(order.total_sem_imposto ?? 0);
   const withTax = new Decimal(order.total_com_imposto ?? 0);
   const transport = order.transportadora ?? order.cliente?.transportadora;
   const meta = HEADER_BY_STATUS[order.status];
+  const itemLabelByUuid = Object.fromEntries(order.itens.map((item) => [
+    item.uuid,
+    item.codigo_manual ?? item.produto?.codigo ?? item.descricao_manual ?? '—',
+  ]));
+  // Vinculadas primeiro, agrupadas por item: quem confere o papel lê a foto ao
+  // lado do código a que ela pertence, e as soltas ficam no fim.
+  const ordenadas = [...fotos].sort((a, b) => {
+    if (Boolean(a.item_uuid) !== Boolean(b.item_uuid)) return a.item_uuid ? -1 : 1;
+    return (a.item_uuid ?? '').localeCompare(b.item_uuid ?? '');
+  });
   return <Document title={`${meta.title} ${order.numero_pedido ?? ''}`} author='Renowa Representações'>
     <Page size='A4' orientation='portrait' style={styles.page} wrap>
       <View style={styles.header} fixed><Image src={logoRenowa} style={styles.logo} /><View style={styles.titleBlock}><Text style={styles.title}>{meta.title}</Text><Text style={[styles.badge, { backgroundColor: meta.badgeBg, color: meta.badgeColor }]}>{meta.badge}</Text><Text style={styles.nonFiscal}>{meta.note}</Text></View></View>
@@ -75,7 +96,11 @@ export function OrderValidationPdf({ order }: { order: Order }) {
         <Field label='Pagamento' value={text(order.pgt)} /><Field label='Prazo' value={text(order.prazo)} /><Field label='Transportadora' value={text(transport?.razao_social)} /><Field label='Telefone transp.' value={text(transport?.telefone)} />
         <Field label='Endereço transp.' value={text(transport?.endereco_completo)} /><Field label='Pedido nº' value={`#${order.numero_pedido ?? '—'}`} /><Field label='Data' value={order.data ? new Date(`${order.data}T12:00:00`).toLocaleDateString('pt-BR') : '—'} /><Field label='Vendedor' value={text(order.vendedor?.nome)} />
         <Field label='Fornecedor' value={text(order.fornecedor?.razao_social)} /><Field label='Local de entrega' value={text(order.local_entrega)} /><Field label='Tipo de faturamento' value={text(order.tipo_faturamento)} />
+        {isExterno && <><Field label='Sistema de origem' value={text(order.sistema_origem)} /><Field label='Nº no sistema de origem' value={text(order.numero_pedido_externo)} /></>}
       </View></View>
+      {isExterno ? (
+        <View style={styles.totals} wrap={false}><View style={styles.finalLine}><Text>Valor do pedido</Text><Text>{brl(withTax)}</Text></View></View>
+      ) : (<>
       <View style={styles.tableHeader} fixed>
         <Text style={[styles.colItem, styles.headerDivider]}>ITEM</Text>
         <Text style={[styles.colCode, styles.headerDivider]}>CÓDIGO</Text>
@@ -105,6 +130,23 @@ export function OrderValidationPdf({ order }: { order: Order }) {
         <Text style={styles.colTotalSemImp}>{brl(item.total_item)}</Text>
       </View>)}
       <View style={styles.totals} wrap={false}><View style={styles.totalLine}><Text>Valor bruto</Text><Text>{brl(gross)}</Text></View><View style={styles.totalLine}><Text>Desconto total</Text><Text>{brl(gross.minus(withoutTax))}</Text></View><View style={styles.totalLine}><Text>Total sem imposto</Text><Text>{brl(withoutTax)}</Text></View><View style={styles.totalLine}><Text>IPI total</Text><Text>{brl(withTax.minus(withoutTax))}</Text></View><View style={styles.finalLine}><Text>Total final</Text><Text>{brl(withTax)}</Text></View></View>
+      </>)}
+      {fotos.length > 0 && (
+        <View style={styles.section} break><Text style={styles.sectionTitle}>Fotos</Text>
+          <View style={styles.photoGrid}>
+            {ordenadas.map((foto) => (
+              <View key={foto.uuid} style={styles.photoCard} wrap={false}>
+                <Image src={foto.dataUrl} style={styles.photoImage} />
+                <Text style={styles.photoCaption}>
+                  {foto.item_uuid && itemLabelByUuid[foto.item_uuid]
+                    ? `Item ${itemLabelByUuid[foto.item_uuid]}`
+                    : 'Pedido'} · {foto.nome_arquivo}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
       <View style={[styles.section, styles.obsSection]} wrap={false}><Text style={styles.sectionTitle}>Observações</Text><View style={styles.obsBox}><Text>{text(order.observacao)}</Text></View></View>
     </Page>
   </Document>;

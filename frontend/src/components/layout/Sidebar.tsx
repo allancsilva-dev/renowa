@@ -10,6 +10,7 @@ import {
   LogOut,
   Building2,
   Receipt,
+  Headset,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatRole } from '@/lib/authorization';
@@ -34,6 +35,8 @@ const mainNavItems: NavItem[] = [
   // (pedido -> faturamento -> caixa), não a ordem em que os módulos nasceram.
   { to: '/faturamento',   label: 'Faturamento',  icon: Receipt, permission: 'faturamento.ver' },
   { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign },
+  // SAC fecha a barra: é pós-venda, depois de todo o ciclo comercial.
+  { to: '/sac',           label: 'SAC',          icon: Headset, permission: 'sac.ver' },
 ];
 
 function getInitials(email: string): string {

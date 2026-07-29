@@ -12,6 +12,8 @@ import { canCancelarPedido, canLiberarPedido } from '@/lib/orderPermissions';
 import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
+import OrderPhotosPanel from '@/components/orders/OrderPhotosPanel';
+import { fetchOrderPhotoDataUrl, fetchOrderPhotos } from '@/services/orderPhotos.service';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -77,7 +79,15 @@ export default function PedidoDetalhe() {
     try {
       const persisted = await fetchOrder(uuid);
       setOrder(persisted);
-      const blob = await pdf(<OrderValidationPdf order={persisted} />).toBlob();
+      // As fotos vão embutidas como data URL: o endpoint de conteúdo é
+      // autenticado e o PDF é montado no cliente, então uma URL não resolveria.
+      // Falha ao buscar uma foto não pode impedir a emissão do papel.
+      const metadados = await fetchOrderPhotos(uuid).catch(() => []);
+      const fotos = (await Promise.all(metadados.map(async (foto) => {
+        const dataUrl = await fetchOrderPhotoDataUrl(uuid, foto.uuid).catch(() => null);
+        return dataUrl ? { ...foto, dataUrl } : null;
+      }))).filter((foto): foto is NonNullable<typeof foto> => foto !== null);
+      const blob = await pdf(<OrderValidationPdf order={persisted} fotos={fotos} />).toBlob();
       const url = URL.createObjectURL(blob);
       if (previewWindow) previewWindow.location.href = url;
       const filePrefix = persisted.status === 'em_aberto' || persisted.status === 'liberado' ? 'pedido-validacao-renowa' : 'pedido-renowa';
@@ -101,6 +111,8 @@ export default function PedidoDetalhe() {
 
   const canLiberar = canLiberarPedido(hasPermission, order.status);
   const canCancelar = canCancelarPedido(hasPermission, order.status);
+  const isExterno = (order.origem ?? 'interno') === 'externo';
+  const editarPath = isExterno ? `/pedidos/externo/${order.uuid}/editar` : `/pedidos/${order.uuid}/editar`;
   const notas = order.notas ?? [];
   const divergencia = moneyForDisplay(order.divergencia ?? '0');
 
@@ -126,7 +138,7 @@ export default function PedidoDetalhe() {
             </p>
           </div>
           <div className='flex flex-wrap items-center gap-2'>
-            <button type='button' onClick={() => navigate(`/pedidos/${order.uuid}/editar`)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button>
+            <button type='button' onClick={() => navigate(editarPath)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button>
             <button type='button' onClick={generatePdf} disabled={pdfLoading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : order.status === 'em_aberto' || order.status === 'liberado' ? 'Gerar PDF para validação' : 'Baixar PDF do pedido'}</button>
             {canLiberar && (
               <button type='button' onClick={handleLiberar} disabled={statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
@@ -163,6 +175,23 @@ export default function PedidoDetalhe() {
           </div>
         </div>
 
+        {isExterno && (
+          <div className='grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-lg bg-violet-50 p-4 text-sm'>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-violet-700'>Sistema de origem</p>
+              <p className='text-slate-800'>{order.sistema_origem ?? '—'}</p>
+            </div>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-violet-700'>Nº no sistema de origem</p>
+              <p className='font-mono text-slate-800'>{order.numero_pedido_externo ?? '—'}</p>
+            </div>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-violet-700'>Fornecedor</p>
+              <p className='text-slate-800'>{order.fornecedor?.razao_social ?? '—'}</p>
+            </div>
+          </div>
+        )}
+
         {order.observacao && (
           <div>
             <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Observação</p>
@@ -171,6 +200,9 @@ export default function PedidoDetalhe() {
         )}
       </div>
 
+      {/* Pedido externo não tem itens: o valor é informado direto, então a
+          tabela de itens não se aplica. */}
+      {!isExterno && (
       <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6'>
         <h2 className='text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1'>Itens do pedido</h2>
         <p className='text-xs text-slate-600 mb-4'>Valores calculados e persistidos pelo servidor.</p>
@@ -210,6 +242,16 @@ export default function PedidoDetalhe() {
           </div>
         )}
       </div>
+      )}
+
+      <OrderPhotosPanel
+        orderUuid={order.uuid}
+        editable={order.status === 'em_aberto' && hasPermission('pedidos.editar')}
+        itemLabels={Object.fromEntries(order.itens.map((item) => [
+          item.uuid,
+          item.codigo_manual || item.produto?.codigo || item.descricao_manual || 'Item',
+        ]))}
+      />
 
       {notas.length > 0 && (
         <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6'>

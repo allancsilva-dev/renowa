@@ -58,9 +58,52 @@ export interface CnpjLookupResult {
   inscricao_estadual: null;
 }
 
+// ─── SAC ─────────────────────────────────────────────────────────────────────
+
+export type SacStatus = 'aberto' | 'em_andamento' | 'resolvido' | 'cancelado';
+
+/** Linha do chamado: COD · QUANT · MOTIVO · VL UNI. (NF) · VL. TOTAL NF. */
+export interface SacTicketItem {
+  uuid: string;
+  version: number;
+  produto_id: number | null;
+  produto?: Product | null;
+  codigo: string;
+  quantidade: string;
+  motivo: string;
+  valor_unitario: string;
+  valor_total: string;
+}
+
+export interface SacTicket {
+  uuid: string;
+  version: number;
+  numero_chamado: number;
+  cliente_id: number;
+  fornecedor_id: number;
+  /** Presente quando a API resolve o join (listagem e GET /sac/:uuid). */
+  cliente?: Client | null;
+  fornecedor?: Supplier | null;
+  numero_nfe: string | null;
+  data: string | null;
+  total: string | null;
+  status: SacStatus;
+  observacao: string | null;
+  itens: SacTicketItem[];
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Pedidos ─────────────────────────────────────────────────────────────────
 
 export type OrderStatus = 'em_aberto' | 'liberado' | 'parcialmente_faturado' | 'faturado' | 'cancelado';
+
+/**
+ * 'interno' = pedido digitado aqui, com itens.
+ * 'externo' = pedido digitado em sistema de terceiro; sem itens, só número de
+ * origem, sistema e valor. O ciclo de vida (liberar/faturar/cancelar) é o mesmo.
+ */
+export type OrderOrigem = 'interno' | 'externo';
 
 export interface OrderItem {
   uuid: string;
@@ -96,6 +139,24 @@ export interface NotaFiscal {
   updated_at: string;
 }
 
+/**
+ * Metadados de uma foto do pedido. Os bytes vêm por endpoint separado
+ * (`/pedidos/:uuid/fotos/:fotoUuid/conteudo`) — nunca nesta listagem.
+ */
+export interface OrderPhoto {
+  uuid: string;
+  version: number;
+  nome_arquivo: string;
+  mime_type: string;
+  tamanho_bytes: number;
+  /** Código extraído do nome do arquivo, usado no auto-vínculo. */
+  codigo_vinculo: string | null;
+  /** Item ao qual a foto ficou vinculada; null = foto do pedido inteiro. */
+  item_uuid: string | null;
+  vinculado: boolean;
+  created_at: string;
+}
+
 export interface Order {
   uuid: string;
   version: number;
@@ -111,6 +172,10 @@ export interface Order {
   transportadora?: Transport | null;
   data: string | null;
   status: OrderStatus;
+  /** 'externo' = pedido digitado em sistema de terceiro, sem itens. */
+  origem: OrderOrigem;
+  numero_pedido_externo: string | null;
+  sistema_origem: string | null;
   total_sem_imposto: string | null;
   total_com_imposto: string | null;
   pgt: string | null;
@@ -228,6 +293,41 @@ export const orderStatusLabel: Record<OrderStatus, string> = {
   parcialmente_faturado: 'Parcialmente Faturado',
   faturado: 'Faturado',
   cancelado: 'Cancelado',
+};
+
+export const sacStatusLabel: Record<SacStatus, string> = {
+  aberto: 'Aberto',
+  em_andamento: 'Em Andamento',
+  resolvido: 'Resolvido',
+  cancelado: 'Cancelado',
+};
+
+export const sacStatusColor: Record<SacStatus, string> = {
+  aberto: 'bg-blue-100 text-blue-700',
+  em_andamento: 'bg-orange-100 text-orange-700',
+  resolvido: 'bg-green-100 text-green-700',
+  cancelado: 'bg-red-100 text-red-700',
+};
+
+/**
+ * Transições permitidas — espelha `TRANSICOES` em `backend/src/sac/
+ * sac.service.ts`. Resolvido e cancelado são terminais.
+ */
+export const sacStatusTransitions: Record<SacStatus, SacStatus[]> = {
+  aberto: ['em_andamento', 'resolvido', 'cancelado'],
+  em_andamento: ['resolvido', 'cancelado'],
+  resolvido: [],
+  cancelado: [],
+};
+
+export const orderOrigemLabel: Record<OrderOrigem, string> = {
+  interno: 'Interno',
+  externo: 'Externo',
+};
+
+export const orderOrigemColor: Record<OrderOrigem, string> = {
+  interno: 'bg-slate-100 text-slate-700',
+  externo: 'bg-violet-100 text-violet-700',
 };
 
 /** Cores de badge por status — usado em Pedidos, PedidoDetalhe e PedidoForm (fonte única, sem duplicação). */

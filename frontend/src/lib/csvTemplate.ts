@@ -18,7 +18,9 @@ export const CSV_TEMPLATE_HEADERS = {
  * UTF-8 para o Excel abrir acentos corretamente.
  */
 export function downloadCsvTemplate(filename: string, headerLine: string): void {
-  const content = `﻿${headerLine}\n`;
+  // BOM como escape, não como caractere literal: literal dispara
+  // `no-irregular-whitespace` no ESLint e é invisível na revisão.
+  const content = `\uFEFF${headerLine}\n`;
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

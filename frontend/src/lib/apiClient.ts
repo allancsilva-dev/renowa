@@ -6,7 +6,20 @@ type QueryValue = string | number | boolean | null | undefined;
 
 interface ApiRequestOptions extends RequestInit {
   params?: Record<string, QueryValue>;
+  /** Timeout em ms. Omitido, vale `DEFAULT_TIMEOUT_MS`. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * Binário precisa de mais folga que JSON: as telas de foto baixam até 10
+ * imagens em `Promise.all` — miniaturas em `OrderPhotosPanel` e o PDF de
+ * validação em `PedidoDetalhe` — compartilhando a mesma janela. Com 10 s, uma
+ * conexão ruim aborta o lote inteiro e a tela fica sem foto nenhuma sem dizer
+ * por quê (BACKLOG-0056).
+ */
+const BLOB_TIMEOUT_MS = 30_000;
 
 function normalizeHeaders(headers?: HeadersInit): Record<string, string> {
   if (!headers) return {};
@@ -47,12 +60,17 @@ function buildUrl(url: string, params?: Record<string, QueryValue>): string {
   return query ? `${full}?${query}` : full;
 }
 
-async function request<T>(url: string, options: ApiRequestOptions = {}): Promise<{ data: T }> {
-  const { params, ...fetchOptions } = options;
+/**
+ * Executa a requisição e devolve a `Response` crua, já com auth, timeout e
+ * tratamento de erro aplicados. Separado de `request` porque a leitura do
+ * corpo difere: JSON é lido como texto, binário não pode ser.
+ */
+async function send(url: string, options: ApiRequestOptions = {}): Promise<Response> {
+  const { params, timeoutMs, ...fetchOptions } = options;
   const finalUrl = buildUrl(url, params);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const externalSignal = fetchOptions.signal;
   const onAbort = () => controller.abort();
 
@@ -75,6 +93,12 @@ async function request<T>(url: string, options: ApiRequestOptions = {}): Promise
     externalSignal?.removeEventListener('abort', onAbort);
   }
 
+  return res;
+}
+
+async function request<T>(url: string, options: ApiRequestOptions = {}): Promise<{ data: T }> {
+  const res = await send(url, options);
+
   const text = await res.text();
   let data: unknown = null;
   try {
@@ -95,8 +119,34 @@ async function request<T>(url: string, options: ApiRequestOptions = {}): Promise
   return { data: data as T };
 }
 
+/**
+ * Baixa um corpo binário (ex.: foto do pedido). Não passa por `request`
+ * porque `res.text()` corromperia os bytes. Em erro, o corpo ainda é lido
+ * como JSON para preservar o formato de exceção que `getApiErrorMessage`
+ * espera.
+ */
+async function requestBlob(url: string, options: ApiRequestOptions = {}): Promise<{ data: Blob }> {
+  const res = await send(url, { timeoutMs: BLOB_TIMEOUT_MS, ...options });
+
+  if (!res.ok) {
+    const text = await res.text();
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
+    throw { response: { status: res.status, data } };
+  }
+
+  return { data: await res.blob() };
+}
+
 export const apiClient = {
   get: <T>(url: string, options: ApiRequestOptions = {}) => request<T>(url, options),
+
+  /** GET de corpo binário — imagens e demais downloads autenticados. */
+  getBlob: (url: string, options: ApiRequestOptions = {}) => requestBlob(url, options),
 
   post: <T>(url: string, body?: unknown, options: ApiRequestOptions = {}) =>
     request<T>(url, {

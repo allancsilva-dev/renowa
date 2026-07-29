@@ -21,9 +21,21 @@ describe('getApiErrorMessage', () => {
     expect(getApiErrorMessage(apiError(403))).toBe('Usuário não tem acesso ao Renowa');
   });
 
-  it('mantém os textos fixos de 422/404/409 (login e outros fluxos não tocados)', () => {
+  it('mantém os textos fixos de 422/404 (login e outros fluxos não tocados)', () => {
     expect(getApiErrorMessage(apiError(422))).toBe('Email não cadastrado no ZonaDev Auth');
     expect(getApiErrorMessage(apiError(404))).toBe('Recurso não encontrado');
+  });
+
+  // BACKLOG-0056: o texto fixo escondia a razão do conflito. Estes dois casos
+  // eram um só antes, fixando o comportamento antigo.
+  it('mostra a mensagem real do backend em 409 (ex.: pedido já liberado)', () => {
+    expect(getApiErrorMessage(apiError(409, 'Pedido já liberado não pode ser editado')))
+      .toBe('Pedido já liberado não pode ser editado');
+    expect(getApiErrorMessage(apiError(409, 'Limite de 10 fotos por pedido atingido')))
+      .toBe('Limite de 10 fotos por pedido atingido');
+  });
+
+  it('cai pro texto genérico quando 409 vem sem mensagem do backend', () => {
     expect(getApiErrorMessage(apiError(409))).toBe('Recurso em uso — não pode ser removido');
   });
 
