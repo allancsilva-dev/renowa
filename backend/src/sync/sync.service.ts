@@ -134,6 +134,11 @@ export class SyncService {
       [item.uuid, tenantId],
     );
 
+    // Com a linha em mãos: a forma do pedido depende de `origem`, que só existe
+    // no banco. Em CREATE `existing` é vazio e nada aqui dispara. Ver PROB-0074.
+    this.assertCamposDaForma(item.entity, item.payload, policy, existing[0]);
+    this.assertOrigemEditavel(item.entity, item.operation, existing[0]);
+
     if (item.operation === SyncOperation.CREATE) {
       if (existing.length > 0) {
         return {
@@ -283,10 +288,16 @@ export class SyncService {
     }
 
     // ── Idempotência: verificar se já existe ─────────────────
+    // `origem` e `status` entram na projeção porque a allowlist de `pedidos` e o
+    // gate de edição derivam da linha, não do payload (PROB-0074).
     const existing = await qr.query(
-      `SELECT id, updated_at${entity === SyncEntity.PEDIDOS ? ', numero_pedido' : ''} FROM ${this.quoteIdentifier(table)} WHERE uuid = $1 AND tenant_id = $2`,
+      `SELECT id, updated_at${entity === SyncEntity.PEDIDOS ? ', numero_pedido, origem, status' : ''} FROM ${this.quoteIdentifier(table)} WHERE uuid = $1 AND tenant_id = $2`,
       [uuid, tenantId],
     );
+
+    // Mesma segunda passada do v2.
+    this.assertCamposDaForma(entity, payload, policy, existing[0]);
+    this.assertOrigemEditavel(entity, operation, existing[0]);
 
     if (existing.length > 0 && operation === 'CREATE') {
       // Idempotência — registro já existe, retornar sem duplicar
@@ -362,13 +373,76 @@ export class SyncService {
     return rows[0]?.id as number;
   }
 
+  /**
+   * Segunda passada da allowlist, agora com a linha em mãos. Só pega campos que
+   * são válidos na entidade mas não NESTA forma do registro — hoje, campos de
+   * pedido de origem externa (PROB-0074). Campo desconhecido já morreu na
+   * primeira passada.
+   */
+  private assertCamposDaForma(
+    entity: SyncEntity,
+    payload: Record<string, unknown>,
+    policy: SyncEntityPolicy,
+    row: Record<string, unknown> | undefined,
+  ): void {
+    if (!row || !policy.writableFieldsFor) return;
+
+    const permitidos = policy.writableFieldsFor(row);
+    const bloqueados = Object.keys(payload).filter((field) => !permitidos.includes(field)
+      && policy.writableFields.includes(field));
+
+    if (bloqueados.length === 0) return;
+
+    // Dizer QUAL forma barrou: "campos não permitidos" sozinho não deixa o
+    // cliente distinguir de campo inexistente nem saber o que fazer.
+    const forma = typeof row.origem === 'string' ? ` com origem '${row.origem}'` : '';
+    throw new BadRequestException(
+      `Campos não permitidos em ${entity}${forma}: ${bloqueados.join(', ')}`,
+    );
+  }
+
+  /**
+   * Paridade com `updateExternal` (`orders.service.ts:225-227`): pedido de
+   * origem externa só é editável em `em_aberto`. Sem este gate o push altera
+   * pedido já liberado ou faturado — o que a web recusa com 409 — e o cliente
+   * mobile fica com uma verdade que o servidor web nega.
+   */
+  private assertOrigemEditavel(
+    entity: SyncEntity,
+    operation: SyncOperation,
+    row: Record<string, unknown> | undefined,
+  ): void {
+    if (entity !== SyncEntity.PEDIDOS || operation !== SyncOperation.UPDATE) return;
+    if (!row || row.origem !== 'externo' || row.status === 'em_aberto') return;
+
+    throw new BadRequestException(
+      `Pedido de origem externa só pode ser editado em em_aberto (status atual: ${String(row.status)})`,
+    );
+  }
+
+  /**
+   * Primeira passada da allowlist, contra a lista BASE. Roda antes de qualquer
+   * ida ao banco: payload malformado não merece um SELECT. A segunda passada,
+   * que depende da linha, é `assertCamposDaForma`.
+   */
   private validatePayload(
     entity: SyncEntity,
     operation: SyncOperation,
     payload: Record<string, unknown>,
     policy: SyncEntityPolicy,
   ): void {
-    const invalid = Object.keys(payload).filter(
+    const campos = Object.keys(payload);
+
+    // Antes da allowlist: campo controlado pelo servidor merece dizer o motivo.
+    // A allowlist barraria do mesmo jeito, com uma mensagem que não explica nada.
+    const controlados = campos.filter((field) => policy.serverControlledFields.includes(field));
+    if (controlados.length > 0) {
+      throw new BadRequestException(
+        `Campos controlados pelo servidor não podem vir no push de ${entity}: ${controlados.join(', ')}`,
+      );
+    }
+
+    const invalid = campos.filter(
       (field) => !policy.writableFields.includes(field)
         && !Object.prototype.hasOwnProperty.call(policy.foreignKeys, field),
     );

@@ -37,12 +37,16 @@ describe('SyncService security', () => {
     expect(queryRunner.rollbackTransaction).toHaveBeenCalled();
   });
 
+  // Campo controlado pelo servidor e campo desconhecido são barrados pelo mesmo
+  // portão, antes de qualquer SQL, mas com mensagens diferentes: `numero_pedido`
+  // existe e é do servidor, `toString` não existe. Antes de PROB-0074 os dois
+  // caíam na mesma frase genérica e o cliente não tinha como distinguir.
   it.each([
-    ['raw foreign key', { cliente_id: 99 }],
-    ['server-controlled order number', { numero_pedido: 1234 }],
-    ['server-controlled tenant', { tenant_id: 'other-tenant' }],
-    ['inherited object key', { toString: 'not-allowed' }],
-  ])('rejects %s before SQL execution', async (_label, payload) => {
+    ['raw foreign key', { cliente_id: 99 }, 'Campos não permitidos'],
+    ['server-controlled order number', { numero_pedido: 1234 }, 'Campos controlados pelo servidor'],
+    ['server-controlled tenant', { tenant_id: 'other-tenant' }, 'Campos controlados pelo servidor'],
+    ['inherited object key', { toString: 'not-allowed' }, 'Campos não permitidos'],
+  ])('rejects %s before SQL execution', async (_label, payload, mensagem) => {
     const query = jest.fn();
     const { service } = makeService(query);
 
@@ -57,7 +61,7 @@ describe('SyncService security', () => {
     );
 
     expect(response.results[0]).toMatchObject({ status: 'error' });
-    expect(response.results[0].message).toContain('Campos não permitidos');
+    expect(response.results[0].message).toContain(mensagem);
     expect(query).not.toHaveBeenCalled();
   });
 
@@ -265,5 +269,156 @@ describe('sync entity policy', () => {
         input.endsWith('_uuid') && foreignKey.column.endsWith('_id'),
       )).toBe(true);
     }
+  });
+});
+
+/**
+ * PROB-0074: o push escrevia em `pedidos` por SQL cru com uma allowlist que não
+ * consultava `origem`. Pedido de origem externa não tem itens — os totais são o
+ * valor declarado, e a igualdade entre eles virou CHECK na `0037` — e a
+ * transição de status tem endpoint próprio com permissão própria. O sync
+ * furava os dois em silêncio.
+ *
+ * Cobre v1 e v2: são dois caminhos distintos, e só o v2 tem guarda de `version`.
+ */
+describe('SyncService — gate de origem do pedido', () => {
+  const UUID = '7f9a9e95-78fb-41f8-83c9-108ddab00962';
+
+  function makeService(resultados: unknown[]) {
+    const query = jest.fn().mockImplementation(() => Promise.resolve(resultados.shift() ?? []));
+    const queryRunner = {
+      connect: jest.fn(), startTransaction: jest.fn(), commitTransaction: jest.fn(),
+      rollbackTransaction: jest.fn(), release: jest.fn(), query,
+    };
+    const service = new SyncService({ createQueryRunner: () => queryRunner } as never);
+    return { service, query };
+  }
+
+  const pedido = (over: Record<string, unknown> = {}) => ({
+    id: 1,
+    updated_at: '2020-01-01T00:00:00.000Z',
+    numero_pedido: 42,
+    origem: 'externo',
+    status: 'em_aberto',
+    version: 3,
+    ...over,
+  });
+
+  const pushV1 = (service: SyncService, payload: Record<string, unknown>) =>
+    service.pushItems(
+      [{ uuid: UUID, entity: SyncEntity.PEDIDOS, operation: SyncOperation.UPDATE, payload }],
+      'tenant-1',
+    );
+
+  const pushV2 = (service: SyncService, payload: Record<string, unknown>) =>
+    service.pushItemsV2(
+      {
+        device_id: '3df8a8c7-dd23-4e70-bcc7-468ccaf12c31',
+        sync_run_id: '82e6e7bd-7571-4791-9623-6b99eec7cece',
+        items: [{
+          operation_id: 'ca9d0af4-6d32-445f-bca5-8a0700c4db24',
+          uuid: UUID,
+          entity: SyncEntity.PEDIDOS,
+          operation: SyncOperation.UPDATE,
+          payload,
+          base_version: 3,
+        }],
+      },
+      'tenant-1',
+    );
+
+  // A projeção do v1 é enxuta por padrão; sem `origem`/`status` nela o gate não
+  // teria como decidir e voltaria a passar batido.
+  it('v1 lê origem e status na projeção de pedidos', async () => {
+    const { service, query } = makeService([[pedido()], []]);
+    await pushV1(service, { observacao: 'ok' });
+
+    const select = query.mock.calls.find(([sql]) => String(sql).startsWith('SELECT'));
+    expect(select?.[0]).toContain('origem');
+    expect(select?.[0]).toContain('status');
+  });
+
+  it.each([
+    ['status', { status: 'liberado' }],
+    ['total_sem_imposto', { total_sem_imposto: 10 }],
+    ['total_com_imposto', { total_com_imposto: 10 }],
+  ])('v1 rejeita %s em pedido de origem externa', async (campo, payload) => {
+    const { service, query } = makeService([[pedido()]]);
+    const response = await pushV1(service, payload);
+
+    expect(response.results[0]).toMatchObject({ status: 'error' });
+    expect(response.results[0].message).toContain("origem 'externo'");
+    expect(response.results[0].message).toContain(campo);
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE'))).toBe(false);
+  });
+
+  // PROB-0065 segue aberto de propósito: o sync ainda escreve `status` em pedido
+  // interno. Este caso existe para que fechá-lo seja uma decisão, não um efeito
+  // colateral do gate de origem.
+  it('v1 mantém status gravável em pedido interno', async () => {
+    const { service, query } = makeService([[pedido({ origem: 'interno' })], []]);
+    const response = await pushV1(service, { status: 'liberado' });
+
+    expect(response.results[0]).toMatchObject({ status: 'ok' });
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE'))).toBe(true);
+  });
+
+  it('v1 recusa editar pedido externo fora de em_aberto', async () => {
+    const { service, query } = makeService([[pedido({ status: 'faturado' })]]);
+    const response = await pushV1(service, { observacao: 'tarde demais' });
+
+    expect(response.results[0]).toMatchObject({ status: 'error' });
+    expect(response.results[0].message).toContain('em_aberto');
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith('UPDATE'))).toBe(false);
+  });
+
+  // CREATE não tem linha para consultar: a allowlist base continua valendo, e o
+  // caminho de criação não pode ter sido quebrado pela segunda passada.
+  it('v1 segue criando pedido quando não existe linha', async () => {
+    const { service, query } = makeService([[], [{ numero: 7 }], [{ id: 10 }]]);
+    const response = await service.pushItems(
+      [{
+        uuid: UUID,
+        entity: SyncEntity.PEDIDOS,
+        operation: SyncOperation.CREATE,
+        payload: { status: 'em_aberto', total_com_imposto: 100 },
+      }],
+      'tenant-1',
+    );
+
+    expect(response.results[0]).toMatchObject({ status: 'ok', numero_pedido: 7 });
+    expect(query.mock.calls.some(([sql]) => String(sql).startsWith('INSERT'))).toBe(true);
+  });
+
+  it.each([
+    ['status', { status: 'liberado' }],
+    ['total_com_imposto', { total_com_imposto: 10 }],
+  ])('v2 rejeita %s em pedido de origem externa como não-retryable', async (campo, payload) => {
+    const { service } = makeService([[], [], [], [pedido()], [], []]);
+    const response = await pushV2(service, payload);
+
+    expect(response.results[0]).toMatchObject({
+      status: 'rejected', code: 'VALIDATION_FAILED', retryable: false,
+    });
+    expect(response.results[0].message).toContain(campo);
+  });
+
+  it('v2 recusa editar pedido externo fora de em_aberto', async () => {
+    const { service } = makeService([[], [], [], [pedido({ status: 'liberado' })], [], []]);
+    const response = await pushV2(service, { observacao: 'tarde demais' });
+
+    expect(response.results[0]).toMatchObject({
+      status: 'rejected', code: 'VALIDATION_FAILED', retryable: false,
+    });
+    expect(response.results[0].message).toContain('em_aberto');
+  });
+
+  it('v2 mantém status gravável em pedido interno', async () => {
+    const { service } = makeService([
+      [], [], [], [pedido({ origem: 'interno' })], [{ version: 4 }], [],
+    ]);
+    const response = await pushV2(service, { status: 'liberado' });
+
+    expect(response.results[0]).toMatchObject({ status: 'applied', version: 4 });
   });
 });
