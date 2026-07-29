@@ -3,6 +3,7 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
+  StreamableFile,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -15,6 +16,7 @@ import { map } from 'rxjs/operators';
  * - Respostas de erro { error: ... } são passadas sem re-envolver.
  * - Respostas null/undefined (ex: 204 No Content) são passadas sem alteração.
  * - Respostas de sync (server_time) são passadas sem re-envolver.
+ * - `StreamableFile` (binário, ex.: foto do pedido) é passado intacto.
  */
 @Injectable()
 export class ResponseInterceptor implements NestInterceptor {
@@ -26,6 +28,10 @@ export class ResponseInterceptor implements NestInterceptor {
         // - já tem a estrutura paginada { data, meta } ou { error }
         // - é resposta de sync ({ results, server_time } ou { data, meta, server_time })
         if (value === null || value === undefined) return value;
+
+        // Binário: embrulhar em `{ data }` faria o Nest serializar o stream
+        // como JSON e a imagem chegaria corrompida no cliente.
+        if (value instanceof StreamableFile) return value;
 
         if (typeof value === 'object' && value !== null) {
           const obj = value as Record<string, unknown>;
