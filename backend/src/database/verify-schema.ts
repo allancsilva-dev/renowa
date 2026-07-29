@@ -58,6 +58,9 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
   { tabela: 'transportadoras', nome: 'transportadoras_version_check', validado: true, expressao: 'version > 0', origem: '0009' },
   { tabela: 'itens_pedido', nome: 'itens_pedido_version_check', validado: true, expressao: 'version > 0', origem: '0009' },
   { tabela: 'notas_fiscais', nome: 'notas_fiscais_version_check', validado: true, expressao: 'version > 0', origem: '0028' },
+  { tabela: 'pedido_fotos', nome: 'pedido_fotos_version_check', validado: true, expressao: 'version > 0', origem: '0034' },
+  { tabela: 'chamados_sac', nome: 'chamados_sac_version_check', validado: true, expressao: 'version > 0', origem: '0035' },
+  { tabela: 'itens_chamado_sac', nome: 'itens_chamado_sac_version_check', validado: true, expressao: 'version > 0', origem: '0035' },
 
   // LGPD: enums fechados. Sem eles a trilha de auditoria aceita qualquer texto.
   {
@@ -112,6 +115,88 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
     expressao: "status = ANY (ARRAY['pendente','faturado','pago'])",
     origem: '0029',
   },
+  {
+    tabela: 'pedidos',
+    nome: 'pedidos_origem_check',
+    validado: false,
+    expressao: "origem = ANY (ARRAY['interno','externo'])",
+    origem: '0033',
+  },
+  // Forma do pedido conforme a origem. Sem ele, pedido externo sem valor entra
+  // na fila de faturamento com divergência igual ao total da nota.
+  {
+    tabela: 'pedidos',
+    nome: 'pedidos_origem_externa_check',
+    validado: false,
+    // `total_sem_imposto = total_com_imposto` entrou na 0037: pedido externo não
+    // tem itens, então os dois totais são o mesmo valor declarado.
+    expressao:
+      "origem = 'externo' AND numero_pedido_externo IS NOT NULL AND sistema_origem IS NOT NULL"
+      + " AND total_com_imposto IS NOT NULL AND total_sem_imposto = total_com_imposto"
+      + " OR origem = 'interno' AND numero_pedido_externo IS NULL AND sistema_origem IS NULL",
+    origem: '0033+0037',
+  },
+
+  // Fotos do pedido: formato, tamanho e coerência do destino de storage.
+  // Tabela nova e vazia — todos criados já validados.
+  {
+    tabela: 'pedido_fotos',
+    nome: 'pedido_fotos_mime_type_check',
+    validado: true,
+    expressao: "mime_type = ANY (ARRAY['image/jpeg','image/png','image/webp'])",
+    origem: '0034',
+  },
+  {
+    tabela: 'pedido_fotos',
+    nome: 'pedido_fotos_tamanho_bytes_check',
+    validado: true,
+    expressao: 'tamanho_bytes > 0 AND tamanho_bytes <= 3145728',
+    origem: '0034',
+  },
+  {
+    tabela: 'pedido_fotos',
+    nome: 'pedido_fotos_storage_backend_check',
+    validado: true,
+    // 'purgado' entrou na 0037: é o estado de uma foto cujo conteúdo o ERASURE
+    // apagou. A linha fica como prova de que houve anexo, sem o binário.
+    expressao: "storage_backend = ANY (ARRAY['db','r2','purgado'])",
+    origem: '0034+0037',
+  },
+  // Sem este, uma linha 'db' sem `conteudo` vira foto fantasma: aparece na
+  // listagem e só falha na hora de montar o PDF.
+  {
+    tabela: 'pedido_fotos',
+    nome: 'pedido_fotos_storage_check',
+    validado: true,
+    expressao:
+      "storage_backend = 'db' AND conteudo IS NOT NULL AND storage_key IS NULL"
+      + " OR storage_backend = 'r2' AND storage_key IS NOT NULL AND conteudo IS NULL"
+      + " OR storage_backend = 'purgado' AND conteudo IS NULL AND storage_key IS NULL",
+    origem: '0034+0037',
+  },
+
+  // SAC: ciclo de vida do chamado e sanidade dos valores das linhas.
+  {
+    tabela: 'chamados_sac',
+    nome: 'chamados_sac_status_check',
+    validado: true,
+    expressao: "status = ANY (ARRAY['aberto','em_andamento','resolvido','cancelado'])",
+    origem: '0035',
+  },
+  {
+    tabela: 'itens_chamado_sac',
+    nome: 'itens_chamado_sac_quantidade_check',
+    validado: true,
+    expressao: 'quantidade >= 0',
+    origem: '0035',
+  },
+  {
+    tabela: 'itens_chamado_sac',
+    nome: 'itens_chamado_sac_valor_unitario_check',
+    validado: true,
+    expressao: 'valor_unitario >= 0',
+    origem: '0035',
+  },
 ];
 
 /**
@@ -157,21 +242,31 @@ const INDICES_PARCIAIS_ESPERADOS: IndiceParcialEsperado[] = [
     regra: 'numero_pedido unico por tenant',
     origem: '0000',
   },
+  {
+    tabela: 'chamados_sac',
+    colunas: ['tenant_id', 'numero_chamado'],
+    predicado: 'deleted_at IS NULL',
+    regra: 'numero de chamado SAC unico por tenant (soft delete libera o numero)',
+    origem: '0035',
+  },
 ];
 
 /** Tabelas declaradas por migrations já marcadas como aplicadas. */
 const TABELAS_ESPERADAS = [
+  'chamados_sac',
   'clientes',
   'comissoes',
   'financeiro_movimentacao',
   'fornecedores',
   'inadimplencia',
+  'itens_chamado_sac',
   'itens_pedido',
   'lgpd_requests',
   'local_users',
   'mobile_sessions',
   'notas_fiscais',
   'parceiros_comerciais',
+  'pedido_fotos',
   'pedidos',
   'permissions',
   'pii_audit_events',
@@ -207,6 +302,27 @@ function normalizar(expressao: string): string {
     .toLowerCase();
 }
 
+/**
+ * Tabelas com `tenant_id` e `id` que NÃO precisam de `UNIQUE(tenant_id, id)`.
+ *
+ * O critério é estreito: a tabela tem que ser INCAPAZ de ser alvo de FK, não
+ * apenas não ser alvo hoje. "Ninguém referencia ainda" não isenta — é
+ * exatamente o caso que o invariante existe para cobrir.
+ *
+ * Isenção sem justificativa escrita não entra. A seção [6/6] também reprova
+ * isenção obsoleta, para a lista não virar depósito.
+ */
+const ISENTAS_DE_UNIQUE_TENANT_ID: Record<string, string> = {
+  sync_outbox:
+    'Fila de trânsito. `drain_sync_outbox()` (0008) apaga TODAS as linhas a cada ' +
+    'pull, movendo-as para `sync_changes` — uma FK contra ela quebraria na primeira ' +
+    'drenagem, então ser alvo de FK é impossível por construção, não improvável. ' +
+    'O `id` é bigserial só para ordenar a fila; a identidade durável vive em ' +
+    '`sync_changes`. O índice seria custo puro de INSERT no caminho de escrita mais ' +
+    'quente do sistema: trigger `capture_sync_outbox()` em clientes, produtos, ' +
+    'fornecedores, transportadoras, pedidos e itens_pedido.',
+};
+
 type Problema = { categoria: string; detalhe: string };
 
 async function main(): Promise<number> {
@@ -238,7 +354,7 @@ async function main(): Promise<number> {
     );
     const tabelasPresentes = new Set(tabelas.rows.map((linha) => linha.tablename));
 
-    console.log('\n[1/4] Tabelas');
+    console.log('\n[1/6] Tabelas');
     for (const tabela of TABELAS_ESPERADAS) {
       if (!tabelasPresentes.has(tabela)) {
         console.log(`  FALTANDO  ${tabela}`);
@@ -265,7 +381,7 @@ async function main(): Promise<number> {
     `);
     const checksPresentes = new Map(checks.rows.map((linha) => [`${linha.tabela}.${linha.nome}`, linha]));
 
-    console.log('\n[2/4] CHECK constraints');
+    console.log('\n[2/6] CHECK constraints');
     let checksOk = 0;
     for (const esperado of CHECKS_ESPERADOS) {
       const chave = `${esperado.tabela}.${esperado.nome}`;
@@ -320,7 +436,7 @@ async function main(): Promise<number> {
       WHERE ns.nspname = 'public' AND ix.indisunique AND ix.indpred IS NOT NULL
     `);
 
-    console.log('\n[3/4] Índices únicos parciais (unicidade de negócio por tenant)');
+    console.log('\n[3/6] Índices únicos parciais (unicidade de negócio por tenant)');
     let indicesOk = 0;
     for (const esperado of INDICES_PARCIAIS_ESPERADOS) {
       const candidatos = indices.rows.filter(
@@ -386,7 +502,7 @@ async function main(): Promise<number> {
       ORDER BY table_name
     `);
 
-    console.log('\n[4/4] Funções e triggers de updated_at');
+    console.log('\n[4/6] Funções e triggers de updated_at');
     for (const funcao of FUNCOES_ESPERADAS) {
       if (!funcoesPresentes.has(funcao)) {
         console.log(`  FALTANDO    função public.${funcao}()`);
@@ -404,6 +520,108 @@ async function main(): Promise<number> {
       triggersOk += 1;
     }
     console.log(`  ${triggersOk}/${comUpdatedAt.rowCount ?? 0} tabelas com updated_at protegidas por trigger`);
+
+    // ── FKs que furam o isolamento de tenant ─────────────────────────────────
+    /**
+     * A doença, não o sintoma. Uma FK para tabela com `tenant_id` que NÃO carrega
+     * `tenant_id` nas duas pontas permite que a linha filha aponte para um pai de
+     * OUTRO tenant: o banco valida só o `id`. É exatamente o que
+     * `0021_cross_tenant_foreign_keys.sql` (PROB-0011) removeu.
+     *
+     * Nada impede a volta. Quem não consegue criar a FK composta — porque o alvo
+     * não tem `UNIQUE(tenant_id, id)`, ver a seção seguinte — tem como atalho
+     * óbvio referenciar só `id`, e o PostgreSQL aceita em silêncio. Este é o
+     * único ponto do `db:verify` que checa vazamento entre tenants.
+     */
+    const fksSemTenant = await client.query<{ nome: string; origem: string; alvo: string }>(`
+      SELECT con.conname AS nome,
+             con.conrelid::regclass::text AS origem,
+             con.confrelid::regclass::text AS alvo
+      FROM pg_constraint con
+      WHERE con.contype = 'f'
+        AND EXISTS (SELECT 1 FROM pg_attribute t
+                    WHERE t.attrelid = con.confrelid AND t.attname = 'tenant_id'
+                      AND NOT t.attisdropped)
+        AND NOT (con.conkey @> ARRAY[
+          (SELECT attnum FROM pg_attribute
+           WHERE attrelid = con.conrelid AND attname = 'tenant_id' AND NOT attisdropped)
+        ]::int2[])
+      ORDER BY 2, 1
+    `);
+
+    console.log('\n[5/6] FKs para tabela de tenant sem tenant_id na chave');
+    for (const linha of fksSemTenant.rows) {
+      console.log(`  CROSS-TENANT  ${linha.origem} -> ${linha.alvo}  (${linha.nome})`);
+      problemas.push({ categoria: 'fk sem isolamento de tenant', detalhe: linha.nome });
+    }
+    console.log(`  ${fksSemTenant.rowCount ?? 0} FK(s) sem isolamento`);
+
+    // ── UNIQUE(tenant_id, id) ────────────────────────────────────────────────
+    /**
+     * Prontidão para ser alvo de FK composta `(tenant_id, x) -> (tenant_id, id)`.
+     * O PostgreSQL recusa a FK sem índice único no alvo (42830), então esta seção
+     * não protege contra FK inválida — protege contra o ATALHO: sem o índice,
+     * criar a FK correta exige uma migration extra numa tabela grande, e a saída
+     * fácil é referenciar só `id`, que é o que a seção [5/6] pega.
+     * Ver PROB-0073 / BACKLOG-0052 / migration 0036.
+     *
+     * Três predicados da subquery são não-óbvios e nenhum é dispensável:
+     *
+     * - `indpred IS NULL` — índice PARCIAL não serve de alvo de FK: ele só
+     *   garante unicidade nas linhas que casam com o predicado.
+     * - `indisvalid AND indisready` — um `CREATE INDEX CONCURRENTLY` abortado
+     *   deixa índice inválido no catálogo. Ele satisfaria a busca e continuaria
+     *   não servindo de alvo de FK.
+     * - `indnkeyatts = 2` (e não `indnatts`) — em PG11+ `indnatts` conta chave
+     *   MAIS colunas INCLUDE. Coluna INCLUDE não participa da unicidade, então
+     *   um índice `(tenant_id) INCLUDE (id)` passaria por `indnatts = 2` e não
+     *   serviria. `indnkeyatts` conta só a chave.
+     */
+    const semUniqueTenantId = await client.query<{ tabela: string }>(`
+      SELECT c.relname AS tabela
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_attribute a ON a.attrelid = c.oid
+        AND a.attname = 'tenant_id' AND NOT a.attisdropped
+      WHERE n.nspname = 'public' AND c.relkind = 'r'
+        AND EXISTS (SELECT 1 FROM pg_attribute x
+                    WHERE x.attrelid = c.oid AND x.attname = 'id' AND NOT x.attisdropped)
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_index i
+          WHERE i.indrelid = c.oid AND i.indisunique
+            AND i.indpred IS NULL
+            AND i.indisvalid AND i.indisready
+            AND i.indnkeyatts = 2
+            AND i.indkey::int2[] @> ARRAY[
+              a.attnum,
+              (SELECT attnum FROM pg_attribute WHERE attrelid = c.oid AND attname = 'id')
+            ]::int2[]
+        )
+      ORDER BY 1
+    `);
+
+    console.log('\n[6/6] UNIQUE(tenant_id, id) — prontidão para FK composta de tenant');
+    let semIndice = 0;
+    for (const linha of semUniqueTenantId.rows) {
+      if (linha.tabela in ISENTAS_DE_UNIQUE_TENANT_ID) {
+        console.log(`  ISENTA      ${linha.tabela}`);
+        continue;
+      }
+      console.log(`  FALTANDO    UNIQUE ${linha.tabela}(tenant_id, id)`);
+      problemas.push({ categoria: 'unique(tenant_id,id) ausente', detalhe: linha.tabela });
+      semIndice += 1;
+    }
+
+    // Isenção que deixou de fazer sentido é dívida silenciosa: a tabela sumiu, ou
+    // ganhou o índice de qualquer forma, e a justificativa continua no código
+    // dando cobertura a um caso que não existe mais.
+    const aindaSemIndice = new Set(semUniqueTenantId.rows.map((linha) => linha.tabela));
+    for (const tabela of Object.keys(ISENTAS_DE_UNIQUE_TENANT_ID)) {
+      if (aindaSemIndice.has(tabela)) continue;
+      console.log(`  ISENÇÃO OBSOLETA  ${tabela} não precisa mais constar como isenta`);
+      problemas.push({ categoria: 'isencao obsoleta', detalhe: tabela });
+    }
+    console.log(`  ${semIndice} tabela(s) sem o índice, ${Object.keys(ISENTAS_DE_UNIQUE_TENANT_ID).length} isenta(s)`);
 
     // ── Veredito ─────────────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(78));
