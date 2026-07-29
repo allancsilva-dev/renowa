@@ -1,15 +1,11 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { CreateLgpdRequestDto, DenyLgpdRequestDto, ReviewLgpdRequestDto } from './dto/create-lgpd-request.dto';
 import { LgpdRequest } from './entities/lgpd-request.entity';
-
-const CLIENT_FIELDS = ['razao_social','cnpj','email','tel','endereco','bairro','cidade','uf','cep','contato','inscricao_estadual','suframa','pgt_padrao','prazo','local_entrega','observacao'];
-const USER_FIELDS = ['usuarios.email', 'usuarios.nome', 'usuarios.senha_hash', 'usuarios.roles',
-  'usuarios.is_active', 'local_users.email', 'local_users.active'];
-const ORDER_FIELDS = ['pgt', 'prazo', 'local_entrega', 'observacao'];
+import { buildErasureSql, markerFor, plansFor, SubjectType } from './pii-registry';
 
 @Injectable()
 export class PrivacyService {
@@ -67,35 +63,19 @@ export class PrivacyService {
         await repo.save(request);
 
         if (request.request_type === 'ERASURE') {
-          if (request.subject_type === 'CLIENT') {
-            const marker = `Titular anonimizado ${request.subject_uuid.slice(0, 8)}`;
-            const rows = await manager.query(`UPDATE clientes SET razao_social = $3, cnpj = NULL, email = NULL,
-              tel = NULL, endereco = NULL, bairro = NULL, cidade = NULL, uf = NULL, cep = NULL, contato = NULL,
-              inscricao_estadual = NULL, suframa = NULL, pgt_padrao = NULL, prazo = NULL, local_entrega = NULL,
-              observacao = NULL, deleted_at = COALESCE(deleted_at, clock_timestamp()), version = version + 1
-              WHERE tenant_id = $1 AND uuid = $2 RETURNING id`, [user.tenantId, request.subject_uuid, marker]);
-            if (!rows[0]) throw new NotFoundException('Titular nao encontrado.');
-            await manager.query(`UPDATE pedidos SET pgt = NULL, prazo = NULL, local_entrega = NULL, observacao = NULL,
-              version = version + 1 WHERE tenant_id = $1 AND cliente_id = $2`, [user.tenantId, rows[0].id]);
-            request.result = { strategy: 'ANONYMIZED_WITH_RELATIONS_RETAINED', fieldsRemoved: CLIENT_FIELDS.length + ORDER_FIELDS.length };
-            await this.audit.record({ tenantId: user.tenantId, actor: user, action: 'DELETE', resourceType: 'cliente',
-              resourceUuid: request.subject_uuid, fields: [...CLIENT_FIELDS, ...ORDER_FIELDS], purpose: 'Direito de apagamento aprovado' }, manager);
-          } else {
-            const email = `anon-${request.subject_uuid}@invalid.local`;
-            const rows = await manager.query(`UPDATE usuarios SET email = $3, nome = 'Titular anonimizado', senha_hash = NULL,
-              roles = '[]'::jsonb, is_active = false, access_token_version = access_token_version + 1,
-              deleted_at = COALESCE(deleted_at, clock_timestamp())
-              WHERE tenant_id = $1 AND uuid = $2 RETURNING id`, [user.tenantId, request.subject_uuid, email]);
-            if (!rows[0]) throw new NotFoundException('Titular nao encontrado.');
-            await manager.query(`UPDATE local_users SET email = $3, active = false,
-              deleted_at = COALESCE(deleted_at, clock_timestamp())
-              WHERE tenant_id = $1 AND auth_user_id = $2`, [user.tenantId, request.subject_uuid, email]);
-            await manager.query('UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, clock_timestamp()) WHERE tenant_id = $1 AND user_id = $2', [user.tenantId, rows[0].id]);
-            await manager.query('UPDATE mobile_sessions SET is_active = false, token_version = token_version + 1 WHERE tenant_id = $1 AND user_uuid = $2', [user.tenantId, request.subject_uuid]);
-            request.result = { strategy: 'ANONYMIZED_AND_SESSIONS_REVOKED', fieldsRemoved: USER_FIELDS.length };
-            await this.audit.record({ tenantId: user.tenantId, actor: user, action: 'DELETE', resourceType: 'usuario',
-              resourceUuid: request.subject_uuid, fields: USER_FIELDS, purpose: 'Direito de apagamento aprovado' }, manager);
-          }
+          const subject = request.subject_type;
+          const purgadas = await this.runErasure(manager, user.tenantId, subject, request.subject_uuid);
+
+          request.result = subject === 'CLIENT'
+            ? { strategy: 'ANONYMIZED_WITH_RELATIONS_RETAINED', fieldsRemoved: purgadas.length }
+            : { strategy: 'ANONYMIZED_AND_SESSIONS_REVOKED', fieldsRemoved: purgadas.length };
+
+          await this.audit.record({
+            tenantId: user.tenantId, actor: user, action: 'DELETE',
+            resourceType: subject === 'CLIENT' ? 'cliente' : 'usuario',
+            resourceUuid: request.subject_uuid, fields: purgadas,
+            purpose: 'Direito de apagamento aprovado',
+          }, manager);
         } else {
           const rows = request.subject_type === 'CLIENT'
             ? await manager.query(`SELECT uuid, razao_social, cnpj, email, tel, endereco, bairro, cidade, uf,
@@ -121,6 +101,55 @@ export class PrivacyService {
           { requestUuid, tenantId: user.tenantId, status: 'APPROVED' }).execute();
       throw error;
     }
+  }
+
+  /**
+   * Executa o apagamento gerando o SQL a partir de `PII_REGISTRY` (PROB-0075).
+   *
+   * A ordem importa: o primeiro plano do ramo é a tabela do próprio titular, e
+   * é o `RETURNING id` dela que dá o id interno usado pelas demais. Se o titular
+   * não existir, nada mais roda.
+   *
+   * @returns os campos efetivamente purgados, em `tabela.coluna`, para a trilha
+   * de auditoria. Antes eram duas constantes mantidas à mão, que já divergiam do
+   * SQL real.
+   */
+  private async runErasure(
+    manager: EntityManager,
+    tenantId: string,
+    subject: SubjectType,
+    subjectUuid: string,
+  ): Promise<string[]> {
+    const planos = plansFor(subject);
+    const marker = markerFor(subject, subjectUuid);
+    const purgadas: string[] = [];
+    let subjectId: number | undefined;
+
+    for (const plano of planos) {
+      const sql = buildErasureSql(plano);
+      const chave = plano.vinculo.kind === 'own-uuid' ? subjectUuid : subjectId;
+
+      if (chave === undefined) {
+        // Só acontece se o registro for reordenado e a tabela do titular deixar
+        // de ser a primeira. Falhar alto é melhor que apagar pela metade.
+        throw new Error(`Plano de ${plano.table} precisa do id do titular, ainda não resolvido.`);
+      }
+
+      const usaMarcador = Object.values(plano.columns).some((e) => e.set === 'marker');
+      const parametros = usaMarcador ? [tenantId, chave, marker] : [tenantId, chave];
+
+      if (plano.vinculo.kind === 'own-uuid' && subjectId === undefined) {
+        const rows = await manager.query(`${sql} RETURNING id`, parametros);
+        if (!rows[0]) throw new NotFoundException('Titular nao encontrado.');
+        subjectId = rows[0].id as number;
+      } else {
+        await manager.query(sql, parametros);
+      }
+
+      purgadas.push(...Object.keys(plano.columns).map((coluna) => `${plano.table}.${coluna}`));
+    }
+
+    return purgadas;
   }
 
   private async transition(requestUuid: string, tenantId: string, allowed: string[], status: LgpdRequest['status'], patch: Partial<LgpdRequest>) {
