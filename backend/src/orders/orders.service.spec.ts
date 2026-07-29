@@ -6,6 +6,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
+import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-external-order.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 
 function queryBuilder(overrides: Record<string, jest.Mock> = {}) {
@@ -180,8 +181,16 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
 
   describe('remove', () => {
     /** `remove` passou a checar notas fiscais antes de apagar — precisa de dataSource. */
-    function dataSourceWithNotas(total: number) {
-      return { query: jest.fn().mockResolvedValue([{ total }]) } as any;
+    // `remove` roda em transação desde BACKLOG-0055: a contagem de notas, o soft
+    // delete do pedido e a cascata para `pedido_fotos` precisam ser atômicos.
+    // O manager devolve o mesmo repositório mockado, como faz o TypeORM real.
+    function dataSourceWithNotas(total: number, orderRepo: unknown = {}) {
+      const query = jest.fn().mockResolvedValue([{ total }]);
+      const manager = { query, getRepository: () => orderRepo };
+      return {
+        query,
+        transaction: (cb: (m: unknown) => unknown) => cb(manager),
+      } as any;
     }
 
     it('retorna 404 ao tentar apagar pedido de outro vendedor', async () => {
@@ -195,7 +204,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 0 }) });
       const lookupBuilder = queryBuilder({ getRawOne: jest.fn().mockResolvedValue(undefined) });
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
-      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(0));
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(0, orderRepo));
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
@@ -210,7 +219,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1 }) });
       const lookupBuilder = queryBuilder();
       const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
-      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(0));
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(0, orderRepo));
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, vendedorA)).resolves.toBeUndefined();
@@ -219,7 +228,7 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     it('bloqueia exclusão de pedido com nota fiscal ativa (nota/comissão órfã no caixa)', async () => {
       const updateBuilder = queryBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1 }) });
       const orderRepo = repoForWrite(updateBuilder, queryBuilder());
-      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(1));
+      const service = new OrdersService(orderRepo, {} as any, {} as any, dataSourceWithNotas(1, orderRepo));
       jest.spyOn(service, 'findOne').mockResolvedValue({ id: 1, uuid: orderUuid } as any);
 
       await expect(service.remove(orderUuid, 1, admin)).rejects.toBeInstanceOf(ConflictException);
@@ -321,5 +330,228 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
 
       expect(errors.map((error) => error.property)).toContain('status');
     });
+  });
+
+  describe('pedido externo', () => {
+    const externalUuid = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+
+    const externalDto = {
+      uuid: externalUuid,
+      cliente_uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      fornecedor_uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      numero_pedido_externo: 'PED-9911',
+      sistema_origem: 'Sistema do Fornecedor',
+      valor: 1500.5,
+    } as CreateExternalOrderDto;
+
+    /**
+     * `manager.query` atende dois usos na mesma transação: resolução de
+     * UUID→id (devolve `[{ id }]`) e o `nextval` da sequence (devolve
+     * `[{ numero }]`). Um objeto com as duas chaves serve aos dois.
+     */
+    function managerParaCreate(saved: Record<string, unknown>) {
+      return {
+        query: jest.fn().mockResolvedValue([{ id: 10, numero: 4321 }]),
+        create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
+        save: jest.fn(async (value: Record<string, unknown>) => Object.assign(value, saved)),
+      };
+    }
+
+    it('consome a MESMA sequence do pedido interno e grava os dois totais', async () => {
+      const manager = managerParaCreate({ uuid: externalUuid });
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+      const reloaded = { uuid: externalUuid, origem: 'externo' };
+      jest.spyOn(service, 'findOne').mockResolvedValue(reloaded as any);
+
+      await expect(service.createExternal(externalDto, admin)).resolves.toBe(reloaded);
+
+      expect(manager.query).toHaveBeenCalledWith(expect.stringContaining("nextval('pedidos_numero_seq')"));
+      // Os dois totais precisam sair preenchidos: é o que faz o pedido externo
+      // atravessar o faturamento (que lê `total_com_imposto ?? total_sem_imposto`).
+      expect(manager.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        origem: 'externo',
+        status: 'em_aberto',
+        numero_pedido: 4321,
+        numero_pedido_externo: 'PED-9911',
+        sistema_origem: 'Sistema do Fornecedor',
+        total_sem_imposto: '1500.50',
+        total_com_imposto: '1500.50',
+      }));
+    });
+
+    it('marca o pedido interno com origem `interno`', async () => {
+      const manager = Object.assign(managerParaCreate({ id: 1, uuid: orderUuid }), {
+        create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
+      });
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+      jest.spyOn(service, 'findOne').mockResolvedValue({ uuid: orderUuid } as any);
+
+      await service.create({
+        uuid: orderUuid,
+        cliente_uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+        fornecedor_uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+        itens: [{ uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', codigo_manual: 'X', qtd_caixas: 1, qtd_unitaria: 1, preco_unitario: 10 }],
+      } as any, admin);
+
+      expect(manager.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ origem: 'interno' }));
+    });
+
+    // Sem estas duas guardas o PUT do form errado destrói o pedido: o interno
+    // apagaria número de origem/sistema e zeraria os totais; o externo
+    // sobrescreveria os totais derivados dos itens.
+    it('PUT /pedidos/:uuid recusa (409) um pedido externo', async () => {
+      const order = { id: 1, uuid: externalUuid, tenant_id: 'tenant-a', version: 1, status: 'em_aberto', origem: 'externo', vendedor_id: null };
+      const orderRepo = { findOne: jest.fn().mockResolvedValue(order), save: jest.fn() };
+      const manager = {
+        getRepository: jest.fn().mockReturnValue(orderRepo),
+        query: jest.fn().mockResolvedValue([{ id: 10 }]),
+      };
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+
+      await expect(
+        service.update(externalUuid, { version: 1, itens: [] } as any, admin),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(orderRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('PUT /pedidos/externos/:uuid recusa (409) um pedido interno', async () => {
+      const order = { id: 1, uuid: orderUuid, tenant_id: 'tenant-a', version: 1, status: 'em_aberto', origem: 'interno', vendedor_id: null };
+      const orderRepo = { findOne: jest.fn().mockResolvedValue(order), save: jest.fn() };
+      const manager = {
+        getRepository: jest.fn().mockReturnValue(orderRepo),
+        query: jest.fn().mockResolvedValue([{ id: 10 }]),
+      };
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+
+      await expect(
+        service.updateExternal(orderUuid, { ...externalDto, version: 1 } as UpdateExternalOrderDto, admin),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(orderRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('bloqueia edição de pedido externo fora de em_aberto', async () => {
+      const order = { id: 1, uuid: externalUuid, tenant_id: 'tenant-a', version: 1, status: 'liberado', origem: 'externo', vendedor_id: null };
+      const orderRepo = { findOne: jest.fn().mockResolvedValue(order), save: jest.fn() };
+      const manager = {
+        getRepository: jest.fn().mockReturnValue(orderRepo),
+        query: jest.fn().mockResolvedValue([{ id: 10 }]),
+      };
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+
+      await expect(
+        service.updateExternal(externalUuid, { ...externalDto, version: 1 } as UpdateExternalOrderDto, admin),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    describe('DTO', () => {
+      const pipeOptions = { whitelist: true, forbidNonWhitelisted: true };
+
+      it('aceita o corpo válido', async () => {
+        const errors = await validate(plainToInstance(CreateExternalOrderDto, externalDto), pipeOptions);
+        expect(errors).toEqual([]);
+      });
+
+      it('rejeita `status`, `origem`, `itens` e totais no corpo', async () => {
+        const dto = plainToInstance(CreateExternalOrderDto, {
+          ...externalDto,
+          status: 'liberado',
+          origem: 'interno',
+          itens: [],
+          total_com_imposto: '1.00',
+        });
+        const errors = await validate(dto, pipeOptions);
+        const rejeitados = errors.map((error) => error.property);
+
+        expect(rejeitados).toEqual(expect.arrayContaining(['status', 'origem', 'itens', 'total_com_imposto']));
+      });
+
+      it('exige número de origem, sistema e valor positivo', async () => {
+        const dto = plainToInstance(CreateExternalOrderDto, {
+          uuid: externalUuid,
+          cliente_uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          fornecedor_uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          valor: 0,
+        });
+        const errors = await validate(dto, pipeOptions);
+
+        expect(errors.map((error) => error.property)).toEqual(
+          expect.arrayContaining(['numero_pedido_externo', 'sistema_origem', 'valor']),
+        );
+      });
+    });
+  });
+});
+
+/**
+ * BACKLOG-0055: as FKs são `NO ACTION` e `optimisticSoftDelete` marca UMA linha.
+ * Sem a cascata, `pedido_fotos` ficava com `deleted_at IS NULL` depois de o
+ * pedido ser excluído, e só sumia da tela porque cada query lembra do filtro.
+ */
+describe('OrdersService.remove — cascata de soft delete', () => {
+  const orderUuid2 = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+  function subject(affected: number) {
+    const updateBuilder = queryBuilder({
+      execute: jest.fn().mockResolvedValue({ affected }),
+    });
+    const lookupBuilder = queryBuilder({ getRawOne: jest.fn().mockResolvedValue(undefined) });
+    const orderRepo = repoForWrite(updateBuilder, lookupBuilder);
+
+    const query = jest.fn().mockResolvedValue([{ total: 0 }]);
+    const manager = { query, getRepository: () => orderRepo };
+    const transaction = jest.fn((cb: (m: unknown) => unknown) => cb(manager));
+
+    const service = new OrdersService(orderRepo, {} as any, {} as any, { query, transaction } as any);
+    jest.spyOn(service, 'findOne').mockResolvedValue({ id: 7, uuid: orderUuid2 } as any);
+
+    return { service, query, transaction };
+  }
+
+  const fotosUpdate = (query: jest.Mock) => query.mock.calls
+    .find(([sql]) => String(sql).includes('UPDATE pedido_fotos'));
+
+  it('marca as fotos do pedido junto com o pedido', async () => {
+    const { service, query } = subject(1);
+
+    await service.remove(orderUuid2, 1, admin);
+
+    const chamada = fotosUpdate(query);
+    expect(chamada).toBeDefined();
+    expect(chamada?.[0]).toContain('deleted_at = CURRENT_TIMESTAMP');
+    expect(chamada?.[0]).toContain('version = version + 1');
+    // Sem `deleted_at IS NULL` a cascata re-marcaria foto já apagada, inflando
+    // `version` e disparando conflito no próximo push do mobile.
+    expect(chamada?.[0]).toContain('deleted_at IS NULL');
+    expect(chamada?.[1]).toEqual([admin.tenantId, 7]);
+  });
+
+  it('roda tudo na mesma transação', async () => {
+    const { service, transaction } = subject(1);
+
+    await service.remove(orderUuid2, 1, admin);
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  // Conflito de `version` no pai aborta a transação: a exceção propaga antes do
+  // UPDATE das fotos, então elas não ficam marcadas sem o pedido.
+  it('não marca as fotos quando o soft delete do pedido falha', async () => {
+    const { service, query } = subject(0);
+
+    await expect(service.remove(orderUuid2, 1, admin)).rejects.toBeInstanceOf(NotFoundException);
+    expect(fotosUpdate(query)).toBeUndefined();
+  });
+
+  it('não marca as fotos quando há nota fiscal ativa', async () => {
+    const { service, query } = subject(1);
+    query.mockResolvedValue([{ total: 1 }]);
+
+    await expect(service.remove(orderUuid2, 1, admin)).rejects.toBeInstanceOf(ConflictException);
+    expect(fotosUpdate(query)).toBeUndefined();
   });
 });

@@ -4,6 +4,7 @@ import {
 import { IsString } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
+import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-external-order.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
@@ -29,15 +30,38 @@ export class OrdersController {
     return this.ordersService.create(dto, user);
   }
 
+  /**
+   * Pedido externo (digitado em sistema de terceiro). Rota separada porque a
+   * forma do corpo é outra — sem itens, com número de origem, sistema e valor.
+   * Todo o resto do ciclo (liberar, faturar, cancelar, excluir) usa as mesmas
+   * rotas do pedido interno.
+   */
+  @Post('externos')
+  @RequirePermission('pedidos.criar')
+  async createExternal(@Body() dto: CreateExternalOrderDto, @CurrentUser() user: RequestUser) {
+    return this.ordersService.createExternal(dto, user);
+  }
+
+  @Put('externos/:uuid')
+  @RequirePermission('pedidos.editar')
+  async updateExternal(
+    @Param('uuid') uuid: string,
+    @Body() dto: UpdateExternalOrderDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.ordersService.updateExternal(uuid, dto, user);
+  }
+
   @Get()
   @RequirePermission('pedidos.ver')
   async findAll(
     @Query() pagination: PaginationDto,
     @Query('status') status: string,
     @Query('search') search: string,
+    @Query('origem') origem: string,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.ordersService.findAll(user.tenantId, pagination, user, status, search);
+    return this.ordersService.findAll(user.tenantId, pagination, user, status, search, origem);
   }
 
   @Get(':uuid')

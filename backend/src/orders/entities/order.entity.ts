@@ -18,7 +18,26 @@ import { User } from '../../users/entities/user.entity';
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'status'])
 @Index(['tenant_id', 'data'])
+@Index(['tenant_id', 'origem'])
 export class Order extends VersionedBaseEntity {
+  /**
+   * 'interno' (pedido digitado aqui, com itens) | 'externo' (pedido digitado
+   * em sistema de terceiro, sem itens — só número de origem, sistema e valor).
+   * CHECK (pedidos_origem_check + pedidos_origem_externa_check, migration 0033)
+   * garante a forma de cada origem no banco, não só no DTO.
+   * Nunca vem do corpo da requisição: é derivado do endpoint usado.
+   */
+  @Column({ name: 'origem', type: 'varchar', default: 'interno' })
+  origem: string;
+
+  /** Número do pedido no sistema de origem. Só em `origem = 'externo'`. */
+  @Column({ name: 'numero_pedido_externo', type: 'varchar', nullable: true })
+  numero_pedido_externo: string | null;
+
+  /** Nome do sistema onde o pedido foi digitado. Só em `origem = 'externo'`. */
+  @Column({ name: 'sistema_origem', type: 'varchar', nullable: true })
+  sistema_origem: string | null;
+
   /**
    * Gerado EXCLUSIVAMENTE pelo servidor via nextval('pedidos_numero_seq').
    * NULL enquanto o pedido não foi sincronizado (criado offline no mobile).
