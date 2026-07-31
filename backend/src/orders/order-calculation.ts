@@ -38,10 +38,21 @@ export function calculateOrderItem(input: OrderCalculationInput): OrderItemCalcu
   const ipi = percentage(input.ipi_perc);
 
   const totalQuantity = quantity(boxes.mul(unitsPerBox));
-  const discountedValue = money(unitPrice.mul(new Decimal(1).minus(discount.div(100))));
-  const taxedValue = money(discountedValue.mul(new Decimal(1).plus(ipi.div(100))));
-  const totalWithoutTax = money(totalQuantity.mul(discountedValue));
-  const totalWithTax = money(totalQuantity.mul(taxedValue));
+
+  // BACKLOG-0065: o arredondamento acontece no TOTAL DA LINHA, não no unitário.
+  // Os unitários intermediários ficam em precisão cheia; arredondá-los antes de
+  // multiplicar inflava a linha (4 × 25,50 com −10% e +10% dava 101,00 em vez de
+  // 100,98) e fazia o `ipi_total` do papel não bater com o percentual sobre a
+  // base. Consequência aceita: `total_item` não é mais exatamente
+  // `qtd_total × valor_com_desconto` quando o unitário não é exato.
+  const discountedRaw = unitPrice.mul(new Decimal(1).minus(discount.div(100)));
+  const taxedRaw = discountedRaw.mul(new Decimal(1).plus(ipi.div(100)));
+  const totalWithoutTax = money(totalQuantity.mul(discountedRaw));
+  const totalWithTax = money(totalQuantity.mul(taxedRaw));
+
+  // Campos de LEITURA: exibidos na tela e no papel, nunca reusados na aritmética.
+  const discountedValue = money(discountedRaw);
+  const taxedValue = money(taxedRaw);
 
   return {
     qtd_caixas: boxes.toFixed(3),
