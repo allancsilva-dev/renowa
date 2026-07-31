@@ -58,7 +58,7 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
   { tabela: 'transportadoras', nome: 'transportadoras_version_check', validado: true, expressao: 'version > 0', origem: '0009' },
   { tabela: 'itens_pedido', nome: 'itens_pedido_version_check', validado: true, expressao: 'version > 0', origem: '0009' },
   { tabela: 'notas_fiscais', nome: 'notas_fiscais_version_check', validado: true, expressao: 'version > 0', origem: '0028' },
-  { tabela: 'pedido_fotos', nome: 'pedido_fotos_version_check', validado: true, expressao: 'version > 0', origem: '0034' },
+  { tabela: 'produto_fotos', nome: 'produto_fotos_version_check', validado: true, expressao: 'version > 0', origem: '0040' },
   { tabela: 'chamados_sac', nome: 'chamados_sac_version_check', validado: true, expressao: 'version > 0', origem: '0035' },
   { tabela: 'itens_chamado_sac', nome: 'itens_chamado_sac_version_check', validado: true, expressao: 'version > 0', origem: '0035' },
 
@@ -137,42 +137,43 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
     origem: '0033+0037',
   },
 
-  // Fotos do pedido: formato, tamanho e coerência do destino de storage.
-  // Tabela nova e vazia — todos criados já validados.
+  // Foto do produto: formato, tamanho e coerência do destino de storage.
+  // Tabela nova e vazia — todos criados já validados. Substituíram os mesmos
+  // CHECKs de `pedido_fotos` (0034/0037), tabela dropada na 0040.
   {
-    tabela: 'pedido_fotos',
-    nome: 'pedido_fotos_mime_type_check',
+    tabela: 'produto_fotos',
+    nome: 'produto_fotos_mime_type_check',
     validado: true,
     expressao: "mime_type = ANY (ARRAY['image/jpeg','image/png','image/webp'])",
-    origem: '0034',
+    origem: '0040',
   },
   {
-    tabela: 'pedido_fotos',
-    nome: 'pedido_fotos_tamanho_bytes_check',
+    tabela: 'produto_fotos',
+    nome: 'produto_fotos_tamanho_bytes_check',
     validado: true,
     expressao: 'tamanho_bytes > 0 AND tamanho_bytes <= 3145728',
-    origem: '0034',
+    origem: '0040',
   },
   {
-    tabela: 'pedido_fotos',
-    nome: 'pedido_fotos_storage_backend_check',
+    tabela: 'produto_fotos',
+    nome: 'produto_fotos_storage_backend_check',
     validado: true,
-    // 'purgado' entrou na 0037: é o estado de uma foto cujo conteúdo o ERASURE
-    // apagou. A linha fica como prova de que houve anexo, sem o binário.
+    // 'purgado' é o estado de uma foto cujo conteúdo foi apagado — trocar ou
+    // remover a foto zera os bytes. A linha fica como prova de que houve anexo.
     expressao: "storage_backend = ANY (ARRAY['db','r2','purgado'])",
-    origem: '0034+0037',
+    origem: '0040',
   },
   // Sem este, uma linha 'db' sem `conteudo` vira foto fantasma: aparece na
-  // listagem e só falha na hora de montar o PDF.
+  // tela e só falha na hora de montar o PDF.
   {
-    tabela: 'pedido_fotos',
-    nome: 'pedido_fotos_storage_check',
+    tabela: 'produto_fotos',
+    nome: 'produto_fotos_storage_check',
     validado: true,
     expressao:
       "storage_backend = 'db' AND conteudo IS NOT NULL AND storage_key IS NULL"
       + " OR storage_backend = 'r2' AND storage_key IS NOT NULL AND conteudo IS NULL"
       + " OR storage_backend = 'purgado' AND conteudo IS NULL AND storage_key IS NULL",
-    origem: '0034+0037',
+    origem: '0040',
   },
 
   // SAC: ciclo de vida do chamado e sanidade dos valores das linhas.
@@ -196,6 +197,13 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
     validado: true,
     expressao: 'valor_unitario >= 0',
     origem: '0035',
+  },
+  {
+    tabela: 'sac_numero_contador',
+    nome: 'sac_numero_contador_ultimo_check',
+    validado: true,
+    expressao: 'ultimo >= 0',
+    origem: '0038',
   },
 ];
 
@@ -249,6 +257,20 @@ const INDICES_PARCIAIS_ESPERADOS: IndiceParcialEsperado[] = [
     regra: 'numero de chamado SAC unico por tenant (soft delete libera o numero)',
     origem: '0035',
   },
+  {
+    tabela: 'pedidos',
+    colunas: ['tenant_id', 'fornecedor_id', 'numero_pedido_externo'],
+    predicado: "origem = 'externo' AND deleted_at IS NULL",
+    regra: 'pedido externo nao se repete no mesmo fornecedor (soft delete libera o numero)',
+    origem: '0038',
+  },
+  {
+    tabela: 'produto_fotos',
+    colunas: ['tenant_id', 'produto_id'],
+    predicado: 'deleted_at IS NULL',
+    regra: 'uma foto ativa por produto do catalogo (soft delete libera a vaga)',
+    origem: '0040',
+  },
 ];
 
 /** Tabelas declaradas por migrations já marcadas como aplicadas. */
@@ -266,12 +288,13 @@ const TABELAS_ESPERADAS = [
   'mobile_sessions',
   'notas_fiscais',
   'parceiros_comerciais',
-  'pedido_fotos',
   'pedidos',
   'permissions',
   'pii_audit_events',
+  'produto_fotos',
   'produtos',
   'refresh_tokens',
+  'sac_numero_contador',
   'schema_migrations',
   'tenant_role_permissions',
   'tenant_roles',
@@ -287,6 +310,44 @@ const FUNCOES_ESPERADAS = [
   'set_updated_at', // 0020 — autoridade de updated_at
   'capture_sync_outbox', // 0008
   'drain_sync_outbox', // 0008
+];
+
+/**
+ * Sequences que não pertencem a nenhuma coluna `serial` — ninguém as recria por
+ * acidente e nada as declara em entidade.
+ *
+ * `sync_change_revision_seq` estava entre os objetos que PROB-0061 contou como
+ * ausentes no banco de dev enquanto `schema_migrations` dizia que `0008` tinha
+ * sido aplicada. Sem ela, `sync_changes.revision` não tem default e o pull do
+ * mobile quebra na primeira drenagem.
+ */
+const SEQUENCES_ESPERADAS = [
+  'sync_change_revision_seq', // 0008
+  'pedidos_numero_seq', // numeração de pedido; sem ela, criar pedido falha
+];
+
+/**
+ * Tabelas que a `0008` cobre com `trg_<tabela>_sync_outbox`.
+ *
+ * Ponto cego real até aqui: a seção de triggers só olhava `set_updated_at`, e
+ * `CREATE OR REPLACE FUNCTION` restaura a FUNÇÃO sem restaurar os TRIGGERS. Um
+ * banco podia ter `capture_sync_outbox()` viva e nenhum trigger chamando-a —
+ * push/pull do mobile silenciosamente parado, com `db:verify` passando limpo.
+ */
+const TABELAS_COM_TRIGGER_OUTBOX = [
+  'clientes', 'produtos', 'fornecedores', 'transportadoras', 'pedidos', 'itens_pedido',
+];
+
+/**
+ * Tabelas que a `0009` põe sob concorrência otimista.
+ *
+ * Os CHECKs `<tabela>_version_check` já são conferidos na seção [2/7], mas
+ * `ADD COLUMN IF NOT EXISTS ... CHECK` pula a cláusula inteira quando a coluna
+ * existe: tabela com `version` e sem CHECK não é reparada por reexecutar a
+ * migration. Conferir coluna e CHECK separadamente distingue os dois casos.
+ */
+const TABELAS_COM_VERSION = [
+  'clientes', 'produtos', 'fornecedores', 'transportadoras', 'pedidos', 'itens_pedido',
 ];
 
 /**
@@ -309,7 +370,7 @@ function normalizar(expressao: string): string {
  * apenas não ser alvo hoje. "Ninguém referencia ainda" não isenta — é
  * exatamente o caso que o invariante existe para cobrir.
  *
- * Isenção sem justificativa escrita não entra. A seção [6/6] também reprova
+ * Isenção sem justificativa escrita não entra. A seção [7/7] também reprova
  * isenção obsoleta, para a lista não virar depósito.
  */
 const ISENTAS_DE_UNIQUE_TENANT_ID: Record<string, string> = {
@@ -354,7 +415,7 @@ async function main(): Promise<number> {
     );
     const tabelasPresentes = new Set(tabelas.rows.map((linha) => linha.tablename));
 
-    console.log('\n[1/6] Tabelas');
+    console.log('\n[1/7] Tabelas');
     for (const tabela of TABELAS_ESPERADAS) {
       if (!tabelasPresentes.has(tabela)) {
         console.log(`  FALTANDO  ${tabela}`);
@@ -381,7 +442,7 @@ async function main(): Promise<number> {
     `);
     const checksPresentes = new Map(checks.rows.map((linha) => [`${linha.tabela}.${linha.nome}`, linha]));
 
-    console.log('\n[2/6] CHECK constraints');
+    console.log('\n[2/7] CHECK constraints');
     let checksOk = 0;
     for (const esperado of CHECKS_ESPERADOS) {
       const chave = `${esperado.tabela}.${esperado.nome}`;
@@ -436,7 +497,7 @@ async function main(): Promise<number> {
       WHERE ns.nspname = 'public' AND ix.indisunique AND ix.indpred IS NOT NULL
     `);
 
-    console.log('\n[3/6] Índices únicos parciais (unicidade de negócio por tenant)');
+    console.log('\n[3/7] Índices únicos parciais (unicidade de negócio por tenant)');
     let indicesOk = 0;
     for (const esperado of INDICES_PARCIAIS_ESPERADOS) {
       const candidatos = indices.rows.filter(
@@ -502,7 +563,7 @@ async function main(): Promise<number> {
       ORDER BY table_name
     `);
 
-    console.log('\n[4/6] Funções e triggers de updated_at');
+    console.log('\n[4/7] Funções e triggers de updated_at');
     for (const funcao of FUNCOES_ESPERADAS) {
       if (!funcoesPresentes.has(funcao)) {
         console.log(`  FALTANDO    função public.${funcao}()`);
@@ -520,6 +581,71 @@ async function main(): Promise<number> {
       triggersOk += 1;
     }
     console.log(`  ${triggersOk}/${comUpdatedAt.rowCount ?? 0} tabelas com updated_at protegidas por trigger`);
+
+    // ── Infra de sync (0008/0009) ────────────────────────────────────────────
+    /**
+     * PROB-0061: `0008` e `0009` constavam aplicadas em `schema_migrations` e
+     * seus objetos não existiam no banco. As TABELAS e as FUNÇÕES daquele
+     * conjunto já eram conferidas acima; a SEQUENCE, os TRIGGERS e a coluna
+     * `version` não eram — e são justamente objetos que somem sem levar junto
+     * nada que as outras seções observem. `schema_migrations` não é evidência;
+     * o catálogo do Postgres é.
+     */
+    const sequences = await client.query<{ relname: string }>(
+      `SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'S'`,
+    );
+    const sequencesPresentes = new Set(sequences.rows.map((linha) => linha.relname));
+
+    const triggersOutbox = await client.query<{ tabela: string }>(`
+      SELECT rel.relname AS tabela
+      FROM pg_trigger t
+      JOIN pg_class rel ON rel.oid = t.tgrelid
+      JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+      JOIN pg_proc p ON p.oid = t.tgfoid
+      WHERE ns.nspname = 'public' AND NOT t.tgisinternal AND p.proname = 'capture_sync_outbox'
+    `);
+    const tabelasComOutbox = new Set(triggersOutbox.rows.map((linha) => linha.tabela));
+
+    const colunasVersion = await client.query<{ table_name: string }>(`
+      SELECT table_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'version'
+    `);
+    const tabelasComVersion = new Set(colunasVersion.rows.map((linha) => linha.table_name));
+
+    console.log('\n[5/7] Infra de sync (sequence, triggers de outbox, coluna version)');
+    let syncOk = 0;
+    const syncTotal = SEQUENCES_ESPERADAS.length
+      + TABELAS_COM_TRIGGER_OUTBOX.length
+      + TABELAS_COM_VERSION.length;
+
+    for (const sequence of SEQUENCES_ESPERADAS) {
+      if (!sequencesPresentes.has(sequence)) {
+        console.log(`  FALTANDO    sequence public.${sequence}`);
+        problemas.push({ categoria: 'sequence', detalhe: sequence });
+        continue;
+      }
+      syncOk += 1;
+    }
+
+    for (const tabela of TABELAS_COM_TRIGGER_OUTBOX) {
+      if (!tabelasComOutbox.has(tabela)) {
+        console.log(`  FALTANDO    trigger capture_sync_outbox em ${tabela}  (migration 0008)`);
+        problemas.push({ categoria: 'trigger outbox', detalhe: tabela });
+        continue;
+      }
+      syncOk += 1;
+    }
+
+    for (const tabela of TABELAS_COM_VERSION) {
+      if (!tabelasComVersion.has(tabela)) {
+        console.log(`  FALTANDO    coluna ${tabela}.version  (migration 0009)`);
+        problemas.push({ categoria: 'coluna version', detalhe: tabela });
+        continue;
+      }
+      syncOk += 1;
+    }
+    console.log(`  ${syncOk}/${syncTotal} objetos de sync presentes`);
 
     // ── FKs que furam o isolamento de tenant ─────────────────────────────────
     /**
@@ -549,7 +675,7 @@ async function main(): Promise<number> {
       ORDER BY 2, 1
     `);
 
-    console.log('\n[5/6] FKs para tabela de tenant sem tenant_id na chave');
+    console.log('\n[6/7] FKs para tabela de tenant sem tenant_id na chave');
     for (const linha of fksSemTenant.rows) {
       console.log(`  CROSS-TENANT  ${linha.origem} -> ${linha.alvo}  (${linha.nome})`);
       problemas.push({ categoria: 'fk sem isolamento de tenant', detalhe: linha.nome });
@@ -562,7 +688,7 @@ async function main(): Promise<number> {
      * O PostgreSQL recusa a FK sem índice único no alvo (42830), então esta seção
      * não protege contra FK inválida — protege contra o ATALHO: sem o índice,
      * criar a FK correta exige uma migration extra numa tabela grande, e a saída
-     * fácil é referenciar só `id`, que é o que a seção [5/6] pega.
+     * fácil é referenciar só `id`, que é o que a seção [6/7] pega.
      * Ver PROB-0073 / BACKLOG-0052 / migration 0036.
      *
      * Três predicados da subquery são não-óbvios e nenhum é dispensável:
@@ -600,7 +726,7 @@ async function main(): Promise<number> {
       ORDER BY 1
     `);
 
-    console.log('\n[6/6] UNIQUE(tenant_id, id) — prontidão para FK composta de tenant');
+    console.log('\n[7/7] UNIQUE(tenant_id, id) — prontidão para FK composta de tenant');
     let semIndice = 0;
     for (const linha of semUniqueTenantId.rows) {
       if (linha.tabela in ISENTAS_DE_UNIQUE_TENANT_ID) {
