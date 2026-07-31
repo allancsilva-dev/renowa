@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SyncEntity } from './dto/sync.dto';
+import { OrdersSyncWriter } from './writers/orders-sync.writer';
 import { SyncService } from './sync.service';
 
 describe('SyncService v2 change feed', () => {
@@ -9,7 +10,7 @@ describe('SyncService v2 change feed', () => {
     const query = jest.fn().mockImplementation(() => Promise.resolve(results.shift()));
     const manager = { query };
     const dataSource = { transaction: jest.fn(async (work) => work(manager)) };
-    return { service: new SyncService(dataSource as never), query, dataSource };
+    return { service: new SyncService(dataSource as never, new OrdersSyncWriter()), query, dataSource };
   }
 
   it('drains committed outbox before capturing high watermark', async () => {
@@ -49,7 +50,7 @@ describe('SyncService v2 change feed', () => {
   it('does not return a cursor when page query fails', async () => {
     const manager = { query: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ value: '5' }]).mockRejectedValueOnce(new Error('pull failed')) };
     const dataSource = { transaction: (work: (value: typeof manager) => unknown) => work(manager) };
-    const service = new SyncService(dataSource as never);
+    const service = new SyncService(dataSource as never, new OrdersSyncWriter());
     await expect(service.pullEntityV2(SyncEntity.CLIENTES, { cursor: '2', limit: 2 }, 'tenant-a')).rejects.toThrow('pull failed');
   });
 });

@@ -49,6 +49,40 @@ describe('GlobalExceptionFilter', () => {
     expect(JSON.stringify(json.mock.calls)).not.toContain('database details');
   });
 
+  // Sem este ramo, um uuid repetido (duplo clique, retry de rede) que escapa da
+  // guarda de aplicação vira 500 — erro de banco vazando como falha do servidor.
+  it.each([
+    ['embrulhado pelo TypeORM', Object.assign(new Error('duplicate key value'), {
+      driverError: { code: '23505', detail: 'Key (uuid)=(abc) already exists.' },
+    })],
+    ['cru do driver', Object.assign(new Error('duplicate key value'), { code: '23505' })],
+  ])('mapeia unique_violation %s para 409', (_caso, exception) => {
+    const { host, status, json } = createHost('/pedidos');
+
+    new GlobalExceptionFilter().catch(exception, host);
+
+    expect(status).toHaveBeenCalledWith(409);
+    expect(json).toHaveBeenCalledWith({
+      error: expect.objectContaining({
+        code: 'CONFLICT',
+        message: 'Registro duplicado: já existe um cadastro com estes dados.',
+      }),
+    });
+    // Nome de constraint e valores ficam no log, não na resposta.
+    expect(JSON.stringify(json.mock.calls)).not.toContain('Key (uuid)');
+  });
+
+  it('não confunde outro erro de banco com duplicidade', () => {
+    const { host, status } = createHost('/pedidos');
+
+    new GlobalExceptionFilter().catch(
+      Object.assign(new Error('violates foreign key constraint'), { driverError: { code: '23503' } }),
+      host,
+    );
+
+    expect(status).toHaveBeenCalledWith(500);
+  });
+
   it('preserves optimistic concurrency metadata', () => {
     const json = jest.fn();
     const status = jest.fn().mockReturnValue({ json });

@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { DataSource, QueryRunner } from 'typeorm';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { DataSource, EntityManager, QueryRunner } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import {
@@ -12,6 +12,7 @@ import {
   SyncItemV2Dto,
 } from './dto/sync.dto';
 import { getSyncEntityPolicy, SyncEntityPolicy } from './sync-entity-policy';
+import { OrdersSyncWriter } from './writers/orders-sync.writer';
 
 export interface SyncItemResult {
   uuid: string;
@@ -39,9 +40,12 @@ export interface SyncItemResult {
  */
 @Injectable()
 export class SyncService {
+  private readonly logger = new Logger(SyncService.name);
+
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly ordersWriter: OrdersSyncWriter,
   ) {}
 
   async pushItemsV2(dto: SyncPushV2Dto, tenantId: string): Promise<{
@@ -85,13 +89,19 @@ export class SyncService {
       } catch (error) {
         if (!(error instanceof BadRequestException) && !this.isPermanentMutationError(error)) throw error;
         await qr.query('ROLLBACK TO SAVEPOINT sync_item_v2');
+        const message = error instanceof BadRequestException
+          ? error.message
+          : 'Mutação rejeitada pelo banco';
+        // Fora do rollback do SAVEPOINT: item recusado tem que deixar rastro,
+        // senão um device em loop de retry é invisível até alguém reclamar.
+        this.logarRecusa(tenantId, item.entity, item.operation, item.uuid, message, deviceId);
         result = {
           operation_id: item.operation_id,
           uuid: item.uuid,
           status: 'rejected',
           code: 'VALIDATION_FAILED',
           retryable: false,
-          message: error instanceof BadRequestException ? error.message : 'Mutação rejeitada pelo banco',
+          message,
         };
       }
 
@@ -134,10 +144,10 @@ export class SyncService {
       [item.uuid, tenantId],
     );
 
-    // Com a linha em mãos: a forma do pedido depende de `origem`, que só existe
-    // no banco. Em CREATE `existing` é vazio e nada aqui dispara. Ver PROB-0074.
-    this.assertCamposDaForma(item.entity, item.payload, policy, existing[0]);
-    this.assertOrigemEditavel(item.entity, item.operation, existing[0]);
+    // Item de pedido tem porta própria — mesma do v1, mesma da web.
+    if (item.entity === SyncEntity.ITENS_PEDIDO) {
+      return this.applyItemDePedidoV2(qr, item, existing[0], tenantId);
+    }
 
     if (item.operation === SyncOperation.CREATE) {
       if (existing.length > 0) {
@@ -170,12 +180,21 @@ export class SyncService {
 
     let changed: Array<{ version: number }> = [];
     if (item.operation === SyncOperation.DELETE) {
+      // Guardas de negócio ANTES do UPDATE otimista: sem elas o sync exclui
+      // pedido com nota fiscal ativa, deixando nota e comissão vivas e o
+      // faturamento sem o pedido dono (PROB-0063 pela porta do sync).
+      if (item.entity === SyncEntity.PEDIDOS) {
+        await this.ordersWriter.assertPedidoRemovivel(qr.manager, item.uuid, tenantId);
+      }
       changed = await qr.query(
         `UPDATE ${table} SET deleted_at = NOW(), version = version + 1
           WHERE uuid = $1 AND tenant_id = $2 AND version = $3 RETURNING version`,
         [item.uuid, tenantId, item.base_version],
       );
     } else {
+      if (item.entity === SyncEntity.PEDIDOS) {
+        await this.ordersWriter.assertPedidoEditavel(qr.manager, item.uuid, tenantId);
+      }
       const record = await this.buildWritableRecord(qr, item.entity, item.payload, tenantId, policy);
       const columns = Object.keys(record);
       if (columns.length > 0) {
@@ -206,6 +225,96 @@ export class SyncService {
       code: 'VERSION_CONFLICT', retryable: false,
       version: current[0]?.version == null ? undefined : Number(current[0].version),
     };
+  }
+
+  /**
+   * Item de pedido no v2: concorrência otimista do protocolo (base_version)
+   * combinada com a porta de escrita de pedido.
+   *
+   * A versão é conferida ANTES de escrever, porque a escrita em si passa pelo
+   * repositório (para derivar e recalcular) e não por um UPDATE condicional
+   * único. A leitura do pai em `loadOrderForWrite` é `FOR UPDATE`, o que
+   * serializa dois devices no mesmo pedido — a janela entre conferir e gravar
+   * fica dentro do lock.
+   */
+  private async applyItemDePedidoV2(
+    qr: QueryRunner,
+    item: SyncItemV2Dto,
+    existing: { id: number; version: number } | undefined,
+    tenantId: string,
+  ): Promise<SyncItemV2Result> {
+    const base = {
+      operation_id: item.operation_id, uuid: item.uuid, retryable: false as const,
+    };
+
+    if (item.operation === SyncOperation.CREATE) {
+      if (existing) {
+        return { ...base, status: 'duplicate', code: 'ALREADY_EXISTS', version: Number(existing.version) };
+      }
+      const { id } = await this.ordersWriter.writeItem(
+        qr.manager, item.operation, item.uuid, item.payload, tenantId,
+      );
+      return { ...base, status: 'applied', code: 'APPLIED', version: 1, id } as SyncItemV2Result;
+    }
+
+    if (!item.base_version) {
+      throw new BadRequestException('base_version é obrigatório para UPDATE e DELETE');
+    }
+    if (!existing) {
+      return { ...base, status: 'conflict', code: 'NOT_FOUND' };
+    }
+    if (Number(existing.version) !== item.base_version) {
+      return {
+        ...base, status: 'conflict', code: 'VERSION_CONFLICT', version: Number(existing.version),
+      };
+    }
+
+    if (item.operation === SyncOperation.DELETE) {
+      await this.ordersWriter.deleteItem(qr.manager, item.uuid, tenantId);
+    } else {
+      await this.ordersWriter.writeItem(
+        qr.manager, item.operation, item.uuid, item.payload, tenantId,
+      );
+    }
+
+    const atual = await qr.query(
+      `SELECT version FROM itens_pedido WHERE uuid = $1 AND tenant_id = $2`,
+      [item.uuid, tenantId],
+    ) as Array<{ version: number }>;
+
+    return {
+      ...base, status: 'applied', code: 'APPLIED',
+      version: atual[0]?.version == null ? undefined : Number(atual[0].version),
+    };
+  }
+
+  /**
+   * Recusa de item vira evento estruturado, no mesmo formato de
+   * `sync_authorization_denied` (`sync-authorization.service.ts`).
+   *
+   * É a única forma de enxergar um cliente antigo, compilado fora desta árvore,
+   * que ainda mande `status` ou `total_item`: o cliente v1 desta árvore nunca
+   * descarta item recusado da fila (`incrementRetry` sem teto para erro de
+   * negócio), então ele tentaria para sempre em silêncio. Com o log, isso vira
+   * uma taxa observável por device.
+   */
+  private logarRecusa(
+    tenantId: string,
+    entity: SyncEntity,
+    operation: SyncOperation | string,
+    uuid: string,
+    message: string,
+    deviceId?: string,
+  ): void {
+    this.logger.warn(JSON.stringify({
+      event: 'sync_write_rejected',
+      tenantId,
+      deviceId,
+      entity,
+      operation,
+      uuid,
+      message,
+    }));
   }
 
   private isPermanentMutationError(error: unknown): boolean {
@@ -254,11 +363,9 @@ export class SyncService {
         results.push({ uuid: item.uuid, status: 'ok', ...result });
       } catch (err) {
         await qr.rollbackTransaction();
-        results.push({
-          uuid: item.uuid,
-          status: 'error',
-          message: err instanceof Error ? err.message : 'Erro desconhecido',
-        });
+        const message = err instanceof Error ? err.message : 'Erro desconhecido';
+        this.logarRecusa(tenantId, item.entity, item.operation, item.uuid, message);
+        results.push({ uuid: item.uuid, status: 'error', message });
       } finally {
         await qr.release();
       }
@@ -278,26 +385,36 @@ export class SyncService {
 
     this.validatePayload(entity, operation, payload, policy);
 
+    // Item de pedido tem porta própria: derivação, guarda de estado do pai e
+    // recálculo do cabeçalho na mesma transação (PROB-0065).
+    if (entity === SyncEntity.ITENS_PEDIDO) {
+      return this.applyItemDePedido(qr.manager, operation, uuid, payload, tenantId);
+    }
+
     // ── DELETE ──────────────────────────────────────────────
     if (operation === 'DELETE') {
+      // Pedido não é deletável pelo sync sem passar pelas mesmas guardas da web:
+      // o DELETE do v1 nem lia a linha, então nenhuma delas rodava.
+      if (entity === SyncEntity.PEDIDOS) {
+        await this.ordersWriter.assertPedidoRemovivel(qr.manager, uuid, tenantId);
+      }
       await qr.query(
-        `UPDATE ${this.quoteIdentifier(table)} SET deleted_at = NOW() WHERE uuid = $1 AND tenant_id = $2`,
+        `UPDATE ${this.quoteIdentifier(table)} SET deleted_at = NOW(), version = version + 1
+          WHERE uuid = $1 AND tenant_id = $2`,
         [uuid, tenantId],
       );
       return {};
     }
 
     // ── Idempotência: verificar se já existe ─────────────────
-    // `origem` e `status` entram na projeção porque a allowlist de `pedidos` e o
-    // gate de edição derivam da linha, não do payload (PROB-0074).
     const existing = await qr.query(
-      `SELECT id, updated_at${entity === SyncEntity.PEDIDOS ? ', numero_pedido, origem, status' : ''} FROM ${this.quoteIdentifier(table)} WHERE uuid = $1 AND tenant_id = $2`,
+      `SELECT id, updated_at${entity === SyncEntity.PEDIDOS ? ', numero_pedido' : ''} FROM ${this.quoteIdentifier(table)} WHERE uuid = $1 AND tenant_id = $2`,
       [uuid, tenantId],
     );
 
-    // Mesma segunda passada do v2.
-    this.assertCamposDaForma(entity, payload, policy, existing[0]);
-    this.assertOrigemEditavel(entity, operation, existing[0]);
+    if (entity === SyncEntity.PEDIDOS && operation === 'UPDATE' && existing.length > 0) {
+      await this.ordersWriter.assertPedidoEditavel(qr.manager, uuid, tenantId);
+    }
 
     if (existing.length > 0 && operation === 'CREATE') {
       // Idempotência — registro já existe, retornar sem duplicar
@@ -337,6 +454,28 @@ export class SyncService {
     return { id, numero_pedido };
   }
 
+  /**
+   * Ponte do v1 para a porta de pedido. O v1 não tem `base_version`, então não
+   * há checagem de versão aqui — mas a escrita passa pelas mesmas guardas e pelo
+   * mesmo recálculo do v2, que é o que PROB-0065 exige.
+   */
+  private async applyItemDePedido(
+    manager: EntityManager,
+    operation: SyncOperation | 'CREATE' | 'UPDATE' | 'DELETE',
+    uuid: string,
+    payload: Record<string, unknown>,
+    tenantId: string,
+  ): Promise<{ id?: number; numero_pedido?: number | null }> {
+    if (operation === SyncOperation.DELETE) {
+      await this.ordersWriter.deleteItem(manager, uuid, tenantId);
+      return {};
+    }
+    const { id } = await this.ordersWriter.writeItem(
+      manager, operation as SyncOperation, uuid, payload, tenantId,
+    );
+    return { id, numero_pedido: null };
+  }
+
   private async updateRecord(
     qr: QueryRunner,
     table: string,
@@ -347,8 +486,14 @@ export class SyncService {
     const columns = Object.keys(record);
     if (columns.length === 0) return;
 
+    // `version + 1` também no v1: sem isso a escrita de sync é INVISÍVEL para a
+    // concorrência otimista da web (`optimisticUpdate` casa por `version`), e um
+    // navegador com a versão velha sobrescreve o que o device acabou de mandar,
+    // sem 409. O v1 não tem `base_version` para checar — mas avançar a versão é
+    // correção de bug, não extensão de contrato.
     const assignments = columns
       .map((column, index) => `${this.quoteIdentifier(column)} = $${index + 3}`)
+      .concat('version = version + 1')
       .join(', ');
     await qr.query(
       `UPDATE ${this.quoteIdentifier(table)} SET ${assignments} WHERE uuid = $1 AND tenant_id = $2`,
@@ -374,56 +519,14 @@ export class SyncService {
   }
 
   /**
-   * Segunda passada da allowlist, agora com a linha em mãos. Só pega campos que
-   * são válidos na entidade mas não NESTA forma do registro — hoje, campos de
-   * pedido de origem externa (PROB-0074). Campo desconhecido já morreu na
-   * primeira passada.
-   */
-  private assertCamposDaForma(
-    entity: SyncEntity,
-    payload: Record<string, unknown>,
-    policy: SyncEntityPolicy,
-    row: Record<string, unknown> | undefined,
-  ): void {
-    if (!row || !policy.writableFieldsFor) return;
-
-    const permitidos = policy.writableFieldsFor(row);
-    const bloqueados = Object.keys(payload).filter((field) => !permitidos.includes(field)
-      && policy.writableFields.includes(field));
-
-    if (bloqueados.length === 0) return;
-
-    // Dizer QUAL forma barrou: "campos não permitidos" sozinho não deixa o
-    // cliente distinguir de campo inexistente nem saber o que fazer.
-    const forma = typeof row.origem === 'string' ? ` com origem '${row.origem}'` : '';
-    throw new BadRequestException(
-      `Campos não permitidos em ${entity}${forma}: ${bloqueados.join(', ')}`,
-    );
-  }
-
-  /**
-   * Paridade com `updateExternal` (`orders.service.ts:225-227`): pedido de
-   * origem externa só é editável em `em_aberto`. Sem este gate o push altera
-   * pedido já liberado ou faturado — o que a web recusa com 409 — e o cliente
-   * mobile fica com uma verdade que o servidor web nega.
-   */
-  private assertOrigemEditavel(
-    entity: SyncEntity,
-    operation: SyncOperation,
-    row: Record<string, unknown> | undefined,
-  ): void {
-    if (entity !== SyncEntity.PEDIDOS || operation !== SyncOperation.UPDATE) return;
-    if (!row || row.origem !== 'externo' || row.status === 'em_aberto') return;
-
-    throw new BadRequestException(
-      `Pedido de origem externa só pode ser editado em em_aberto (status atual: ${String(row.status)})`,
-    );
-  }
-
-  /**
-   * Primeira passada da allowlist, contra a lista BASE. Roda antes de qualquer
-   * ida ao banco: payload malformado não merece um SELECT. A segunda passada,
-   * que depende da linha, é `assertCamposDaForma`.
+   * Allowlist do payload, antes de qualquer ida ao banco: payload malformado
+   * não merece um SELECT.
+   *
+   * Já existiu uma segunda passada (`assertCamposDaForma`), que só sabia
+   * bloquear `status`/totais depois de ler a linha e descobrir que a origem era
+   * externa. Com esses campos fora da entrada para TODA origem (PROB-0065), a
+   * decisão não depende mais do dado — e uma passada só, mais cedo e sem
+   * consulta, cobre o que duas cobriam.
    */
   private validatePayload(
     entity: SyncEntity,
@@ -439,6 +542,19 @@ export class SyncService {
     if (controlados.length > 0) {
       throw new BadRequestException(
         `Campos controlados pelo servidor não podem vir no push de ${entity}: ${controlados.join(', ')}`,
+      );
+    }
+
+    // Derivado é recusa de outra natureza: o cliente não está invadindo campo
+    // alheio, está mandando um resultado que o servidor calcula. A mensagem
+    // precisa dizer o que enviar no lugar, senão o device fica em retry eterno
+    // sem saber o que corrigir (PROB-0065).
+    const derivados = campos.filter((field) => policy.derivedFields.includes(field));
+    if (derivados.length > 0) {
+      const insumos = policy.writableFields.join(', ');
+      throw new BadRequestException(
+        `Campos derivados não podem vir no push de ${entity}: ${derivados.join(', ')}. `
+        + `Envie os insumos (${insumos}); o servidor calcula o resto.`,
       );
     }
 

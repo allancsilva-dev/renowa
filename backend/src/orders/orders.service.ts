@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
-import { Order } from './entities/order.entity';
+import { Order, ORDER_ORIGENS, ORDER_STATUSES } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { CreateOrderDto, CreateOrderItemDto, UpdateOrderDto } from './dto/create-order.dto';
@@ -9,7 +9,7 @@ import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-ext
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { optimisticSoftDelete, optimisticUpdate } from '../common/persistence/optimistic-concurrency';
-import { calculateOrderItem, calculateOrderTotals } from './order-calculation';
+import { buildItemValues, countNotasAtivas, totalsFromItems } from './order-write';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { decimal, money } from '../common/decimal/decimal';
 import { isVendorOnly, vendorOwnershipWhere } from './order-ownership';
@@ -35,7 +35,7 @@ export class OrdersService {
     private readonly dataSource: DataSource,
   ) {}
 
-  // Regra compartilhada com OrderPhotosService — ver `order-ownership.ts`.
+  // Regra compartilhada com OrderItemPhotosService — ver `order-ownership.ts`.
   private isVendorOnly(user: RequestUser): boolean {
     return isVendorOnly(user);
   }
@@ -74,6 +74,11 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Derivação de item e totais vivem em `order-write.ts`, compartilhadas com o
+   * push de sync — uma implementação só, para as duas portas não divergirem de
+   * aritmética como divergiram até PROB-0065.
+   */
   private async buildItem(
     manager: EntityManager,
     dto: CreateOrderItemDto,
@@ -81,58 +86,32 @@ export class OrdersService {
     orderId: number,
     supplierId: number,
   ): Promise<Partial<OrderItem>> {
-    let produto_id: number | null = null;
-    if (dto.produto_uuid) {
-      const products = await manager.query(
-        `SELECT id, fornecedor_id FROM produtos WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-        [dto.produto_uuid, tenantId],
-      ) as Array<{ id: number; fornecedor_id: number | null }>;
-      if (!products[0] || products[0].fornecedor_id !== supplierId) {
-        throw new BadRequestException('Produto inválido ou não vinculado ao fornecedor do pedido.');
-      }
-      produto_id = products[0].id;
-    } else if (!dto.codigo_manual?.trim() && !dto.descricao_manual?.trim()) {
-      throw new BadRequestException('Informe um produto ou código/descrição manual para cada item.');
-    }
-
-    const calculated = calculateOrderItem(dto);
-    return {
-      uuid: dto.uuid,
-      tenant_id: tenantId,
-      pedido_id: orderId,
-      produto_id,
-      codigo_manual: dto.codigo_manual?.trim() || null,
-      descricao_manual: dto.descricao_manual?.trim() || null,
-      qtd_caixas: calculated.qtd_caixas,
-      qtd_unitaria: calculated.qtd_unitaria,
-      qtd_total: calculated.qtd_total,
-      preco_unitario: calculated.preco_unitario,
-      desconto_perc: calculated.desconto_perc,
-      valor_com_desconto: calculated.valor_com_desconto,
-      ipi_perc: dto.ipi_perc === undefined ? null : calculated.ipi_perc,
-      valor_com_imposto: calculated.valor_com_imposto,
-      total_item: calculated.total_item_sem_imposto,
-      total_com_imposto: calculated.total_item_com_imposto,
-    };
+    return buildItemValues(manager, dto, tenantId, orderId, supplierId);
   }
 
   private totalsFromItems(items: Array<Partial<OrderItem>>) {
-    return calculateOrderTotals(items.map((item) => ({
-      qtd_caixas: item.qtd_caixas!,
-      qtd_unitaria: item.qtd_unitaria!,
-      qtd_total: item.qtd_total!,
-      preco_unitario: item.preco_unitario!,
-      desconto_perc: item.desconto_perc!,
-      valor_com_desconto: item.valor_com_desconto!,
-      ipi_perc: item.ipi_perc!,
-      valor_com_imposto: item.valor_com_imposto!,
-      total_item_sem_imposto: item.total_item!,
-      total_item_com_imposto: item.total_com_imposto!,
-    })));
+    return totalsFromItems(items);
+  }
+
+  /**
+   * O uuid do pedido vem do cliente. Duplo clique em "Salvar" ou retry de rede
+   * reenvia o mesmo uuid: sem esta guarda o INSERT morre no índice único e o
+   * usuário recebe erro de banco em vez de uma recusa de negócio. Não distingue
+   * uuid de outro tenant de propósito — a resposta é a mesma nos dois casos.
+   */
+  private async assertUuidLivre(manager: EntityManager, uuid: string): Promise<void> {
+    const rows = await manager.query(
+      'SELECT 1 FROM pedidos WHERE uuid = $1 LIMIT 1',
+      [uuid],
+    ) as unknown[];
+    if (rows.length) {
+      throw new ConflictException(`Pedido ${uuid} já cadastrado.`);
+    }
   }
 
   async create(dto: CreateOrderDto, user: RequestUser): Promise<Order> {
     const uuid = await this.dataSource.transaction(async (manager) => {
+      await this.assertUuidLivre(manager, dto.uuid);
       const refs = await this.resolveHeader(manager, dto, user);
       const sequence = await manager.query(`SELECT nextval('pedidos_numero_seq')::int AS numero`) as Array<{ numero: number }>;
       const order = manager.create(Order, {
@@ -165,6 +144,35 @@ export class OrdersService {
   }
 
   /**
+   * O mesmo pedido do sistema de origem não pode ser registrado duas vezes: cada
+   * registro consome um `numero_pedido` novo e gera fila de faturamento e comissão
+   * duplicadas. A chave é (tenant, fornecedor, número) — `sistema_origem` é texto
+   * livre digitado ("SAP B1" / "SapB1") e não serve de chave; o mesmo número em
+   * fornecedores distintos é legítimo. Espelha `uq_pedidos_externo_numero` (0038):
+   * a guarda dá a mensagem de negócio, o índice garante sob concorrência.
+   */
+  private async assertNumeroExternoLivre(
+    manager: EntityManager,
+    tenantId: string,
+    fornecedorId: number,
+    numero: string,
+    ignorarPedidoId: number | null,
+  ): Promise<void> {
+    const rows = await manager.query(
+      `SELECT numero_pedido FROM pedidos
+        WHERE tenant_id = $1 AND fornecedor_id = $2 AND numero_pedido_externo = $3
+          AND origem = 'externo' AND deleted_at IS NULL AND ($4::int IS NULL OR id <> $4)
+        LIMIT 1`,
+      [tenantId, fornecedorId, numero, ignorarPedidoId],
+    ) as Array<{ numero_pedido: number }>;
+    if (rows.length) {
+      throw new ConflictException(
+        `Pedido externo ${numero} já registrado para este fornecedor no pedido ${rows[0].numero_pedido}.`,
+      );
+    }
+  }
+
+  /**
    * Pedido externo: digitado em sistema de terceiro, registrado aqui só com
    * fornecedor, cliente, número de origem, sistema e valor.
    *
@@ -178,7 +186,11 @@ export class OrdersService {
    */
   async createExternal(dto: CreateExternalOrderDto, user: RequestUser): Promise<Order> {
     const uuid = await this.dataSource.transaction(async (manager) => {
+      await this.assertUuidLivre(manager, dto.uuid);
       const refs = await this.resolveHeader(manager, dto, user);
+      await this.assertNumeroExternoLivre(
+        manager, user.tenantId, refs.fornecedor_id!, dto.numero_pedido_externo.trim(), null,
+      );
       const sequence = await manager.query(`SELECT nextval('pedidos_numero_seq')::int AS numero`) as Array<{ numero: number }>;
       const valor = money(dto.valor);
       const order = manager.create(Order, {
@@ -227,6 +239,9 @@ export class OrdersService {
       }
 
       const refs = await this.resolveHeader(manager, dto, user);
+      await this.assertNumeroExternoLivre(
+        manager, user.tenantId, refs.fornecedor_id!, dto.numero_pedido_externo.trim(), order.id,
+      );
       const valor = money(dto.valor);
       // `status` e `origem` não são tocados: transição de status tem endpoint
       // próprio e a origem é imutável depois da criação.
@@ -347,8 +362,20 @@ export class OrdersService {
     if (this.isVendorOnly(user)) {
       qb.andWhere(`o.${this.vendorOwnershipWhere(user).sql}`, this.vendorOwnershipWhere(user).params);
     }
-    if (status) qb.andWhere('o.status = :status', { status });
-    if (origem) qb.andWhere('o.origem = :origem', { origem });
+    // Filtro inválido devolvia 200 com lista vazia: o operador conclui "não há
+    // pedidos" quando o erro está no valor, e um front com typo falha em silêncio.
+    if (status) {
+      if (!(ORDER_STATUSES as readonly string[]).includes(status)) {
+        throw new BadRequestException(`Status inválido. Use um de: ${ORDER_STATUSES.join(', ')}.`);
+      }
+      qb.andWhere('o.status = :status', { status });
+    }
+    if (origem) {
+      if (!(ORDER_ORIGENS as readonly string[]).includes(origem)) {
+        throw new BadRequestException(`Origem inválida. Use um de: ${ORDER_ORIGENS.join(', ')}.`);
+      }
+      qb.andWhere('o.origem = :origem', { origem });
+    }
     if (search) {
       qb.andWhere(
         '(CAST(o.numero_pedido AS TEXT) ILIKE :search OR o.numero_pedido_externo ILIKE :search'
@@ -458,22 +485,16 @@ export class OrdersService {
     // janela para uma nota emitida no intervalo passar despercebida.
     manager?: EntityManager,
   ): Promise<number> {
-    const rows = await (manager ?? this.dataSource).query(
-      `SELECT COUNT(*)::int AS total FROM notas_fiscais WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`,
-      [tenantId, orderId],
-    ) as Array<{ total: number }>;
-    return Number(rows[0]?.total ?? 0);
+    return countNotasAtivas(manager ?? this.dataSource, tenantId, orderId);
   }
 
   /**
-   * BACKLOG-0055: o soft delete do pedido não descia para as fotos. As FKs são
-   * `NO ACTION` e `optimisticSoftDelete` marca UMA linha, então `pedido_fotos`
-   * ficava com `deleted_at IS NULL` e só sumia da tela porque cada query lembra
-   * de filtrar — qualquer consulta nova que esquecesse ressuscitava as fotos de
-   * um pedido excluído.
+   * A transação fecha o TOCTOU entre a checagem de notas e o soft delete: sem
+   * ela, uma nota emitida no intervalo passa despercebida.
    *
-   * A transação também fecha o TOCTOU entre a checagem de notas e o soft delete:
-   * antes, uma nota emitida no intervalo passava despercebida.
+   * Já foi também o lugar da cascata para `pedido_fotos` (BACKLOG-0055). A
+   * tabela deixou de existir na 0040 — a foto agora é do produto do catálogo,
+   * não do pedido, e excluir um pedido não pode apagar foto de catálogo.
    */
   async remove(uuid: string, version: number, user: RequestUser): Promise<void> {
     const order = await this.findOne(uuid, user);
@@ -488,14 +509,6 @@ export class OrdersService {
       await optimisticSoftDelete({ repository: manager.getRepository(Order), uuid, tenantId: user.tenantId,
         expectedVersion: version, resource: 'order', notFoundMessage: `Pedido ${uuid} não encontrado.`,
         extraWhere: this.isVendorOnly(user) ? this.vendorOwnershipWhere(user) : undefined });
-
-      // Só depois do soft delete do pai: conflito de `version` aborta a
-      // transação e as fotos não ficam marcadas sem o pedido.
-      await manager.query(
-        `UPDATE pedido_fotos SET deleted_at = CURRENT_TIMESTAMP, version = version + 1
-          WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`,
-        [user.tenantId, order.id],
-      );
     });
   }
 }

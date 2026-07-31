@@ -6,6 +6,14 @@ import { Supplier } from '../../suppliers/entities/supplier.entity';
 import { OrderItem } from './order-item.entity';
 import { User } from '../../users/entities/user.entity';
 
+/** Espelha `pedidos_origem_check` (0033). */
+export const ORDER_ORIGENS = ['interno', 'externo'] as const;
+
+/** Espelha `pedidos_status_check` (0027). */
+export const ORDER_STATUSES = [
+  'em_aberto', 'liberado', 'parcialmente_faturado', 'faturado', 'cancelado',
+] as const;
+
 /**
  * Spec: status VARCHAR 'em_aberto' | 'concluido' | 'cancelado'
  * numero_pedido NULL até sync — gerado exclusivamente pelo servidor via SEQUENCE global.

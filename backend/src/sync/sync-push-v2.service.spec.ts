@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SyncEntity, SyncOperation, SyncPushV2Dto } from './dto/sync.dto';
+import { OrdersSyncWriter } from './writers/orders-sync.writer';
 import { SyncService } from './sync.service';
 
 describe('SyncService push v2', () => {
@@ -20,7 +21,7 @@ describe('SyncService push v2', () => {
       connect: jest.fn(), startTransaction: jest.fn(), commitTransaction: jest.fn(),
       rollbackTransaction: jest.fn(), release: jest.fn(), query,
     };
-    const service = new SyncService({ createQueryRunner: () => queryRunner } as never);
+    const service = new SyncService({ createQueryRunner: () => queryRunner } as never, new OrdersSyncWriter());
     const dto: SyncPushV2Dto = {
       device_id: '3df8a8c7-dd23-4e70-bcc7-468ccaf12c31',
       sync_run_id: '82e6e7bd-7571-4791-9623-6b99eec7cece',

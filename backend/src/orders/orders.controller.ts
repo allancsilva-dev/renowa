@@ -5,7 +5,7 @@ import { IsString } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
 import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-external-order.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { ListOrdersQueryDto } from './dto/query-orders.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -54,14 +54,10 @@ export class OrdersController {
 
   @Get()
   @RequirePermission('pedidos.ver')
-  async findAll(
-    @Query() pagination: PaginationDto,
-    @Query('status') status: string,
-    @Query('search') search: string,
-    @Query('origem') origem: string,
-    @CurrentUser() user: RequestUser,
-  ) {
-    return this.ordersService.findAll(user.tenantId, pagination, user, status, search, origem);
+  async findAll(@Query() query: ListOrdersQueryDto, @CurrentUser() user: RequestUser) {
+    return this.ordersService.findAll(
+      user.tenantId, query, user, query.status, query.search, query.origem,
+    );
   }
 
   @Get(':uuid')

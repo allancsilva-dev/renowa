@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { isUniqueViolation } from '../errors/pg-error';
 
 /**
  * GlobalExceptionFilter — garante o padrão de erro em TODAS as respostas de erro.
@@ -61,6 +62,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (code === 'INTERNAL_SERVER_ERROR') {
         code = this.httpStatusToCode(status);
       }
+    } else if (isUniqueViolation(exception)) {
+      // Violação de índice único que escapou de uma guarda de aplicação. Sem este
+      // ramo, um uuid repetido (duplo clique, retry de rede) virava 500 — erro de
+      // banco vazando como falha do servidor. A mensagem é genérica de propósito:
+      // nome de constraint e valores ficam no log, não na resposta.
+      status = HttpStatus.CONFLICT;
+      code = 'CONFLICT';
+      message = 'Registro duplicado: já existe um cadastro com estes dados.';
+      this.logger.error(
+        `Unique violation: ${(exception as Error).message}`,
+        (exception as Error).stack,
+      );
     } else if (exception instanceof Error) {
       this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
     } else {

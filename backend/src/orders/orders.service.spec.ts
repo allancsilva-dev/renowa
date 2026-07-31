@@ -7,6 +7,7 @@ import { validate } from 'class-validator';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
 import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-external-order.dto';
+import { ListOrdersQueryDto } from './dto/query-orders.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 
 function queryBuilder(overrides: Record<string, jest.Mock> = {}) {
@@ -36,6 +37,74 @@ const vendedorA: RequestUser = {
 const admin: RequestUser = { ...vendedorA, roles: ['ADMIN'] };
 
 const orderUuid = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+describe('OrdersService.findAll — filtros', () => {
+  function serviceParaLista() {
+    const qb = queryBuilder({
+      orderBy: jest.fn(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    });
+    qb.orderBy.mockReturnValue(qb);
+    for (const method of ['skip', 'take']) qb[method] = jest.fn().mockReturnValue(qb);
+    const orderRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) } as any;
+    return { service: new OrdersService(orderRepo, {} as any, {} as any, {} as any), qb };
+  }
+
+  // Valor inválido devolvia 200 com lista vazia: indistinguível de "não há
+  // pedidos", e um front com typo falharia em silêncio.
+  it.each([
+    ['status', 'faturadoo'],
+    ['origem', 'externa'],
+  ])('recusa %s fora do enum', async (campo, valor) => {
+    const { service } = serviceParaLista();
+    const args = campo === 'status'
+      ? [valor, undefined, undefined]
+      : [undefined, undefined, valor];
+
+    await expect(
+      service.findAll('tenant-a', { page: 1, limit: 20 }, admin, ...(args as [any, any, any])),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('aceita os valores do enum', async () => {
+    const { service, qb } = serviceParaLista();
+
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, 'liberado', undefined, 'externo');
+
+    expect(qb.andWhere).toHaveBeenCalledWith('o.status = :status', { status: 'liberado' });
+    expect(qb.andWhere).toHaveBeenCalledWith('o.origem = :origem', { origem: 'externo' });
+  });
+
+  // PROB-0081: os testes acima passavam sem provar nada sobre o HTTP — `status` e
+  // `origem` nem chegavam ao service, porque o `forbidNonWhitelisted` global os
+  // rejeitava como propriedade desconhecida. O que impede o falso positivo de
+  // voltar é a asserção de MENSAGEM: se o filtro sair do DTO outra vez, a
+  // resposta volta a ser "property origem should not exist" e estes casos caem.
+  describe('ListOrdersQueryDto — filtro chega ao service e nomeia o enum', () => {
+    const pipeOptions = { whitelist: true, forbidNonWhitelisted: true };
+
+    it('aceita os valores do enum', async () => {
+      const dto = plainToInstance(ListOrdersQueryDto, { status: 'faturado', origem: 'externo' });
+      expect(await validate(dto, pipeOptions)).toEqual([]);
+    });
+
+    it.each([
+      ['status', 'faturadoo', 'Status inválido. Use um de:'],
+      ['origem', 'externa', 'Origem inválida. Use um de:'],
+    ])('recusa %s fora do enum com a mensagem do enum', async (campo, valor, mensagem) => {
+      const errors = await validate(plainToInstance(ListOrdersQueryDto, { [campo]: valor }), pipeOptions);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe(campo);
+      expect(Object.values(errors[0].constraints ?? {}).join(' ')).toContain(mensagem);
+    });
+
+    it('mantém `search` e a paginação aceitos', async () => {
+      const dto = plainToInstance(ListOrdersQueryDto, { page: 2, limit: 50, search: 'acme' });
+      expect(await validate(dto, pipeOptions)).toEqual([]);
+    });
+  });
+});
 
 describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
   describe('findOne', () => {
@@ -181,8 +250,8 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
 
   describe('remove', () => {
     /** `remove` passou a checar notas fiscais antes de apagar — precisa de dataSource. */
-    // `remove` roda em transação desde BACKLOG-0055: a contagem de notas, o soft
-    // delete do pedido e a cascata para `pedido_fotos` precisam ser atômicos.
+    // `remove` roda em transação: a contagem de notas e o soft delete do pedido
+    // precisam ser atômicos.
     // O manager devolve o mesmo repositório mockado, como faz o TypeORM real.
     function dataSourceWithNotas(total: number, orderRepo: unknown = {}) {
       const query = jest.fn().mockResolvedValue([{ total }]);
@@ -345,13 +414,24 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
     } as CreateExternalOrderDto;
 
     /**
-     * `manager.query` atende dois usos na mesma transação: resolução de
-     * UUID→id (devolve `[{ id }]`) e o `nextval` da sequence (devolve
-     * `[{ numero }]`). Um objeto com as duas chaves serve aos dois.
+     * `manager.query` atende quatro usos na mesma transação e cada um espera uma
+     * forma diferente: guarda de uuid livre (nenhuma linha), resolução de
+     * UUID→id (`[{ id }]`), guarda de número externo livre (nenhuma linha) e o
+     * `nextval` da sequence (`[{ numero }]`). Um mock único quebraria as guardas.
      */
-    function managerParaCreate(saved: Record<string, unknown>) {
+    function managerParaCreate(
+      saved: Record<string, unknown>,
+      ocupado: { uuid?: boolean; numeroExterno?: number } = {},
+    ) {
       return {
-        query: jest.fn().mockResolvedValue([{ id: 10, numero: 4321 }]),
+        query: jest.fn(async (sql: string) => {
+          if (sql.includes('SELECT 1 FROM pedidos')) return ocupado.uuid ? [{ '?column?': 1 }] : [];
+          if (sql.includes('numero_pedido FROM pedidos')) {
+            return ocupado.numeroExterno ? [{ numero_pedido: ocupado.numeroExterno }] : [];
+          }
+          if (sql.includes('nextval')) return [{ numero: 4321 }];
+          return [{ id: 10 }];
+        }),
         create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
         save: jest.fn(async (value: Record<string, unknown>) => Object.assign(value, saved)),
       };
@@ -378,6 +458,28 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
         total_sem_imposto: '1500.50',
         total_com_imposto: '1500.50',
       }));
+    });
+
+    it('recusa (409) o mesmo número de origem no mesmo fornecedor', async () => {
+      const manager = managerParaCreate({ uuid: externalUuid }, { numeroExterno: 4300 });
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+
+      // Registrar duas vezes o mesmo pedido do sistema de origem duplicaria fila
+      // de faturamento e comissão — e é o erro de digitação mais provável aqui.
+      await expect(service.createExternal(externalDto, admin))
+        .rejects.toBeInstanceOf(ConflictException);
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+
+    it('recusa (409) uuid de pedido já cadastrado sem deixar o INSERT estourar', async () => {
+      const manager = managerParaCreate({ uuid: externalUuid }, { uuid: true });
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+
+      await expect(service.createExternal(externalDto, admin))
+        .rejects.toBeInstanceOf(ConflictException);
+      expect(manager.save).not.toHaveBeenCalled();
     });
 
     it('marca o pedido interno com origem `interno`', async () => {
@@ -488,11 +590,12 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
 });
 
 /**
- * BACKLOG-0055: as FKs são `NO ACTION` e `optimisticSoftDelete` marca UMA linha.
- * Sem a cascata, `pedido_fotos` ficava com `deleted_at IS NULL` depois de o
- * pedido ser excluído, e só sumia da tela porque cada query lembra do filtro.
+ * A cascata para `pedido_fotos` (BACKLOG-0055) saiu junto com a tabela na 0040:
+ * a foto passou a ser do produto do catálogo. O que estes casos ainda guardam é
+ * a atomicidade entre a contagem de notas fiscais e o soft delete do pedido —
+ * sem ela, uma nota emitida no intervalo passa despercebida.
  */
-describe('OrdersService.remove — cascata de soft delete', () => {
+describe('OrdersService.remove — atomicidade', () => {
   const orderUuid2 = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
   function subject(affected: number) {
@@ -512,22 +615,16 @@ describe('OrdersService.remove — cascata de soft delete', () => {
     return { service, query, transaction };
   }
 
-  const fotosUpdate = (query: jest.Mock) => query.mock.calls
-    .find(([sql]) => String(sql).includes('UPDATE pedido_fotos'));
-
-  it('marca as fotos do pedido junto com o pedido', async () => {
+  /**
+   * Nenhum caminho de exclusão de pedido pode tocar em foto: a imagem é do
+   * produto do catálogo e sobrevive ao pedido que a exibiu.
+   */
+  it('não escreve em tabela de fotos', async () => {
     const { service, query } = subject(1);
 
     await service.remove(orderUuid2, 1, admin);
 
-    const chamada = fotosUpdate(query);
-    expect(chamada).toBeDefined();
-    expect(chamada?.[0]).toContain('deleted_at = CURRENT_TIMESTAMP');
-    expect(chamada?.[0]).toContain('version = version + 1');
-    // Sem `deleted_at IS NULL` a cascata re-marcaria foto já apagada, inflando
-    // `version` e disparando conflito no próximo push do mobile.
-    expect(chamada?.[0]).toContain('deleted_at IS NULL');
-    expect(chamada?.[1]).toEqual([admin.tenantId, 7]);
+    expect(query.mock.calls.some(([sql]) => /foto/i.test(String(sql)))).toBe(false);
   });
 
   it('roda tudo na mesma transação', async () => {
@@ -538,20 +635,16 @@ describe('OrdersService.remove — cascata de soft delete', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
   });
 
-  // Conflito de `version` no pai aborta a transação: a exceção propaga antes do
-  // UPDATE das fotos, então elas não ficam marcadas sem o pedido.
-  it('não marca as fotos quando o soft delete do pedido falha', async () => {
-    const { service, query } = subject(0);
+  it('propaga o conflito de version do pedido', async () => {
+    const { service } = subject(0);
 
     await expect(service.remove(orderUuid2, 1, admin)).rejects.toBeInstanceOf(NotFoundException);
-    expect(fotosUpdate(query)).toBeUndefined();
   });
 
-  it('não marca as fotos quando há nota fiscal ativa', async () => {
+  it('recusa quando há nota fiscal ativa', async () => {
     const { service, query } = subject(1);
     query.mockResolvedValue([{ total: 1 }]);
 
     await expect(service.remove(orderUuid2, 1, admin)).rejects.toBeInstanceOf(ConflictException);
-    expect(fotosUpdate(query)).toBeUndefined();
   });
 });
