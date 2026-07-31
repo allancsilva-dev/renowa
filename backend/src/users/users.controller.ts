@@ -53,8 +53,6 @@ export class UsersController {
     const payload = await this.usersService.getCurrentUserContext({
       authUserId: user.sub,
       tenantId: user.tenantId,
-      email: user.email ?? `${user.sub}@placeholder.local`,
-      defaultRole: user.defaultRole,
     });
 
     // Retorna formato bruto esperado pelo frontend sem envelope { data: ... }.

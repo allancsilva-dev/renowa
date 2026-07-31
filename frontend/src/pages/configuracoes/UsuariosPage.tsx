@@ -5,6 +5,7 @@ import apiClient from '@/lib/apiClient';
 import { getApiErrorMessage } from '@/lib/errors';
 import { normalizeListResponse, type PaginationMeta } from '@/lib/pagination';
 import Dialog from '@/components/ui/Dialog';
+import { ROLE_TEMPLATES, formatRoleName } from '@renowa/shared';
 
 interface TenantUser {
   id: string;
@@ -24,18 +25,27 @@ interface UserUpsertForm {
 }
 
 const PAGE_LIMIT = 10;
+
+/**
+ * Os perfis oferecidos aqui são os mesmos que o backend sabe provisionar
+ * (`ROLE_TEMPLATES` em `@renowa/shared`). Esta tela já ofereceu `manager` e
+ * `viewer` — e `viewer` era o default do formulário —, nomes sem template no
+ * backend: o perfil era criado sem permissão nenhuma e o usuário logava para
+ * tomar 403 em toda tela. Hoje o backend recusa nome desconhecido, e a lista
+ * daqui vem da mesma fonte.
+ */
+const ROLE_OPTIONS = ROLE_TEMPLATES;
+
+/**
+ * Sem perfil pré-selecionado: a escolha é explícita. Um default aqui seria
+ * escolher privilégio por omissão — foi assim que `viewer` virou o padrão de
+ * quem só apertava "Salvar".
+ */
 const DEFAULT_FORM: UserUpsertForm = {
   email: '',
   nome: '',
   senha: '',
-  role: 'viewer',
-};
-
-const ROLE_OPTIONS = ['admin', 'manager', 'viewer'];
-const ROLE_LABELS: Record<string, string> = {
-  admin: 'Administrador',
-  manager: 'Gestor',
-  viewer: 'Consulta',
+  role: '',
 };
 
 export default function UsuariosPage() {
@@ -50,7 +60,7 @@ export default function UsuariosPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [editingUser, setEditingUser] = useState<TenantUser | null>(null);
-  const [editRole, setEditRole] = useState('viewer');
+  const [editRole, setEditRole] = useState('');
   const [editActive, setEditActive] = useState(true);
   const [editNewPassword, setEditNewPassword] = useState('');
   const [updateLoading, setUpdateLoading] = useState(false);
@@ -111,7 +121,7 @@ export default function UsuariosPage() {
     {
       key: 'role',
       header: 'Perfil de acesso',
-      cell: (row: TenantUser) => ROLE_LABELS[row.role] ?? row.role,
+      cell: (row: TenantUser) => formatRoleName(row.role),
     },
     {
       key: 'status',
@@ -127,7 +137,7 @@ export default function UsuariosPage() {
             type='button'
             onClick={() => {
               setEditingUser(row);
-              setEditRole(row.role || 'viewer');
+              setEditRole(row.role);
               setEditActive(row.active);
               setEditNewPassword('');
               setUpdateError(null);
@@ -297,12 +307,14 @@ export default function UsuariosPage() {
               <label htmlFor='new-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Perfil de acesso</label>
               <select
                 id='new-user-role'
+                required
                 value={createForm.role}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, role: e.target.value }))}
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
               >
+                <option value='' disabled>Selecione o perfil</option>
                 {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>{ROLE_LABELS[role] ?? role}</option>
+                  <option key={role.name} value={role.name}>{role.label}</option>
                 ))}
               </select>
             </div>
@@ -344,12 +356,18 @@ export default function UsuariosPage() {
               <label htmlFor='edit-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Perfil de acesso</label>
               <select
                 id='edit-user-role'
+                required
                 value={editRole}
                 onChange={(e) => setEditRole(e.target.value)}
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
               >
+                {/* Perfil sob medida (criado em Perfis) não está em ROLE_TEMPLATES;
+                    sem esta opção ele sumiria do select ao editar o usuário. */}
+                {!ROLE_OPTIONS.some((role) => role.name === editRole) && (
+                  <option value={editRole}>{formatRoleName(editRole)}</option>
+                )}
                 {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>{ROLE_LABELS[role] ?? role}</option>
+                  <option key={role.name} value={role.name}>{role.label}</option>
                 ))}
               </select>
             </div>

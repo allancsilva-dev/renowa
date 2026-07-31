@@ -5,7 +5,11 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { REQUIRED_PERMISSION_KEY } from '../decorators/require-permission.decorator';
+import {
+  PermissionMode,
+  REQUIRED_PERMISSION_KEY,
+  REQUIRED_PERMISSION_MODE_KEY,
+} from '../decorators/require-permission.decorator';
 import { LocalUser } from '../../rbac/entities/local-user.entity';
 import { RequestUser } from '../types/jwt-payload.type';
 import { PermissionsService } from '../../permissions/permissions.service';
@@ -50,6 +54,16 @@ export class PermissionGuard implements CanActivate {
       localUser.roleId,
     ));
     const requiredPermissions = Array.isArray(required) ? required : [required];
-    return requiredPermissions.every((permission) => slugs.has(permission));
+
+    // Ausência de metadata de modo é AND, o padrão histórico: nenhuma rota já
+    // escrita muda de comportamento por causa do modo novo.
+    const mode = this.reflector.getAllAndOverride<PermissionMode>(
+      REQUIRED_PERMISSION_MODE_KEY,
+      [context.getHandler(), context.getClass()],
+    ) ?? 'all';
+
+    return mode === 'any'
+      ? requiredPermissions.some((permission) => slugs.has(permission))
+      : requiredPermissions.every((permission) => slugs.has(permission));
   }
 }

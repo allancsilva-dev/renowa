@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataTable from '@/components/tables/DataTable';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { getApiErrorMessage } from '@/lib/errors';
+import { formatRole } from '@/lib/authorization';
 import { fetchAuditEvents, type AuditAction, type PiiAuditEvent } from '@/services/audit.service';
 import type { PaginatedResponse } from '@/types';
 
@@ -11,7 +12,6 @@ const actionLabels: Record<AuditAction, string> = {
 };
 
 const emptyMeta = { total: 0, page: 1, limit: 25, totalPages: 1 };
-const roleLabels: Record<string, string> = { admin: 'Administrador', manager: 'Gestor', viewer: 'Consulta' };
 const fieldLabels: Record<string, string> = {
   active: 'status', cnpj: 'CNPJ', email: 'e-mail', endereco: 'endereço', nome: 'nome',
   role: 'perfil de acesso', roles: 'perfis de acesso', senha_hash: 'senha', tel: 'telefone',
@@ -49,7 +49,7 @@ export default function AuditoriaPage() {
     { key: 'date', header: 'Data e hora', cell: (row: PiiAuditEvent) => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(row.occurred_at)) },
     { key: 'action', header: 'Ação', cell: (row: PiiAuditEvent) => <span className='font-medium text-slate-900'>{actionLabels[row.action]}</span> },
     { key: 'resource', header: 'Dados afetados', cell: (row: PiiAuditEvent) => resourceLabels[row.resource_type] ?? readableLabel(row.resource_type) },
-    { key: 'actor', header: 'Responsável', cell: (row: PiiAuditEvent) => <div><p className='font-medium text-slate-900'>{actorNames.get(row.actor_id) ?? 'Usuário do sistema'}</p><p className='text-xs text-slate-600'>{row.actor_roles.map((role) => roleLabels[role.toLowerCase()] ?? role).join(', ')}</p></div> },
+    { key: 'actor', header: 'Responsável', cell: (row: PiiAuditEvent) => <div><p className='font-medium text-slate-900'>{actorNames.get(row.actor_id) ?? 'Usuário do sistema'}</p><p className='text-xs text-slate-600'>{row.actor_roles.map((role) => formatRole(role)).join(', ')}</p></div> },
     { key: 'purpose', header: 'Finalidade', cell: (row: PiiAuditEvent) => <p className='max-w-72 text-slate-700'>{row.purpose}</p> },
     { key: 'fields', header: 'Informações', cell: (row: PiiAuditEvent) => row.fields.length ? row.fields.map(readableLabel).join(', ') : '—' },
   ], [actorNames]);

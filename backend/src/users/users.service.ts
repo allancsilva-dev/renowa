@@ -1,12 +1,13 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
-import { DEFAULT_ROLE_PERMISSIONS, SYSTEM_ROLE_NAMES } from '@renowa/shared';
+import { DEFAULT_ROLE_PERMISSIONS, ROLE_TEMPLATE_NAMES, SYSTEM_ROLE_NAMES } from '@renowa/shared';
 import { User } from './entities/user.entity';
 import { LocalUser } from '../rbac/entities/local-user.entity';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
@@ -33,27 +34,64 @@ export class UsersService {
     private readonly audit: AuditService,
   ) {}
 
-  private normalizeRoleName(defaultRole?: string): string {
-    const role = (defaultRole ?? 'viewer').trim().toLowerCase();
-
-    if (!role) return 'viewer';
-    return role;
+  /**
+   * Não existe mais fallback para `'viewer'`. Esse default era o gatilho do
+   * defeito: nome sem template vira tenant_role sem permissão, o usuário loga
+   * e leva 403 em todo endpoint. Perfil agora é escolha explícita, e
+   * `resolveAssignableRole` recusa nome que ninguém sabe provisionar.
+   */
+  private normalizeRoleName(role: string): string {
+    const normalized = role?.trim().toLowerCase() ?? '';
+    if (!normalized) {
+      throw new BadRequestException('Perfil de acesso é obrigatório.');
+    }
+    return normalized;
   }
 
-  private async ensureTenantRole(
+  /**
+   * Resolve o perfil a ser atribuído a um usuário, na transação de quem chama.
+   *
+   * Perfil que já existe no tenant — inclusive os criados sob medida na tela de
+   * Perfis — é usado como está. Perfil inexistente só é provisionado se houver
+   * template em `DEFAULT_ROLE_PERMISSIONS`; fora disso, 400. A alternativa
+   * antiga (criar a role vazia e seguir) empurrava a falha para o primeiro
+   * request do usuário, onde nada apontava a causa.
+   */
+  private async resolveAssignableRole(
+    manager: EntityManager,
     tenantId: string,
-    roleName: string,
+    rawRole: string,
   ): Promise<TenantRole> {
-    return this.dataSource.transaction((manager) =>
-      this.ensureTenantRoleWith(manager, tenantId, roleName),
-    );
+    const roleName = this.normalizeRoleName(rawRole);
+
+    const existing = await manager.getRepository(TenantRole).findOne({
+      where: { tenantId, name: roleName, active: true },
+    });
+    if (existing) return existing;
+
+    if (!DEFAULT_ROLE_PERMISSIONS[roleName]?.length) {
+      throw new BadRequestException(
+        `Perfil '${roleName}' não existe neste tenant. Crie o perfil em Perfis de acesso `
+        + `ou use um dos modelos: ${ROLE_TEMPLATE_NAMES.join(', ')}.`,
+      );
+    }
+
+    return this.ensureTenantRoleWith(manager, tenantId, roleName);
   }
 
+  /**
+   * Contexto do usuário logado. Apenas leitura.
+   *
+   * Já foi o lugar onde `local_users` nascia sozinho, com e-mail forjado
+   * (`${sub}@placeholder.local`) e perfil vindo do `defaultRole` do JWT — resto
+   * da arquitetura OIDC anterior. Com auth nativa, JWT só existe para linha em
+   * `usuarios`, e `createTenantUser` grava `local_users` na mesma transação;
+   * `LocalUserContextGuard` recusa com 403 antes daqui quando falta. Criar
+   * usuário implicitamente aqui era, na prática, signup silencioso (PROB-0057).
+   */
   async getCurrentUserContext(params: {
     authUserId: string;
     tenantId: string;
-    email: string;
-    defaultRole?: string;
   }): Promise<{
     user: {
       id: string;
@@ -65,10 +103,7 @@ export class UsersService {
     };
     permissions: string[];
   }> {
-    const roleName = this.normalizeRoleName(params.defaultRole);
-    const tenantRole = await this.ensureTenantRole(params.tenantId, roleName);
-
-    let localUser = await this.localUserRepo.findOne({
+    const hydrated = await this.localUserRepo.findOne({
       where: {
         authUserId: params.authUserId,
         tenantId: params.tenantId,
@@ -76,54 +111,11 @@ export class UsersService {
       relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
     });
 
-    if (!localUser) {
-      const created = this.localUserRepo.create({
-        tenantId: params.tenantId,
-        authUserId: params.authUserId,
-        email: params.email,
-        roleId: tenantRole.id,
-        active: true,
-      });
-
-      try {
-        localUser = await this.localUserRepo.save(created);
-      } catch (err: any) {
-        if (err?.code === '23505') {
-          const concurrent = await this.localUserRepo.findOne({
-            where: {
-              authUserId: params.authUserId,
-              tenantId: params.tenantId,
-            },
-          });
-          if (concurrent) {
-            localUser = concurrent;
-          } else {
-            throw err;
-          }
-        } else {
-          throw err;
-        }
-      }
-    } else {
-      const nextRoleId = localUser.roleId ?? tenantRole.id;
-      const shouldUpdateEmail = localUser.email !== params.email;
-      const shouldUpdateRole = localUser.roleId !== nextRoleId;
-
-      if (shouldUpdateEmail || shouldUpdateRole) {
-        await this.localUserRepo.update(localUser.id, {
-          email: params.email,
-          roleId: nextRoleId,
-        });
-      }
+    if (!hydrated) {
+      throw new ForbiddenException(
+        'Usuário sem acesso local neste tenant. Um administrador precisa criá-lo em Usuários.',
+      );
     }
-
-    const hydrated = await this.localUserRepo.findOneOrFail({
-      where: {
-        authUserId: params.authUserId,
-        tenantId: params.tenantId,
-      },
-      relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
-    });
 
     const rolePermissions = hydrated.role?.rolePermissions ?? [];
     const permissions = Array.from(
@@ -135,7 +127,7 @@ export class UsersService {
         id: hydrated.uuid,
         authUserId: hydrated.authUserId,
         email: hydrated.email,
-        role: hydrated.role?.name ?? roleName,
+        role: hydrated.role?.name ?? '',
         tenantId: hydrated.tenantId,
         active: hydrated.active,
       },
@@ -161,19 +153,6 @@ export class UsersService {
         tenantId,
       },
       relations: ['role', 'role.rolePermissions', 'role.rolePermissions.permission'],
-    });
-  }
-
-  async findTenantRoleByName(
-    tenantId: string,
-    roleName: string,
-  ): Promise<TenantRole | null> {
-    return this.tenantRoleRepo.findOne({
-      where: {
-        tenantId,
-        name: this.normalizeRoleName(roleName),
-        active: true,
-      },
     });
   }
 
@@ -236,7 +215,6 @@ export class UsersService {
     tenantId: string;
     active: boolean;
   }> {
-    const roleName = this.normalizeRoleName(dto.role);
     const senha_hash = await this.passwords.hash(dto.senha);
 
     return this.dataSource.transaction(async (manager) => {
@@ -246,6 +224,11 @@ export class UsersService {
       if (emailTaken) {
         throw new BadRequestException('Email já cadastrado');
       }
+
+      // Perfil resolvido antes de gravar o usuário: perfil inválido não pode
+      // deixar `usuarios` criado e `local_users` não.
+      const role = await this.resolveAssignableRole(manager, tenantId, dto.role);
+      const roleName = role.name;
 
       const userUuid = randomUUID();
       const savedUser = await manager.getRepository(User).save(
@@ -260,7 +243,6 @@ export class UsersService {
         }),
       );
 
-      const role = await this.ensureTenantRoleWith(manager, tenantId, roleName);
       const localUser = await manager.getRepository(LocalUser).save(
         manager.getRepository(LocalUser).create({
           tenantId,
@@ -286,12 +268,10 @@ export class UsersService {
   }
 
   /**
-   * Provisionamento explícito: cria a tenant_role sob demanda (primeiro login
-   * via defaultRole do JWT, ou role digitada na criação de usuário nativo) já
-   * com is_system e as permissões padrão do template (DEFAULT_ROLE_PERMISSIONS
-   * em @renowa/shared), na mesma transação. Um nome fora do template é
-   * provisionado sem nenhuma permissão — fail-closed até um admin conceder
-   * explicitamente pela tela de Perfis.
+   * Provisionamento explícito: cria a tenant_role sob demanda já com is_system
+   * e as permissões do template (`DEFAULT_ROLE_PERMISSIONS` em `@renowa/shared`),
+   * na mesma transação. Só é chamado por `resolveAssignableRole`, que garante
+   * a existência do template — nome desconhecido não chega aqui.
    */
   private async ensureTenantRoleWith(
     manager: EntityManager,
@@ -359,19 +339,20 @@ export class UsersService {
     }
 
     let nextRoleId = existing.roleId;
-    let nextRoleName = existing.role?.name ?? 'viewer';
-
-    if (dto.role) {
-      const normalized = this.normalizeRoleName(dto.role);
-      const role = await this.ensureTenantRole(tenantId, normalized);
-      nextRoleId = role.id;
-      nextRoleName = role.name;
-    }
+    let nextRoleName = existing.role?.name ?? '';
 
     const senhaHash = dto.new_password ? await this.passwords.hash(dto.new_password) : undefined;
     const identityChanged = dto.role !== undefined || dto.active !== undefined || senhaHash !== undefined;
 
     await this.dataSource.transaction(async (manager) => {
+      // Troca de perfil passa pela mesma resolução da criação: perfil existente
+      // do tenant, ou template conhecido — nunca uma role nova e vazia.
+      if (dto.role) {
+        const role = await this.resolveAssignableRole(manager, tenantId, dto.role);
+        nextRoleId = role.id;
+        nextRoleName = role.name;
+      }
+
       await manager.getRepository(LocalUser).update(existing.id, {
         roleId: nextRoleId,
         active: dto.active ?? existing.active,

@@ -1,4 +1,5 @@
-import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_SLUGS } from '@renowa/shared';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_SLUGS, ROLE_TEMPLATE_NAMES } from '@renowa/shared';
 import { UsersService } from './users.service';
 import { PasswordService } from '../auth/password.service';
 
@@ -41,24 +42,15 @@ describe('UsersService — provisionamento explícito de tenant_roles', () => {
     const manager = fakeManager({ permissionInsert });
     const dataSource = { transaction: async (cb: any) => cb(manager) } as any;
 
-    const localUserRepo = {
-      findOne: jest.fn().mockResolvedValue(undefined),
-      create: (x: any) => x,
-      save: jest.fn(async (x: any) => ({ ...x, id: 1 })),
-      findOneOrFail: jest.fn().mockResolvedValue({
-        uuid: 'local-1', authUserId: 'auth-1', email: 'a@b.c', tenantId: 't-1', active: true,
-        role: { name: 'admin', rolePermissions: [] },
-      }),
-    };
-
     const svc = new UsersService(
-      {} as any, localUserRepo as any, {} as any, {} as any,
+      { findOne: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any, {} as any, {} as any,
       new PasswordService(), dataSource, {} as any,
     );
 
-    await svc.getCurrentUserContext({
-      authUserId: 'auth-1', tenantId: 't-1', email: 'a@b.c', defaultRole: 'admin',
-    });
+    await svc.createTenantUser('t-1', {
+      email: 'a@b.c', nome: 'A', senha: 'senha1234', role: 'admin',
+    } as any);
 
     expect(manager.tenantRoleRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'admin', isSystem: true }),
@@ -89,7 +81,13 @@ describe('UsersService — provisionamento explícito de tenant_roles', () => {
     expect(new Set(grantedSlugs)).toEqual(new Set(DEFAULT_ROLE_PERMISSIONS.vendedor));
   });
 
-  it('provisiona um nome fora do template sem nenhuma permissão (fail-closed)', async () => {
+  /**
+   * Era aqui que o defeito entrava: nome fora do template virava tenant_role
+   * real e vazia, o usuário logava e tomava 403 em todo endpoint sem nada
+   * apontar a causa. A tela de Usuários oferecia justamente dois desses nomes
+   * (`manager`, `viewer`), e `viewer` era o default do formulário.
+   */
+  it('recusa nome fora do template que não existe no tenant, sem criar role vazia', async () => {
     const permissionInsert = jest.fn().mockResolvedValue(undefined);
     const manager = fakeManager({ permissionInsert });
     const dataSource = { transaction: async (cb: any) => cb(manager) } as any;
@@ -100,13 +98,50 @@ describe('UsersService — provisionamento explícito de tenant_roles', () => {
       new PasswordService(), dataSource, {} as any,
     );
 
-    await svc.createTenantUser('t-1', {
-      email: 'e@b.c', nome: 'E', senha: 'senha1234', role: 'estagiario',
+    await expect(svc.createTenantUser('t-1', {
+      email: 'e@b.c', nome: 'E', senha: 'senha1234', role: 'viewer',
+    } as any)).rejects.toThrow(BadRequestException);
+
+    expect(manager.tenantRoleRepo.save).not.toHaveBeenCalled();
+    expect(permissionInsert).not.toHaveBeenCalled();
+  });
+
+  it('a mensagem de recusa lista os modelos disponíveis', async () => {
+    const manager = fakeManager({});
+    const dataSource = { transaction: async (cb: any) => cb(manager) } as any;
+
+    const svc = new UsersService(
+      { findOne: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any, {} as any, {} as any,
+      new PasswordService(), dataSource, {} as any,
+    );
+
+    await expect(svc.createTenantUser('t-1', {
+      email: 'e@b.c', nome: 'E', senha: 'senha1234', role: 'manager',
+    } as any)).rejects.toThrow(new RegExp(ROLE_TEMPLATE_NAMES.join(', ')));
+  });
+
+  /** Perfil sob medida criado na tela de Perfis continua atribuível. */
+  it('aceita perfil que já existe no tenant mesmo sem template', async () => {
+    const permissionInsert = jest.fn().mockResolvedValue(undefined);
+    const manager = fakeManager({
+      existingRole: { id: 7, tenantId: 't-1', name: 'equipe_vendas', active: true, isSystem: false },
+      permissionInsert,
+    });
+    const dataSource = { transaction: async (cb: any) => cb(manager) } as any;
+
+    const svc = new UsersService(
+      { findOne: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any, {} as any, {} as any,
+      new PasswordService(), dataSource, {} as any,
+    );
+
+    const created = await svc.createTenantUser('t-1', {
+      email: 'q@b.c', nome: 'Q', senha: 'senha1234', role: 'Equipe_Vendas',
     } as any);
 
-    expect(manager.tenantRoleRepo.save).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'estagiario', isSystem: false }),
-    );
+    expect(created.role).toBe('equipe_vendas');
+    expect(manager.tenantRoleRepo.save).not.toHaveBeenCalled();
     expect(permissionInsert).not.toHaveBeenCalled();
   });
 
@@ -118,25 +153,63 @@ describe('UsersService — provisionamento explícito de tenant_roles', () => {
     });
     const dataSource = { transaction: async (cb: any) => cb(manager) } as any;
 
+    const svc = new UsersService(
+      { findOne: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any, {} as any, {} as any,
+      new PasswordService(), dataSource, {} as any,
+    );
+
+    await svc.createTenantUser('t-1', {
+      email: 'a@b.c', nome: 'A', senha: 'senha1234', role: 'admin',
+    } as any);
+
+    expect(manager.tenantRoleRepo.save).not.toHaveBeenCalled();
+    expect(permissionInsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('UsersService.getCurrentUserContext — só leitura (PROB-0057)', () => {
+  it('recusa com 403 quando não existe local_user, em vez de criar um', async () => {
     const localUserRepo = {
-      findOne: jest.fn().mockResolvedValue({ id: 1, roleId: 5, email: 'a@b.c' }),
-      update: jest.fn().mockResolvedValue(undefined),
-      findOneOrFail: jest.fn().mockResolvedValue({
+      findOne: jest.fn().mockResolvedValue(null),
+      create: jest.fn(),
+      save: jest.fn(),
+    };
+
+    const svc = new UsersService(
+      {} as any, localUserRepo as any, {} as any, {} as any,
+      new PasswordService(), {} as any, {} as any,
+    );
+
+    await expect(svc.getCurrentUserContext({ authUserId: 'auth-1', tenantId: 't-1' }))
+      .rejects.toThrow(ForbiddenException);
+
+    expect(localUserRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('devolve perfil e permissões do local_user existente', async () => {
+    const localUserRepo = {
+      findOne: jest.fn().mockResolvedValue({
         uuid: 'local-1', authUserId: 'auth-1', email: 'a@b.c', tenantId: 't-1', active: true,
-        role: { name: 'admin', rolePermissions: [] },
+        role: {
+          name: 'vendedor',
+          rolePermissions: [
+            { permission: { slug: 'clientes.ver' } },
+            { permission: { slug: 'clientes.ver' } },
+            { permission: { slug: 'pedidos.criar' } },
+          ],
+        },
       }),
     };
 
     const svc = new UsersService(
       {} as any, localUserRepo as any, {} as any, {} as any,
-      new PasswordService(), dataSource, {} as any,
+      new PasswordService(), {} as any, {} as any,
     );
 
-    await svc.getCurrentUserContext({
-      authUserId: 'auth-1', tenantId: 't-1', email: 'a@b.c', defaultRole: 'admin',
-    });
+    const context = await svc.getCurrentUserContext({ authUserId: 'auth-1', tenantId: 't-1' });
 
-    expect(manager.tenantRoleRepo.save).not.toHaveBeenCalled();
-    expect(permissionInsert).not.toHaveBeenCalled();
+    expect(context.user.role).toBe('vendedor');
+    expect(context.permissions).toEqual(['clientes.ver', 'pedidos.criar']);
   });
 });

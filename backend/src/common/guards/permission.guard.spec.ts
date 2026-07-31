@@ -1,5 +1,10 @@
 import { ForbiddenException } from '@nestjs/common';
 import { PermissionGuard } from './permission.guard';
+import {
+  PermissionMode,
+  REQUIRED_PERMISSION_KEY,
+  REQUIRED_PERMISSION_MODE_KEY,
+} from '../decorators/require-permission.decorator';
 
 describe('PermissionGuard', () => {
   const context = (user: object, localUser?: object) => ({
@@ -8,11 +13,22 @@ describe('PermissionGuard', () => {
     switchToHttp: () => ({ getRequest: () => ({ user, localUser }) }),
   }) as never;
 
-  const guardFor = (required: string | string[], listEffectiveForRole: jest.Mock) =>
-    new PermissionGuard(
-      { getAllAndOverride: () => required } as never,
-      { listEffectiveForRole } as never,
-    );
+  // O reflector responde POR CHAVE: sem isso, a metadata de modo receberia a
+  // própria lista de permissões e o teste de OR provaria outra coisa.
+  const guardFor = (
+    required: string | string[],
+    listEffectiveForRole: jest.Mock,
+    mode?: PermissionMode,
+  ) => new PermissionGuard(
+    {
+      getAllAndOverride: (key: string) => {
+        if (key === REQUIRED_PERMISSION_KEY) return required;
+        if (key === REQUIRED_PERMISSION_MODE_KEY) return mode;
+        return undefined;
+      },
+    } as never,
+    { listEffectiveForRole } as never,
+  );
 
   // Achado 1 — RolesController exigindo `usuarios.gerenciar`
   it('denies a manager without usuarios.gerenciar (403 path — canActivate returns false)', async () => {
@@ -82,5 +98,56 @@ describe('PermissionGuard', () => {
     await expect(
       guard.canActivate(context({ roles: ['manager'] }, undefined)),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  /**
+   * Modo OR (`RequireAnyPermission`). Motivado pelo `PUT` da foto do produto:
+   * definir a foto é parte de criar E de editar, e com AND puro quem tinha só
+   * `produtos.criar` cadastrava o produto e tomava 403 na foto do mesmo fluxo.
+   */
+  describe('modo any', () => {
+    const localUser = { tenantId: 'tenant-a', roleId: 5, role: { name: 'vendedor' } };
+    const req = context({ tenantId: 'tenant-a', roles: ['vendedor'] }, localUser);
+
+    it('basta UMA das permissões da lista', async () => {
+      const guard = guardFor(
+        ['produtos.criar', 'produtos.editar'],
+        jest.fn().mockResolvedValue(['produtos.criar']),
+        'any',
+      );
+
+      await expect(guard.canActivate(req)).resolves.toBe(true);
+    });
+
+    it('nenhuma delas continua sendo 403', async () => {
+      const guard = guardFor(
+        ['produtos.criar', 'produtos.editar'],
+        jest.fn().mockResolvedValue(['produtos.ver']),
+        'any',
+      );
+
+      await expect(guard.canActivate(req)).resolves.toBe(false);
+    });
+
+    // A garantia que protege todas as rotas já escritas: sem metadata de modo,
+    // lista continua significando AND.
+    it('sem metadata de modo, a mesma lista exige TODAS', async () => {
+      const guard = guardFor(
+        ['produtos.criar', 'produtos.editar'],
+        jest.fn().mockResolvedValue(['produtos.criar']),
+      );
+
+      await expect(guard.canActivate(req)).resolves.toBe(false);
+    });
+
+    it('modo all explícito também exige todas', async () => {
+      const guard = guardFor(
+        ['produtos.criar', 'produtos.editar'],
+        jest.fn().mockResolvedValue(['produtos.criar', 'produtos.editar']),
+        'all',
+      );
+
+      await expect(guard.canActivate(req)).resolves.toBe(true);
+    });
   });
 });

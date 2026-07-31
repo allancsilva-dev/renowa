@@ -3,7 +3,10 @@ import {
   PERMISSION_CATALOG,
   PERMISSION_SLUGS,
   PermissionSlug,
+  ROLE_TEMPLATES,
+  ROLE_TEMPLATE_NAMES,
   SYSTEM_ROLE_NAMES,
+  formatRoleName,
 } from './catalog';
 
 describe('PERMISSION_CATALOG', () => {
@@ -71,6 +74,40 @@ describe('DEFAULT_ROLE_PERMISSIONS', () => {
       expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(slug);
       expect(DEFAULT_ROLE_PERMISSIONS.financeiro).not.toContain(slug);
     }
+  });
+});
+
+/**
+ * O defeito que estes casos travam: a tela de Usuários oferecia `manager` e
+ * `viewer`, nomes que `DEFAULT_ROLE_PERMISSIONS` não conhece. O backend criava
+ * a tenant_role assim mesmo, sem permissão nenhuma, e o usuário logava para
+ * tomar 403 em todo endpoint. Enquanto a lista oferecida e a lista provisionável
+ * forem a mesma, isso não volta.
+ */
+describe('ROLE_TEMPLATES', () => {
+  it('cobre exatamente as chaves de DEFAULT_ROLE_PERMISSIONS', () => {
+    expect(new Set(ROLE_TEMPLATE_NAMES)).toEqual(new Set(Object.keys(DEFAULT_ROLE_PERMISSIONS)));
+  });
+
+  it('todo perfil oferecido nasce com pelo menos uma permissão', () => {
+    for (const name of ROLE_TEMPLATE_NAMES) {
+      expect(DEFAULT_ROLE_PERMISSIONS[name].length).toBeGreaterThan(0);
+    }
+  });
+
+  it('nomes são lowercase, únicos, e todo rótulo é preenchido', () => {
+    expect(new Set(ROLE_TEMPLATE_NAMES).size).toBe(ROLE_TEMPLATE_NAMES.length);
+    for (const role of ROLE_TEMPLATES) {
+      expect(role.name).toBe(role.name.toLowerCase());
+      expect(role.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('formatRoleName usa o rótulo do template e title-case no perfil custom', () => {
+    expect(formatRoleName('gestao')).toBe('Gestão');
+    expect(formatRoleName('  ADMIN ')).toBe('Administrador');
+    expect(formatRoleName('equipe_vendas')).toBe('Equipe Vendas');
+    expect(formatRoleName('')).toBe('');
   });
 });
 

@@ -111,12 +111,15 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
 export const PERMISSION_SLUGS: readonly PermissionSlug[] = PERMISSION_CATALOG.map((entry) => entry.slug);
 
 /**
- * Nomes de tenant_roles que o app provisiona automaticamente (JWT
- * `defaultRole` no primeiro login, ou role digitada na criação de usuário
- * nativo) e o conjunto de permissões concedido nesse momento. Só se aplica
- * na criação — editar um perfil depois disso é livre pela tela de Perfis.
- * Qualquer nome fora deste mapa é provisionado sem nenhuma permissão
- * (fail-closed: precisa ser concedida explicitamente depois).
+ * Nomes de tenant_roles que o app sabe provisionar do zero, e o conjunto de
+ * permissões concedido nesse momento. Só se aplica na criação — editar um
+ * perfil depois disso é livre pela tela de Perfis.
+ *
+ * Nome fora deste mapa NÃO é provisionado: o backend recusa com 400 em vez de
+ * criar uma tenant_role vazia. Perfil sob medida se cria na tela de Perfis,
+ * onde as permissões são escolhidas explicitamente. Antes disso, criar usuário
+ * com um nome desconhecido gerava uma role real sem nenhuma permissão — o
+ * usuário logava e tomava 403 em todo endpoint, sem nada apontar a causa.
  */
 export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly PermissionSlug[]>> = {
   admin: PERMISSION_SLUGS,
@@ -140,3 +143,47 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly Permissi
  * ver Etapa 4). Hoje só "admin"; tenant_roles.is_system reflete isto no banco.
  */
 export const SYSTEM_ROLE_NAMES: readonly string[] = ['admin'];
+
+export interface RoleTemplate {
+  /** Nome gravado em `tenant_roles.name`. Sempre lowercase. */
+  readonly name: string;
+  /** Rótulo de exibição. Única fonte de rótulo de perfil em todo o produto. */
+  readonly label: string;
+}
+
+/**
+ * Os perfis que o produto oferece para escolha, com o rótulo que o usuário vê.
+ *
+ * Fonte única: backend e frontend leem daqui. Antes existiam quatro
+ * vocabulários independentes — a tela de Usuários oferecia `admin`/`manager`/
+ * `viewer`, `lib/authorization.ts` rotulava `gerente`/`operador`, a tela de
+ * Auditoria tinha a sua lista, e o backend só sabia provisionar
+ * `admin`/`gestao`/`vendedor`/`financeiro`. Escolher qualquer nome que o
+ * backend não conhecia criava perfil sem permissão nenhuma.
+ *
+ * `catalog.spec.ts` garante que todo nome daqui tem template em
+ * `DEFAULT_ROLE_PERMISSIONS`, e vice-versa.
+ */
+export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
+  { name: 'admin', label: 'Administrador' },
+  { name: 'gestao', label: 'Gestão' },
+  { name: 'vendedor', label: 'Vendedor' },
+  { name: 'financeiro', label: 'Financeiro' },
+];
+
+export const ROLE_TEMPLATE_NAMES: readonly string[] = ROLE_TEMPLATES.map((role) => role.name);
+
+/** Rótulo de um perfil; nome custom (criado na tela de Perfis) cai no title-case. */
+export function formatRoleName(role: string): string {
+  const normalized = role.trim().toLowerCase();
+  if (!normalized) return '';
+
+  const template = ROLE_TEMPLATES.find((entry) => entry.name === normalized);
+  if (template) return template.label;
+
+  return normalized
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}

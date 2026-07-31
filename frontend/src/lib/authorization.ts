@@ -1,3 +1,5 @@
+import { formatRoleName } from '@renowa/shared';
+
 const ADMIN_ROLE = 'admin';
 
 export function normalizeRole(role: string): string {
@@ -10,30 +12,24 @@ export function normalizeRoles(roles: readonly string[] | undefined): string[] {
   return [...new Set(roles.map(normalizeRole).filter(Boolean))];
 }
 
-/** Rótulos amigáveis para os papéis conhecidos (chave em lowercase). */
-const ROLE_LABELS: Record<string, string> = {
-  admin: 'Administrador',
-  superadmin: 'Super administrador',
-  viewer: 'Visualizador',
-  gerente: 'Gerente',
-  vendedor: 'Vendedor',
-  financeiro: 'Financeiro',
-  operador: 'Operador',
-};
-
 /**
- * Formata um papel para exibição. Papéis conhecidos usam rótulo próprio;
- * papéis custom (por tenant) caem no title-case (`equipe_vendas` → `Equipe Vendas`).
+ * Formata um papel para exibição.
+ *
+ * A lista de rótulos vive em `@renowa/shared` (`ROLE_TEMPLATES`), junto do mapa
+ * de permissões que o backend usa para provisionar o perfil. Este arquivo já
+ * teve a sua própria lista — com `gerente` e `operador`, nomes que o backend
+ * nunca soube provisionar — e havia ainda uma terceira em `UsuariosPage` e uma
+ * quarta em `AuditoriaPage`. Perfil custom (criado na tela de Perfis) cai no
+ * title-case: `equipe_vendas` → `Equipe Vendas`.
+ *
+ * `superadmin` fica aqui porque é papel de plataforma, não `tenant_role`: não
+ * tem template de permissões e não aparece na tela de Usuários.
  */
 export function formatRole(role: string): string {
   const normalized = normalizeRole(role);
   if (!normalized) return '';
-  if (ROLE_LABELS[normalized]) return ROLE_LABELS[normalized];
-  return normalized
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  if (normalized === 'superadmin') return 'Super administrador';
+  return formatRoleName(normalized);
 }
 
 export function hasRole(roles: readonly string[] | undefined, target: string): boolean {
