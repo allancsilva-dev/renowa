@@ -377,7 +377,14 @@
 - **Dependências:** suíte completa verde como rede de segurança (existe, mas é mock puro — ver BACKLOG-0028).
 - **Critério de aceite:** backend em NestJS 11.1.28+ (ou superior corrigido), suíte completa verde nos três workspaces, `npm audit --omit=dev` sem HIGH atribuível à linha do NestJS, **com data acordada explicitamente com o usuário**.
 - **Risco se ficar pendente:** ir para produção com 10 advisories HIGH numa linha de dependência sem manutenção e sem caminho de correção.
-- **Status:** ABERTO
+- **Superfície levantada por leitura (2026-07-31), para a janela não começar do zero:**
+  - **Bumps obrigatórios** (`backend/package.json`): `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/testing`, `@nestjs/cli`, `@nestjs/schematics` → `^11.x`; `@nestjs/config` `^3.3.0` → `^4.x` (a v3 tem peer-dep em Nest 10); `@nestjs/typeorm` `^10.0.2` → `^11.x`. Já compatíveis, sem ação: `@nestjs/throttler` 6.5.0, `@nestjs/mapped-types` 2.x, `rxjs` 7.8.2, `typeorm` 0.3.31, `class-validator`, `reflect-metadata`.
+  - **Remover o bloco `overrides` do `package.json` raiz** (`multer`, `express`, `body-parser`) — o próprio bloco tem o comentário mandando removê-lo nesta migração, e é ele que hoje segura o Express em 4.22.2. Com `platform-express@11` entram Express 5 e multer 2 nativamente; `multer` já está em 2.2.0 pelo override, então metade do risco já foi exercitada em produção.
+  - **Declarar `engines: { node: ">=20" }`** — hoje nenhum `package.json` declara Node, e o Nest 11 exige ≥ 20. O CI já roda Node 22.
+  - **Risco, em ordem:** (1) `common/guards/user-throttler.guard.ts` sobrescreve `getTracker(req)`, cuja assinatura passou a receber `(req, context)`, e lê `req.ip`, que muda sob Express 5 + `trust proxy`; companheiro: `common/throttling/redis-throttler.storage.ts` implementa `ThrottlerStorage` à mão. (2) `main.ts` alcança a instância Express crua para `set('trust proxy', …)`. (3) `cookie-parser` e `compression` precisam de major compatível com Express 5. (4) `@nestjs/config` v3→v4 é mecânico (só `get`/`getOrThrow` são usados) mas obrigatório. (5) quatro controllers com `FileInterceptor` + `@UploadedFile()`.
+  - **Verificado como NÃO aplicável:** não há `CacheModule`, não há `nestjs-cls`, não há mutação de `req.query`, e não há rota wildcard (`'*'`/`@All()`) — o breaking change do `path-to-regexp` v8 não toca este código. `@types/express` já está em `^5.0.0`, então a migração tende a **reduzir** atrito de tipos.
+  - **A suíte não certifica esta migração:** `@nestjs/testing` aparece em **1** dos 59 specs; o resto instancia classes com mocks à mão, e não há teste de integração HTTP nem Postgres no CI. Uma regressão de container DI ou de adapter Express passaria verde. A aceitação precisa incluir roteiro manual pelo `ops/qa-safari/`: login, cadeia de guards, throttling e os quatro endpoints de upload.
+- **Status:** ABERTO — **adiado por decisão do usuário em 2026-07-31**, depois de a superfície acima ter sido levantada. Segue precisando de data acordada.
 - **Relacionado:** PROB-0068, PROB-0069, PROB-0071
 
 ### BACKLOG-0041 — GATE DE DEPLOY: rodar `db:verify` contra produção antes de subir
@@ -387,8 +394,9 @@
 - **Dependências:** acesso ao `DATABASE_URL` de produção; BUG-0021 (a ferramenta) já está pronto no working tree, **sem commit**.
 - **Critério de aceite:** `db:verify` executado contra produção com saída registrada; para cada divergência encontrada, decisão explícita (aplicar `0031`, que é idempotente e aditiva, ou tratar como incidente). Só então o deploy segue.
 - **Risco se ficar pendente:** subir para produção sem saber se o banco tem CHECKs de `version > 0` (base do controle de concorrência otimista), índices únicos que impedem comissão duplicada, triggers de `updated_at` e as tabelas de sync. Se qualquer um faltar, a falha aparece como corrupção silenciosa de dado real, não como erro.
+- **Escopo acumulado (2026-07-29):** produção segue **nunca verificada**, e agora há três migrations à frente dela. O checklist de `0037` está em [REVIEW_REPORTS/2026-07-29_fix_pendencias-auditoria.md:184-189](REVIEW_REPORTS/2026-07-29_fix_pendencias-auditoria.md); o de `0038` é a pré-checagem de duplicata de pedido externo em **BACKLOG-0062**, que é a única capaz de **abortar** a migration e por isso tem de rodar antes da janela de deploy. Este item continua sendo o gate geral; BACKLOG-0062 é o gate específico da `0038`.
 - **Status:** ABERTO
-- **Relacionado:** PROB-0059, PROB-0060, PROB-0061, BUG-0020, BUG-0021
+- **Relacionado:** PROB-0059, PROB-0060, PROB-0061, BUG-0020, BUG-0021, BACKLOG-0062
 
 ### BACKLOG-0042 — Comunicar a usuários a mudança de contrato da importação de produtos: `.xlsx` deixou de ser aceito
 - **Prioridade:** P1
@@ -464,7 +472,7 @@
 - **Prioridade:** P1
 - **Área:** backend / frontend / banco
 - **Motivo:** as três frentes de 2026-07-29 foram validadas por lint, build, 405 testes de backend (mock puro), 43 de frontend e por `db:migrate` + `db:verify` + smoke SQL das constraints em banco descartável. **Faltou o fluxo pela interface**, porque o banco de dev está bloqueado para migrar (PROB-0072). Vale lembrar que foi justamente o teste contra banco real — e não a suíte mockada — que revelou a FK impossível de `pedido_fotos` (PROB-0073).
-- **Dependências:** ~~PROB-0072~~ **RESOLVIDO em 2026-07-29** — o banco de dev está em `0037` com `db:verify` limpo, e `pedido_fotos`, `chamados_sac` e `itens_chamado_sac` existem lá. **Este item está desbloqueado**; falta a validação manual pela UI, que é do usuário.
+- **Dependências:** ~~PROB-0072~~ **RESOLVIDO em 2026-07-29** — o banco de dev está em `0037` com `db:verify` limpo, e `pedido_fotos`, `chamados_sac` e `itens_chamado_sac` existem lá. **Este item está desbloqueado**; falta a validação manual pela UI, que é do usuário. **Atualização (2026-07-29, parte 3):** o dev está em **`0038`**, e o critério de aceite abaixo mudou de comportamento em três pontos — validar já contra o novo: (b) registrar **duas vezes** o mesmo número de pedido externo no mesmo fornecedor deve dar **409** citando o pedido que já usa o número (FIX-0012), e o mesmo número em **outro** fornecedor deve ser aceito; (c) a numeração de chamado é **por tenant**, 1, 2, 3 sem buracos (FIX-0013), e o papel impresso deve trazer a linha `DATA DE ABERTURA` (FIX-0019); (e) **novo** — usuário com `pedidos.ver` mas sem `pedidos.criar` deve ser barrado ao digitar `/pedidos/novo` na URL, e `/pedidos/externo` sem sufixo deve redirecionar para a lista (FIX-0017).
 - **Critério de aceite:** (a) pedido interno com 3 fotos, duas nomeadas com o código de itens e uma com nome aleatório — vínculo automático nas duas primeiras, "não vinculada" na terceira, e as três no PDF; (b) pedido externo criado → liberado → nota fiscal parcial em `/faturamento` → status vira `parcialmente_faturado`, divergência bate com o valor informado e a comissão é gerada; (c) chamado SAC com 3 itens — numeração sequencial, TOTAL igual à soma das linhas, matriz de transições respeitada e papel impresso no layout do print; (d) usuário sem `sac.ver` não vê o item na sidebar **e** é barrado ao digitar `/sac` na URL.
 - **Risco se ficar pendente:** ir para produção com três features cujo caminho real de request nunca foi exercitado — exatamente a classe de erro que PROB-0073 representa.
 - **Status:** ABERTO
@@ -477,8 +485,9 @@
 - **Dependências:** decisão de negócio do usuário.
 - **Critério de aceite:** definição de quais perfis recebem quais slugs; se a decisão mudar o provisionamento automático, atualizar `shared/src/permissions/catalog.ts` + `catalog.spec.ts` (hoje há teste afirmando que `vendedor` e `financeiro` **não** recebem SAC) e migration de seed. Concessão pontual a um tenant pode ser feita pela tela de Perfis, sem código.
 - **Risco se ficar pendente:** baixo — o módulo funciona; só admin/gestao enxergam. O risco é operacional (vendedor pede para alguém abrir o chamado por ele).
+- **Dependência nova e dura (2026-07-29, parte 3):** **PROB-0078 tem de ser resolvido antes de conceder `sac.ver` a `vendedor`.** O chamado SAC não registra autoria e `findAll`/`findOne` do SAC não têm escopo de ownership de vendedor — não por esquecimento, mas porque **não existe a coluna pela qual filtrar**. No instante em que `sac.ver` for concedido pela tela de Perfis (o que **não exige código**), todo vendedor passa a ver os chamados de todos os vendedores do tenant. Conceder `sac.criar` sem autoria também deixa o registro sem trilha de quem abriu.
 - **Status:** ABERTO
-- **Relacionado:** PROB-0072
+- **Relacionado:** PROB-0072, PROB-0078
 
 ### BACKLOG-0051 — Migrar fotos de pedido para bucket quando o volume justificar
 - **Prioridade:** P3
@@ -511,7 +520,8 @@
 - **Risco se ficar pendente:** a classe de defeito silencioso que a auditoria só conseguiu descartar lendo o fonte de `node_modules/typeorm` — insustentável como método de verificação.
 - **Status:** ABERTO
 - **Dependência nova explicitada (2026-07-29):** o `ci.yml` **não tem** `services: postgres`, e `backend/jest.config.js` usa `rootDir: 'src'` com `testRegex: '.*\\.spec\\.ts$'` — um teste que precise de banco entra na suíte hermética e a quebra em qualquer máquina sem container. Precisa de config Jest separada **e** do serviço no CI, além de bootstrap de módulo e stub de auth. Sessão própria.
-- **Relacionado:** PROB-0072, BACKLOG-0049
+- **Escopo ampliado (2026-07-29, parte 3):** as rotas e invariantes novas da reverificação também seguem sem teste HTTP, e três delas só são verificáveis contra banco real: (f) 409 de pedido externo duplicado, provando que o **índice** barra (não só a guarda de aplicação) — hoje provado por smoke SQL manual em banco descartável, não por teste versionado; (g) numeração de chamado SAC por tenant sob concorrência — as 50 emissões paralelas foram um `xargs -P 10` de sessão, e nada as reproduz no CI; (h) teto de 10 fotos com dois uploads concorrentes, que é o único jeito de provar o `SELECT ... FOR UPDATE` do FIX-0011. As três são exatamente o tipo de garantia que a suíte mockada **não** pode dar.
+- **Relacionado:** PROB-0072, BACKLOG-0049, BACKLOG-0061, FIX-0011, FIX-0012, FIX-0013
 
 ### BACKLOG-0054 — Registro executável de tabelas com PII, spec de `privacy.service.ts` e política de retenção
 - **Prioridade:** P1
@@ -560,6 +570,247 @@
 - **O critério de aceite exigia quebrar o build, e não quebrava:** o `ci.yml` rodava **apenas** `npm test --workspace=backend`. Sem isso a fixture seria teatro. Foram acrescentados `npm test --workspace=shared` e `npm test --workspace=frontend`, e o `AGENTS.md` passou a listar os dois nos comandos canônicos — antes só citava lint e build do frontend, espelhando a mesma lacuna.
 - **Relacionado:** nenhum
 
+### BACKLOG-0058 — Painel de fotos no formulário de pedido externo
+- **Prioridade:** P3
+- **Área:** frontend
+- **Motivo:** `OrderPhotosPanel` é montado em `PedidoForm.tsx` e em `PedidoDetalhe.tsx`, mas **não** em `PedidoExternoForm.tsx` (confirmado por `grep -n OrderPhotosPanel frontend/src/pages/*.tsx`). O pedido externo aceita fotos pela API e as mostra no detalhe, então quem lança um externo só consegue anexar **depois** de salvar, indo ao detalhe — inconsistência com o pedido interno, onde o anexo faz parte do preenchimento.
+- **Dependências:** nenhuma. O backend já aceita foto em pedido de qualquer origem, e o painel já sabe operar em modo somente-leitura.
+- **Critério de aceite:** painel presente no formulário de pedido externo, editável nas mesmas condições do interno (pedido não liberado + `pedidos.editar`); nenhuma mudança de contrato de API.
+- **Ponto a decidir:** no interno o painel só aparece depois de o pedido existir (a foto precisa de `pedido_id`). O externo tem a mesma restrição, então "no formulário" significa **na edição**, não na criação — ou a criação precisaria enfileirar os arquivos no cliente até o primeiro save, o que é escopo maior.
+- **Risco se ficar pendente:** baixo, cosmético e de fluxo. Nenhum dado inacessível.
+- **Status:** ABERTO
+- **Relacionado:** [REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md](REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md)
+
+### BACKLOG-0059 — `SacTicketPdf` duplica o `StyleSheet` de `OrderValidationPdf`
+- **Prioridade:** P3
+- **Área:** frontend
+- **Motivo:** os dois papéis impressos declaram estilos próprios com a mesma identidade visual. Mudança de fonte, margem, cor de cabeçalho ou logo precisa ser feita **duas vezes**, e nada acusa quando só uma é feita — o defeito aparece como dois documentos oficiais divergentes na mão do cliente.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** base de estilo compartilhada (módulo próprio em `components/pdf/`), consumida pelos dois documentos, com **cada** desvio deliberado escrito como override explícito e comentado; nenhuma mudança visual em nenhum dos dois papéis (comparar o PDF gerado antes e depois).
+- **Risco se ficar pendente:** baixo e crescente com o número de documentos. O próximo PDF do sistema tende a copiar o `StyleSheet` de novo.
+- **Atualização (2026-07-30):** o defeito previsto aconteceu. O cabeçalho do PDF de pedido foi simplificado a pedido do cliente — `OrderValidationPdf` passou a imprimir só logo + `PEDIDO Nº X · data` (faixa de 46pt, `paddingTop` 72) e trocou a grade de cartões por células rótulo|valor no estilo da planilha do cliente. `SacTicketPdf` **não** foi alterado e continua com título grande, badge de status e nota "documento não fiscal" na faixa superior. Os dois papéis agora divergem de fato; o critério de aceite "nenhuma mudança visual" deve ser lido como "preservar o layout atual de **cada** documento, que não é mais o mesmo".
+- **Status:** ABERTO
+- **Relacionado:** FIX-0019
+
+### BACKLOG-0060 — `@IsDateString` do DTO de pedido segue aceitando datetime (não apertado de propósito)
+- **Prioridade:** P3
+- **Área:** backend / mobile
+- **Motivo:** a coluna `data` de `pedidos` é `date`, e `@IsDateString` aceita `2026-07-29T12:00:00Z`; o Postgres trunca a hora convertendo por fuso, então o dia gravado pode sair diferente do informado. É exatamente o defeito corrigido no DTO de SAC (FIX-0015), e **não** foi corrigido aqui **de propósito**: o pedido trafega no sync, e apertar a validação muda o contrato com o cliente mobile, que hoje pode estar enviando datetime.
+- **Dependências:** exige olhar o que o `mobile/` envia de fato antes de apertar — e `mobile/` está fora de escopo nas sessões recentes por `AGENTS.md`.
+- **Critério de aceite:** confirmado o formato que o mobile envia; se for data pura, `@Matches(/^\d{4}-\d{2}-\d{2}$/)` no DTO de pedido com teste; se for datetime, normalização explícita no servidor (truncar para data no fuso de negócio, não no do banco) em vez de recusa, para não quebrar aparelho em campo.
+- **Risco se ficar pendente:** um pedido pode ficar gravado com a data do dia anterior dependendo do horário do lançamento. Silencioso e difícil de reproduzir depois.
+- **Status:** ABERTO
+- **Relacionado:** FIX-0015, PROB-0079
+
+### BACKLOG-0061 — Testes de tela das três frentes (fotos, pedido externo, SAC)
+- **Prioridade:** P2
+- **Área:** frontend
+- **Motivo:** até esta rodada havia **zero** teste de componente para as três frentes; `frontend/src/components/orders/OrderPhotosPanel.test.tsx` é o primeiro, e nasceu porque o laço de requisições do FIX-0008 **só era demonstrável por teste** — três leituras de código não o pegaram. A lição é direta: nesse tipo de defeito (efeito que se re-dispara, guarda de rota, estado que não converge) leitura não substitui execução.
+- **Dependências:** nenhuma. `vitest` + `@testing-library/react` + `jsdom` já estão em uso, e o teste novo serve de modelo — inclusive o utilitário que deixa o event loop girar para expor laço de efeito.
+- **Critério de aceite:** cobertura de (a) guardas de rota do FIX-0017 — usuário sem `pedidos.criar` barrado em `/pedidos/novo`, sem `sac.criar` em `/sac/novo`, e `/pedidos/externo` redirecionando; (b) formulário de pedido externo — campos obrigatórios e 409 de duplicata exibido com a mensagem do backend; (c) formulário de SAC — total da tela igual à soma das linhas, usando a fixture compartilhada de `shared/`; (d) coluna Origem da fila de faturamento distinguindo interno de externo.
+- **Risco se ficar pendente:** a classe de defeito do FIX-0008 volta em qualquer painel novo que baixe binário, e as guardas de rota do FIX-0017 podem ser removidas num refactor sem que nada acuse.
+- **Status:** ABERTO
+- **Relacionado:** FIX-0008, FIX-0017, BACKLOG-0053, BACKLOG-0049
+
+### BACKLOG-0062 — GATE DE DEPLOY: pré-checagem da migration `0038` em produção
+- **Prioridade:** P0 — bloqueia o deploy que levar a `0038`
+- **Área:** banco / infra
+- **Motivo:** a `0038` cria `uq_pedidos_externo_numero`, índice único sobre dado **pré-existente**. É a única mudança da rodada capaz de **abortar a migration** em ambiente com dados: se houver pedido externo duplicado em produção, o `CREATE UNIQUE INDEX` falha e o `db:migrate` para. Isso é o comportamento desejado — a resolução de duplicata é decisão de negócio, não de schema — mas precisa acontecer **antes** da janela de deploy, não durante. Em dev não houve risco: **0 pedido externo e 0 chamado SAC**, nenhuma duplicata.
+- **Dependências:** acesso a produção, que **nenhuma** sessão de 2026-07-29 teve. Produção nunca foi verificada contra `0037` **nem** `0038`.
+- **Critério de aceite:** rodar em produção, **antes** de aplicar a `0038`, e registrar o resultado aqui:
+  ```sql
+  SELECT tenant_id, fornecedor_id, numero_pedido_externo, count(*)
+    FROM public.pedidos
+   WHERE origem = 'externo' AND deleted_at IS NULL
+   GROUP BY 1, 2, 3 HAVING count(*) > 1;
+  ```
+  Zero linha → a `0038` é segura. Uma linha ou mais → **pare**, e a decisão de qual registro sobrevive é do usuário. Depois de aplicar: `db:verify` limpo, incluindo o CHECK `sac_numero_contador_ultimo_check` e o índice parcial novo, e conferir que `sac_numero_contador` foi semeado com o `MAX(numero_chamado)` de cada tenant que já tenha chamados.
+- **Risco se ficar pendente:** deploy interrompido no meio da migration, em produção, com a resolução dependendo de uma decisão de negócio tomada sob pressão.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0041, FIX-0012, FIX-0013, [REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md](REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md)
+
+
+### BACKLOG-0063 — Foto escolhida na linha do item, no papel do pedido
+- **Prioridade:** P1
+- **Área:** banco / backend / frontend
+- **Motivo:** o papel jogava **todas** as fotos numa seção em página separada, em grade de 3 colunas. Quem confere a mercadoria precisa ver a foto ao lado do código na **própria linha** do item, e precisa escolher qual foto de cada item vai ao papel — a escolha valendo para toda emissão futura, não só para a emissão atual.
+- **Dependências:** migration `0039` (coluna `pedido_fotos.usar_no_papel`, CHECK e índice único parcial).
+- **Critério de aceite:** (a) no pedido **interno**, cada linha de item imprime **uma** foto, na primeira coluna da tabela, com o código do item acima da imagem; (b) sem marcação explícita, cai na foto vinculada **mais antiga** do item, para o papel ser útil na primeira emissão; (c) a marcação é persistida e no máximo uma por item, garantido por índice, não por aplicação; (d) a seção "Fotos" em página separada deixa de existir no pedido interno e **permanece** no pedido **externo**, que não tem tabela de itens onde encaixar a foto; (e) foto não escolhida e foto solta não saem no papel do interno; (f) há como vincular foto a item pela tela — sem isso a foto cujo nome não casou com nenhum código fica órfã e invisível para sempre; (g) a emissão baixa só as fotos que vão ao papel.
+- **Risco se ficar pendente:** conferência de mercadoria continua exigindo folhear páginas de fotos e cruzar código a olho.
+- **Status:** FECHADO
+- **Relacionado:** FIX-0021, [REVIEW_REPORTS/2026-07-30_fullstack_implementation_foto-na-linha-do-item.md](REVIEW_REPORTS/2026-07-30_fullstack_implementation_foto-na-linha-do-item.md)
+
+### BACKLOG-0064 — Decidir se pedido liberado ou faturado pode ser excluído
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** `DELETE /pedidos/:uuid` de um pedido com status `liberado` devolve **204** e faz o soft delete. A guarda de `OrdersService.remove()` só barra pedido com **nota fiscal ativa**; o status em si não bloqueia nada. O roteiro de teste afirmava 409 e estava errado quanto ao comportamento atual — a afirmação foi corrigida no relatório da rodada. Nada foi alterado no código: **é pergunta de regra de negócio, não defeito confirmado.**
+- **Dependências:** nenhuma. Decisão do usuário.
+- **Critério de aceite:** decidir e registrar qual das três vale — (a) manter como está: só nota fiscal ativa bloqueia, e excluir pedido liberado é operação legítima de correção; (b) bloquear a partir de `liberado`, porque o papel já foi emitido e conferido, exigindo cancelar antes de excluir; (c) bloquear só de `faturado`/`parcialmente_faturado`, que na prática é quase o que a guarda de nota fiscal já faz. Se a escolha for (b) ou (c), a guarda entra em `remove()` com teste de cada status e o roteiro passa a afirmar 409.
+- **Risco se ficar pendente:** baixo e conhecido — um pedido liberado pode ser excluído por engano sem nenhum obstáculo, e a única pista é o soft delete. Nenhum dado é destruído.
+- **Status:** ABERTO
+- **Relacionado:** [REVIEW_REPORTS/2026-07-29_teste-automatizado-safari.md](REVIEW_REPORTS/2026-07-29_teste-automatizado-safari.md)
+
+### BACKLOG-0065 — Decidir onde o valor com imposto é arredondado
+- **Prioridade:** P2
+- **Área:** frontend + backend (contrato de cálculo)
+- **Motivo:** `orderCalculation.ts:19-20` arredonda o valor **unitário** para 2 casas antes de multiplicar pela quantidade. Item de 4 unidades a R$ 25,50 com 10% de desconto e 10% de IPI: unitário com imposto 22,95 × 1,1 = 25,245 → 25,25 → linha 101,00, enquanto aplicar o IPI ao total da linha daria 100,98. No pedido de 2 itens medido em runtime, o total fechou em **202,00** em vez de 201,96, e o papel imprimiu `Total sem imposto R$ 183,60` com `IPI total R$ 18,40` — 10% de 183,60 é 18,36. Tela, API e PDF concordam entre si: a política está num único lugar e não há divergência interna. **Não é defeito, é escolha de arredondamento** — o problema é o cliente somar a coluna do papel e achar 4 centavos.
+- **Dependências:** nenhuma. Decisão do usuário (possivelmente com o contador).
+- **Critério de aceite:** decidir entre (a) manter o arredondamento no unitário, e então o papel passar a imprimir o IPI como diferença entre os totais em vez de sugerir percentual sobre a base; (b) arredondar só no total da linha, mantendo o unitário em precisão cheia, com o papel exibindo o unitário arredondado apenas para leitura. Escolhida a opção, `previewItem` e o cálculo do backend mudam juntos, com teste do caso 4 × 25,50 / −10% / +10% fixando o número esperado.
+- **Risco se ficar pendente:** baixo em valor, médio em confiança — centavos por linha, mas num pedido grande a soma manual do papel não fecha e a conversa é com o cliente.
+- **Status:** **FECHADO (2026-07-30)** — decisão do usuário: **opção (b)**, arredondar no **total da linha**, unitário em precisão cheia. `discountedRaw`/`taxedRaw` de `calculateOrderItem` ficaram em precisão cheia e `money()` passou a ser aplicado só em `total_item_sem_imposto`/`total_item_com_imposto`; `valor_com_desconto`/`valor_com_imposto` viraram **campos de leitura** declarados (exibição e persistência), nunca reusados na aritmética. `calculateOrderTotals` não mudou — continua somando linhas já arredondadas. `previewItem` do frontend espelha o backend.
+- **Números fixados por teste:** 4 × R$ 25,50 com −10% e +10% de IPI → `valor_com_desconto` `22.95`, `valor_com_imposto` `25.25` (leitura), `total_item_sem_imposto` `91.80`, `total_item_com_imposto` `100.98`. Pedido de 2 itens iguais → `total_sem_imposto` `183.60`, `ipi_total` `18.36`, `total_com_imposto` `201.96`. Antes: 101,00 / 202,00 / 18,40 — o `IPI total` do papel não batia com o percentual sobre a base.
+- **Divergência FE/BE encontrada de quebra, não prevista no enunciado:** `previewItem` **não normalizava a entrada**, enquanto o backend sempre normalizou (quantidades a 3 casas, preço e percentuais a 2, antes de qualquer conta). Era divergência real e sem teste dos dois lados. `previewItem` passou a normalizar igual, e `ItemInput` ficou opcional/nullable em todos os campos.
+- **Como a paridade passou a ser forçada:** fixture única `shared/src/orders/calculation-cases.ts` (`ORDER_ITEM_CASES`, `ORDER_TOTALS_CASES`), no mesmo molde do BACKLOG-0057 no SAC, re-exportada em `shared/src/index.ts` e **iterada** por `backend/src/orders/order-calculation.spec.ts` (Jest) e `frontend/src/lib/orderCalculation.test.ts` (Vitest). Antes era **um** caso de cada lado, copiado à mão, e **nenhum** distinguia "arredonda no unitário" de "arredonda no total da linha" — por isso a política pôde divergir sem nada acusar.
+- **Relatório de auditoria alinhado:** `backend/src/database/audits/order_calculation_divergences.sql` passou a usar `i.qtd_total` (persistida, já a 3 casas) em vez de `qtd_caixas * qtd_unitaria`, e `ROUND(...)` **por linha** em vez de arredondar só a soma. A fórmula já era a da política nova.
+- **Residuais aceitos:** (1) `total_item` deixa de ser exatamente `qtd_total × valor_com_desconto` quando o unitário não é exato — trade-off da opção escolhida, e **nenhum CHECK no banco verifica essa coerência**; (2) o papel imprime o unitário em 2 casas, então a multiplicação manual da coluna `VLR. COM DESC.` diverge do `TOTAL S/IMP` da linha **quando o unitário com desconto não é exato** — o total da linha é o autoritativo (BACKLOG-0069, reclassificado como informativo depois da verificação em runtime: o papel **não tem** coluna de total com imposto por linha, então o `VLR C/ IMP` nunca é multiplicado); (3) **pedidos históricos não são regravados** (BACKLOG-0070).
+- **Verificado em runtime (2026-07-30, BACKLOG-0068):** API, tela e papel confirmados nas três camadas — `183.60` / `201.96` com `IPI total R$ 18,36` no PDF extraído.
+- **Relacionado:** FIX-0023, BACKLOG-0057, BACKLOG-0067, BACKLOG-0068, BACKLOG-0069, BACKLOG-0070, [PROB-0065](PROBLEM_LEDGER.md), [REVIEW_REPORTS/2026-07-30_teste-automatizado-safari-todas-as-telas.md](REVIEW_REPORTS/2026-07-30_teste-automatizado-safari-todas-as-telas.md), [REVIEW_REPORTS/2026-07-30_fullstack_fix_arredondamento-e-troca-de-fornecedor.md](REVIEW_REPORTS/2026-07-30_fullstack_fix_arredondamento-e-troca-de-fornecedor.md)
+
+### BACKLOG-0066 — Trocar o fornecedor descarta os itens do pedido sem aviso
+- **Prioridade:** P2
+- **Área:** frontend
+- **Motivo:** em `/pedidos/novo` e `/pedidos/:uuid/editar`, o `onChange` do `select` de fornecedor executa `setItems([newItem()])` (`PedidoForm.tsx:264`). Toda linha já digitada desaparece na hora, sem confirmação e sem mensagem. A intenção é coerente — a lista de produtos é a do fornecedor —, mas um pedido de 20 linhas se perde num clique errado e não há como desfazer. Encontrado em runtime: foi exatamente isso que apagou os itens preenchidos na primeira execução da suíte automatizada.
+- **Dependências:** nenhuma.
+- **Critério de aceite:** com pelo menos um item preenchido, trocar o fornecedor pede confirmação explícita ("os itens deste pedido serão descartados") e só limpa depois do aceite; cancelar mantém fornecedor e itens intactos. Teste de componente cobrindo os dois caminhos. Alternativa aceitável: preservar as linhas e apenas desvincular o `produto_uuid` de cada uma, marcando-as para revisão.
+- **Risco se ficar pendente:** médio — perda de trabalho digitado, silenciosa, na tela de maior volume de digitação do sistema.
+- **Status:** **FECHADO (2026-07-30)** — decisão do usuário: a **alternativa** do critério de aceite, **preservar as linhas e desvincular o produto**, sem diálogo de confirmação (a operação deixou de ser destrutiva, então não há o que confirmar). `handleSupplierChange(nextUuid)` substituiu o `onChange` inline: no-op se o fornecedor for o mesmo; linha **com produto** zera `produto_uuid`, `codigo_manual`, `descricao_manual` e `preco_unitario` e é marcada para revisão, **preservando** `uuid`, `qtd_caixas`, `qtd_unitaria`, `desconto_perc` e `ipi_perc`; linha **manual** (sem `produto_uuid`) fica intocada, porque não depende do fornecedor.
+- **Ganho crítico além do enunciado:** preservar o `uuid` do item impede que o **PUT seguinte apague os itens no backend** (o PUT manda `itens` completo, e o comportamento antigo mandava uuids novos) e mantém os rótulos de foto do `OrderPhotosPanel`, que chaveia `itemLabels` por `item.uuid`. O comportamento antigo perdia os dois — em edição, não só em criação.
+- **Marca explícita, não derivada:** `ItemForm` ganhou `precisa_produto: boolean`. Não é derivado de `produto_uuid` vazio porque **linha recém-adicionada também está sem produto e não é órfã**. `chooseProduct` e `updateItem` limpam a marca (escolher produto, ou digitar código/descrição — linha manual é válida). Sinalização: banner `role='status'` acima dos itens, destaque âmbar na linha e `aria-invalid` no select.
+- **Bloqueio de submit sem regra nova:** reusa a validação que já existia em `submit()` ("Cada item precisa de um produto ou de código/descrição manual"). Nenhuma regra de validação foi acrescentada.
+- **Teste:** `frontend/src/pages/PedidoForm.spec.tsx` — **primeiro teste de componente desta tela**. Cobre: preserva linhas e desvincula o produto; reselecionar o mesmo fornecedor é no-op; linha manual intacta; submit bloqueado com linha pendente e liberado ao escolher novo produto.
+- **Verificado em runtime (2026-07-30, BACKLOG-0068):** confirmado ponta a ponta contra o backend real, incluindo o que o teste de componente **não podia** provar — os `uuid` dos itens persistidos são **os mesmos antes e depois** da troca de fornecedor e do save (`104dff6f-…`, `438fb7fa-…`), e o submit bloqueado **não** alterou o servidor.
+- **Relacionado:** FIX-0024, BACKLOG-0061, BACKLOG-0068, [REVIEW_REPORTS/2026-07-30_teste-automatizado-safari-todas-as-telas.md](REVIEW_REPORTS/2026-07-30_teste-automatizado-safari-todas-as-telas.md), [REVIEW_REPORTS/2026-07-30_fullstack_fix_arredondamento-e-troca-de-fornecedor.md](REVIEW_REPORTS/2026-07-30_fullstack_fix_arredondamento-e-troca-de-fornecedor.md)
+
+### BACKLOG-0067 — `calculateOrderItem` lança com string vazia, como o SAC lançava antes do BACKLOG-0057
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** `backend/src/orders/order-calculation.ts:26-31` normaliza com `new Decimal(value ?? 0)`. `?? 0` **não** cobre string vazia e `new Decimal('')` **lança** (`[DecimalError] Invalid argument:`, verificado nesta data). É exatamente a mesma classe de defeito já corrigida no SAC pelo BACKLOG-0057, e ficou **não corrigida** aqui porque a rodada de 2026-07-30 estava fechando a política de arredondamento e mexer na normalização de entrada no mesmo passe misturaria duas mudanças. O frontend **já** coalesce `''` para 0 (`orderCalculation.ts:13`), então os dois lados divergem no tratamento de vazio — a fixture compartilhada ainda não tem caso de string vazia justamente por isso.
+- **Dependências:** nenhuma. O remédio e o teste já existem no SAC como modelo.
+- **Critério de aceite:** `''` coalescido para 0 nas três funções de normalização (`quantity`, `money`, `percentage`), caso de string vazia acrescentado a `ORDER_ITEM_CASES` em `shared/src/orders/calculation-cases.ts` (passando a valer para os dois runners), e comentário registrando que a divergência foi alinhada.
+- **Risco se ficar pendente:** hoje **não há caminho HTTP** — o DTO exige `@IsNumber`. Um import de CSV, uma migração de dados ou qualquer chamada direta ao service com campo vazio derruba a requisição com **500** em vez de 400. Latente, não alcançável hoje.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0057, BACKLOG-0065, FIX-0023
+
+### BACKLOG-0068 — Verificação em runtime das mudanças de 2026-07-30 (arredondamento e troca de fornecedor)
+- **Prioridade:** P2
+- **Área:** frontend / backend / QA
+- **Motivo:** as duas mudanças de 2026-07-30 foram provadas **só por teste automatizado** — `npx jest` (51 suítes, 565 passed, 1 skipped), `npx vitest run` (13 arquivos, 88 passed), `tsc --noEmit` e eslint limpos. **Não** houve execução com o app subido, **nenhum PDF foi gerado** e o roteiro de `ops/qa-safari/` não foi reexecutado. A mudança de arredondamento altera número impresso em papel entregue ao cliente, e a de troca de fornecedor altera o caminho de maior volume de digitação do sistema: as duas classes de defeito que a rodada anterior mostrou que **leitura e teste unitário não pegam** (o laço de requisições do FIX-0008 e o 400 dos filtros do FIX-0020 só apareceram em runtime).
+- **Dependências:** app subido (skill `run-app`) e aba logada no Safari; o roteiro de `ops/qa-safari/` já cobre as telas.
+- **Critério de aceite:** (a) pedido de 2 itens de 4 × R$ 25,50 com −10% e +10% criado pela tela fecha em **R$ 201,96** na tela **e** na resposta da API, com `total_sem_imposto` `183.60`; (b) papel gerado e extraído (`pdftotext -layout`) mostrando `Total sem imposto R$ 183,60`, `IPI total R$ 18,36` e `Total final R$ 201,96`; (c) em `/pedidos/:uuid/editar` de um pedido com itens persistidos, trocar o fornecedor preserva as linhas, exibe o banner, e o **save seguinte não apaga os itens no backend** nem perde os rótulos de foto — este é o ponto que o teste de componente não pode provar, porque não há backend no teste.
+- **Risco se ficar pendente:** médio. O item (c) é o único caminho onde o defeito residual seria **perda de dado persistido**, e ele depende de integração real entre o PUT e o painel de fotos.
+- **Status:** **FECHADO (2026-07-30)** — executado com app subido (Postgres em Docker `renowa-dev-postgres` :5433, backend :3000, frontend :5173) e **sessão real**: `osascript … do JavaScript … in tab N of window 1` na aba já logada do Safari, com as requisições saindo da aba e o cookie `HttpOnly` de sessão (`credentials: 'include'`). Sem framework de E2E — mesmo driver do relatório de teste de tela desta data.
+- **(a) Confirmado — API e tela concordam:** pedido nº 19, criado por `POST /pedidos` com 2 itens de 4 × R$ 25,50, −10%, +10% → `total_sem_imposto "183.60"`, `total_com_imposto "201.96"`; item com `qtd_total "4.000"`, `valor_com_desconto "22.95"`, `valor_com_imposto "25.25"`, `total_item "91.80"`, `total_com_imposto "100.98"`. IPI derivado (com − sem) = **18.36**, e 10% da base (183,60) = **18.36** — batem. Tela `/pedidos/:uuid/editar` lida do DOM: rodapé `R$ 183,60` / `R$ 201,96` e linha 1 `4 cx × 1 un = 4 · Sem IPI: R$ 91,80 · Com IPI: R$ 100,98`, **idêntico à API**.
+- **(b) Confirmado — papel gerado e extraído:** pedido nº 20, PDF pelo botão "Gerar PDF para validação", `pdftotext -layout` → `Valor bruto R$ 204,00` / `Desconto total R$ 20,40` / `Total sem imposto R$ 183,60` / `IPI total R$ 18,36` / `Total final R$ 201,96`. Antes da mudança: 18,40 e 202,00.
+- **(c) Confirmado — e a regressão que apagava itens está morta:** em `/pedidos/:uuid/editar` de pedido com 2 itens persistidos, trocando Fornecedor A → B pelo select: continuam **2 itens**, com caixas `["4.000","4.000"]`, desconto `["10.00","10.00"]` e IPI `["10.00","10.00"]` idênticos; produto vazio nas duas linhas, `aria-invalid="true"` nos dois selects e o banner `O fornecedor mudou: 2 itens precisam de um novo produto. Quantidades e percentuais foram preservados.`. Submit com linha pendente → alerta `Cada item precisa de um produto ou de código/descrição manual.` e **o servidor não mudou** (2 itens, total intacto). Escolhido o Produto B nas duas linhas: banner some, IPI passa a `5.00` (vem do produto), código vira o do produto novo, quantidades preservadas; save redireciona para `/pedidos/:uuid`. **Os `uuid` dos itens ANTES são os mesmos DEPOIS** (`104dff6f-…`, `438fb7fa-…`) — que é a prova que o teste de componente não podia dar. Totais recalculados sob o fornecedor novo: `216.00` / `226.80` (4 × R$ 30,00, −10%, +5%), coerentes.
+- **Limpeza:** todos os dados de teste (stamp `QA65594440`) removidos — 2 pedidos (`DELETE` com `?version=`), 2 produtos, 2 fornecedores, 1 cliente; a busca pelo stamp devolve **0** em pedidos, produtos, fornecedores e clientes, e o PDF baixado foi apagado.
+- **Achado da execução:** o residual registrado em BACKLOG-0069 era **maior do que a realidade** — a coluna de total por linha do papel é a **sem** imposto. Corrigido lá.
+- **Não coberto por esta execução:** o relatório SQL de auditoria **não** foi executado (BACKLOG-0070 segue aberto como está), produção segue **nunca verificada**, e o caminho de sync ([PROB-0065](PROBLEM_LEDGER.md)) **não** foi exercitado.
+- **Relacionado:** BACKLOG-0065, BACKLOG-0066, BACKLOG-0049, BACKLOG-0069, BACKLOG-0070, FIX-0023, FIX-0024
+
+### BACKLOG-0069 — Coluna unitária do papel não fecha com o total da linha quando o unitário com desconto não é exato
+- **Prioridade:** P3 — informativo
+- **Área:** frontend (documento impresso)
+- **Enunciado original (2026-07-30) e sua correção:** este item nasceu afirmando que "quem multiplicar a coluna do papel obtém 4 × 25,25 = 101,00 contra 100,98 impresso". **Isso estava errado, e a verificação em runtime do BACKLOG-0068 corrigiu.** As colunas por item do papel são `VLR.TB` | `DESC.%` | `VLR. COM DESC.` | `IPI %` | `VLR C/ IMP` | `TOTAL S/IMP`. A coluna de **total por linha é a SEM imposto** (`OrderValidationPdf.tsx:150`, `item.total_item`), e `VLR C/ IMP` (25,25) é **unitário informativo: nunca é multiplicado nem totalizado no papel**. Não existe coluna de total com imposto por linha. Logo a divergência de 101,00 × 100,98 **não é uma conferência que o papel convide a fazer**.
+- **O que de fato sobra:** a mesma classe de diferença existe na coluna que o papel **realmente** convida a multiplicar — `VLR. COM DESC.` × `QTD TOTAL` contra `TOTAL S/IMP` — e só quando o **unitário com desconto não é exato**. No caso medido em runtime ela não aparece, porque 22,95 × 4 = 91,80 **exato**. Mas o caso de dízima que está na fixture (`ORDER_ITEM_CASES`, 3 unidades de R$ 10,00 com 33,33%) imprime `VLR. COM DESC. R$ 6,67` e `TOTAL S/IMP R$ 20,00`, enquanto 6,67 × 3 = **20,01**. Verificado por cálculo direto sobre os valores da fixture, **não** observado em papel gerado.
+- **Dependências:** nenhuma técnica. É decisão de apresentação, possivelmente com o contador.
+- **Critério de aceite:** decidir entre (a) **manter como está** — o `TOTAL S/IMP` da linha é o valor autoritativo e o desvio só aparece com desconto de dízima (recomendado: é o estado atual, já documentado, e o papel medido fecha); (b) imprimir `VLR. COM DESC.` com 3–4 casas, o que faz a multiplicação fechar sempre mas polui a coluna; (c) suprimir a coluna `VLR C/ IMP`, que é informativa e foi a origem da leitura errada deste item. Escolhida a opção, a evidência é papel gerado **com item de desconto em dízima** e extraído com `pdftotext -layout`.
+- **Risco se ficar pendente:** baixo. Centavos, só com desconto de dízima, e só para quem refaz a conta a partir da coluna unitária em vez de ler o total da linha.
+- **Status:** ABERTO — **reclassificado para informativo em 2026-07-30** após a verificação em runtime.
+- **Relacionado:** BACKLOG-0065, BACKLOG-0068, FIX-0023
+
+### BACKLOG-0070 — Inventário e decisão sobre pedidos históricos divergentes
+- **Prioridade:** P2
+- **Área:** banco / negócio
+- **Motivo:** a mudança de política do BACKLOG-0065 **não regrava pedido nenhum**. Pedidos gravados antes de 2026-07-30 seguem com os totais da política antiga (arredondamento no unitário) e passam a divergir do que o cálculo atual produziria — por centavos por linha. Efeito não óbvio: **abrir e salvar** um pedido antigo o recalcula inteiro sob a política nova, e o total persistido muda sem que o operador tenha alterado nenhum campo. O inventário de quem diverge é o relatório somente-leitura `backend/src/database/audits/order_calculation_divergences.sql`, que já foi alinhado à fórmula nova.
+- **Dependências:** acesso ao banco (dev e produção). Produção nunca foi verificada — ver BACKLOG-0041 e BACKLOG-0062.
+- **Critério de aceite:** rodar o relatório em dev **e** em produção e registrar aqui a contagem de pedidos divergentes; decidir entre (a) não fazer nada, aceitando que o histórico ficou na política antiga; (b) regravar em lote, o que muda valor de pedido já faturado e exige contraparte contábil; (c) regravar só o que ainda está `em_aberto`. Se a escolha for (b) ou (c), a operação é migration com backup e não script solto.
+- **Risco se ficar pendente:** baixo em valor e médio em confiança — reemitir o papel de um pedido antigo **depois** de alguém salvá-lo produz um total diferente do papel já entregue, sem nenhum registro do porquê.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0065, BACKLOG-0041, BACKLOG-0062, FIX-0023
+
+### BACKLOG-0071 — Quatro implementações paralelas de `money()` e duas de `brl()`
+- **Prioridade:** P3
+- **Área:** backend / frontend / shared
+- **Motivo:** a mesma regra de arredondamento monetário (`toDecimalPlaces(2, ROUND_HALF_UP)`) está escrita em **quatro** lugares — `backend/src/common/decimal`, `frontend/src/lib/decimal`, e as duas implementações de `sac-calculation` — e a formatação BRL (`brl()`) está duplicada nos **dois** PDFs. A rodada do BACKLOG-0065 mostrou o custo concreto: a política de arredondamento precisou ser alterada em dois arquivos que ninguém garante que sejam idênticos, e a divergência de normalização de entrada entre `previewItem` e `calculateOrderItem` existia **há tempo** sem nada acusar. A fixture compartilhada fecha a porta pelo teste; a duplicação de código continua aberta.
+- **Dependências:** nenhuma. `shared/` já é consumido pelos dois lados (catálogo de permissões e as duas fixtures de cálculo).
+- **Critério de aceite:** uma única fonte da regra de arredondamento em `shared/`, consumida por backend e frontend; `brl()` num módulo só, usado pelos dois documentos impressos; **nenhuma mudança de resultado** — as fixtures `ORDER_ITEM_CASES`, `ORDER_TOTALS_CASES` e as do SAC passam sem alteração de valor esperado.
+- **Risco se ficar pendente:** baixo hoje, e é exatamente o risco que já se concretizou uma vez: a próxima mudança de política de arredondamento tem quatro lugares para lembrar e nenhum mecanismo que reprove esquecer um deles fora do que as fixturas cobrem.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0059 (mesma classe de duplicação, no `StyleSheet` dos PDFs), BACKLOG-0057, BACKLOG-0065
+
+### BACKLOG-0072 — `pedido_item.total_com_imposto` é gravado e nunca lido em superfície nenhuma
+- **Prioridade:** P3
+- **Área:** backend / frontend
+- **Motivo:** achado na auditoria de 2026-07-30 feita junto com o ajuste de cores da tabela do papel. `calculateOrderItem` produz `total_item_com_imposto` e `orders.service.ts:115` o persiste em `pedido_item.total_com_imposto`, mas **nenhuma superfície de leitura usa a coluna persistida**: o papel (`OrderValidationPdf.tsx`) não tem coluna de total de linha com imposto — só `TOTAL S/IMP`, que lê `item.total_item` —, e o "Com IPI" que aparece por linha na tela de edição vem do **recálculo client-side** de `previewItem` (`frontend/src/lib/orderCalculation.ts:37`), não do valor gravado. A coluna só é consumida internamente pelo backend, em `calculateOrderTotals`, para somar `total_com_imposto` do pedido. Efeito não óbvio: se um dia a coluna persistida divergir do que o cálculo produz (pedido antigo, escrita por outro caminho), nada na tela nem no papel denuncia — ver BACKLOG-0070, que documenta exatamente esse histórico divergente.
+- **Dependências:** nenhuma. A decisão sobre a coluna `VLR C/ IMP` do papel em BACKLOG-0069 encosta neste item.
+- **Critério de aceite:** decidir entre (a) **expor** — acrescentar coluna `TOTAL C/IMP` no papel lendo `item.total_com_imposto`, o que também dá base de conferência ao `IPI total` do rodapé; (b) **manter como está**, registrando aqui que a coluna é de uso interno do agregado e não de leitura; (c) **remover** da API de leitura, mantendo só no banco. Escolhida a opção, a evidência é papel gerado e conferido, ou o contrato de resposta atualizado com teste.
+- **Risco se ficar pendente:** baixo. É campo correto e coerente, apenas invisível — o custo é de conferência: quem lê o papel não tem como fechar o `IPI total` do rodapé a partir das linhas.
+- **Relacionado a este mesmo achado:** a linha do papel mistura bases — `VLR. COM DESC.` e `VLR C/ IMP` são **unitários** e `TOTAL S/IMP` é **total de linha**. É fiel à planilha do cliente e não é defeito, mas é a mesma raiz da leitura errada registrada em BACKLOG-0069.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0069, BACKLOG-0070, BACKLOG-0065
+
+### BACKLOG-0073 — `0040:191` — `DISTINCT ON` sem desempate determinístico (corrigir só se a migration for reescrita)
+- **Prioridade:** P3
+- **Área:** banco
+- **Motivo:** o bloco de migração de `pedido_fotos` para `produto_fotos` usa `SELECT DISTINCT ON (f.tenant_id, i.produto_id) ... ORDER BY f.tenant_id, i.produto_id, f.created_at DESC`. Falta `, f.id DESC`: duas fotos do mesmo produto com o **mesmo** `created_at` fazem o Postgres escolher arbitrariamente qual sobrevive, e a escolha pode variar entre execuções e entre ambientes.
+- **Dependências:** nenhuma. **NÃO EDITAR `0040_produto_fotos.sql`** — a migration já está em `schema_migrations` e migration aplicada é imutável (AGENTS.md, PROB-0072); mudar o arquivo, inclusive só um comentário, trava `db:migrate` em todo banco que já a aplicou. `CHECKSUMS_SUPERSEDIDOS` não serve: `migrations-hygiene.spec.ts` só aceita diferença de controle de transação.
+- **Critério de aceite:** no dia em que a `0040` for reescrita (limpeza de histórico de migrations, recriação de baseline), incluir `, f.id DESC` no `ORDER BY`. Até lá, este item é registro, não trabalho.
+- **Risco se ficar pendente:** hoje **nulo na prática**. `pedido_fotos` está vazia (dev não tem a tabela; o gate de deploy manda conferir em produção no momento da aplicação), então o bloco não migra linha nenhuma. Desde a `0042` a coluna de destino do vínculo (`origem_pedido_id`) nem existe mais, e a própria `0042` **aborta** se alguma linha tiver sido migrada com vínculo — o cenário em que o desempate importaria para o deploy.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0072, PROB-0075, PROB-0083
+
+### BACKLOG-0074 — Unificar as demais entidades em `createIdempotente`
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** o helper `backend/src/common/persistence/idempotent-create.ts` existe desde a correção do P1-1 e **produtos é o único consumidor**. Hoje o mesmo reenvio encontra três comportamentos diferentes: pedidos e SAC respondem **409** para uuid repetido (`assertUuidLivre`, `orders.service.ts:140`); clientes, fornecedores e transportadoras não têm guarda nenhuma; produtos devolvem o existente sem gravar. O app de celular vai reenviar criação da fila offline — três contratos para a mesma operação viram três tratamentos na ponta do cliente.
+- **Dependências:** nenhuma. O uuid estável já nasce com a intenção de criar em todas as telas (`useUuidDeCriacao`), então o lado do cliente está pronto.
+- **Critério de aceite:** criação de cliente, fornecedor, transportadora, pedido e chamado SAC passando por `createIdempotente`; replay com o mesmo uuid devolve o existente sem gravar, e com payload divergente devolve o existente **sem** aplicar a divergência (decisão travada com o usuário); teste por entidade cobrindo replay e corrida (23505 relido por uuid).
+- **Risco se ficar pendente:** a fila offline duplica ou falha conforme a entidade, e a diferença só aparece em campo.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0075
+
+### BACKLOG-0075 — `Idempotency-Key` HTTP reusando `sync_mutation_inbox`
+- **Prioridade:** P2
+- **Área:** backend
+- **Motivo:** fase 2 da idempotência, decidida com o usuário. `createIdempotente` (BACKLOG-0074) resolve criação por identidade da entidade, mas depende de cada tela mandar um uuid estável e não cobre operação que não seja criação. Um mecanismo de `Idempotency-Key` no nível HTTP, com **resposta cacheada por operação**, cobre web e mobile pelo mesmo caminho e não depende da disciplina de cada formulário. A infra de deduplicação já existe para o sync (`sync_mutation_inbox`) — reusar em vez de criar uma segunda.
+- **Dependências:** BACKLOG-0074 (o comportamento por entidade precisa estar uniforme antes de embrulhar tudo num interceptor).
+- **Critério de aceite:** header `Idempotency-Key` aceito nas rotas de escrita; a primeira execução grava chave + resposta; repetição dentro da janela devolve a resposta gravada **sem** reexecutar; chave repetida com payload diferente é recusada explicitamente; teste de concorrência com duas requisições simultâneas da mesma chave.
+- **Risco se ficar pendente:** duplicação continua sendo problema de cada tela e de cada service, resolvido caso a caso.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0074, BACKLOG-0005
+
+### BACKLOG-0076 — GATE DE DEPLOY das migrations `0040` / `0041` / `0042`: pré-checagens que têm de rodar ANTES da janela
+- **Prioridade:** P0
+- **Área:** banco / infra
+- **Motivo:** as três entram no **mesmo deploy** e **duas delas abortam** por dado preexistente — mesma classe do BACKLOG-0062 (gate específico da `0038`), que existe justamente porque migration que aborta precisa de checagem antes da janela, não durante. Hoje as pré-checagens estão só no cabeçalho das migrations e em FIX-0026; sem item próprio, ninguém as roda. **Produção nunca foi consultada** — não há acesso a partir do ambiente de desenvolvimento.
+- **Contexto que torna a `0040` perigosa:** produção roda o código **antigo**, com o painel de fotos do pedido e o endpoint de upload de pé. Entre agora e o deploy **alguém pode anexar foto**, e a `0040` faz `DROP TABLE public.pedido_fotos`. A contagem tem de ser feita **no momento da aplicação**, não antes — uma contagem de ontem não vale.
+- **Dependências:** acesso ao `DATABASE_URL` de produção. BACKLOG-0041 continua sendo o gate geral (`db:verify`); este é o específico destas três.
+- **Critério de aceite:** os quatro passos abaixo executados **em ordem**, com saída registrada:
+  1. **Derrubar o código antigo ANTES de migrar**, não depois — enquanto ele estiver de pé, a contagem do passo 2 pode mudar entre a leitura e o `DROP`.
+  2. `SELECT count(*) FROM pedido_fotos WHERE deleted_at IS NULL;` **no momento da aplicação**. Se `> 0`: **parar**. O `DROP TABLE` passa a destruir dado real, o desempate não determinístico do `DISTINCT ON` (BACKLOG-0073) passa a importar, e a `0042` vai abortar de qualquer forma — a decisão volta a ser de negócio.
+  3. Pré-checagem da `0041` (o `CREATE UNIQUE INDEX` falha e para o `db:migrate` se houver duplicata; fundir ou renomear é decisão de negócio):
+     ```sql
+     SELECT tenant_id, fornecedor_id, codigo, count(*)
+       FROM public.produtos
+      WHERE codigo IS NOT NULL AND deleted_at IS NULL
+      GROUP BY 1, 2, 3 HAVING count(*) > 1;
+     ```
+  4. Pré-checagem da `0042` (guarda própria, `RAISE EXCEPTION`): `SELECT count(*) FROM public.produto_fotos WHERE origem_pedido_id IS NOT NULL;` — só pode dar `> 0` se o passo 2 tiver dado `> 0`, é a segunda rede.
+  - **Dump de `pedido_fotos` antes, de qualquer forma.** O cabeçalho da `0040` pede; **nada no runner obriga**.
+- **Risco se ficar pendente:** perda irreversível de foto anexada a pedido em produção, ou deploy travado no meio (migration abortada) sem decisão preparada. Dev tinha 0 duplicatas de código em 2026-07-30 e `pedido_fotos` não existe lá — **isso não diz nada sobre produção**.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0041, BACKLOG-0062, BACKLOG-0073, PROB-0083, FIX-0025, FIX-0026
+
+### BACKLOG-0077 — Verificar em navegador a permissão da foto para perfil com `produtos.criar` sem `produtos.editar`
+- **Prioridade:** P3
+- **Área:** segurança / frontend
+- **Motivo:** o `PUT /produtos/:uuid/foto` aceita `produtos.criar` **OU** `produtos.editar` (`RequireAnyPermission`), e a tela usa a mesma regra — quem pode criar o produto define a foto dele. Está coberto por teste (`product-photos.permissions.spec.ts` trava a permissão dos quatro endpoints; `permission.guard.spec.ts` cobre o modo `any`, inclusive "sem metadata de modo, lista continua exigindo todas"), mas **nunca foi exercitado em navegador**: exige um segundo perfil e outra sessão, e a suíte de `ops/qa-safari` **não pode tocar `/login`** — derruba a sessão que ela usa (ver `AGENTS.md`).
+- **Dependências:** um perfil de teste com `produtos.criar` e `produtos.ver`, **sem** `produtos.editar`, e uma forma de exercitá-lo sem derrubar a sessão da suíte (janela/perfil separado do Safari, ou execução manual).
+- **Critério de aceite:** com esse perfil, o campo de foto **aparece** em `/produtos/novo`, o upload responde `200`, e o `DELETE` da foto responde `403` (apagar foto de produto existente continua sendo edição — rebaixar deixaria quem só cadastra apagar foto de qualquer produto).
+- **Risco se ficar pendente:** baixo. O contrato está travado por teste nos dois lados; o que falta é a prova de que a tela e o guard concordam em sessão real.
+- **Status:** ABERTO
+- **Relacionado:** FIX-0025, [REVIEW_REPORTS/2026-07-31_fix_foto-de-catalogo-sem-titular-e-qa-sem-fase-morta.md](REVIEW_REPORTS/2026-07-31_fix_foto-de-catalogo-sem-titular-e-qa-sem-fase-morta.md)
+
 
 # MetaRenowa P0 (21/07/2026)
 
@@ -567,3 +818,22 @@
 - Validado: smoke real autenticado com PostgreSQL, criação/edição/reabertura e PDFs de 1, 10 e 70 itens.
 - Infraestrutura pendente: sanear o baseline de `schema_migrations` no banco dev legado; o runner completo encontra tabelas preexistentes ao tentar aplicar `001_initial_schema.sql`.
 - P1 preservado: Sintegra, aceite/assinatura digital, envio externo e regras financeiras avançadas. Detalhes em `docs/MetaRenowa.md`.
+
+### BACKLOG-0078 — Push de sync não conhece o ator: nenhuma entidade tem checagem de ownership de vendedor
+- **Prioridade:** P1
+- **Status:** ABERTO
+- **Origem:** achado ao fechar PROB-0065 (2026-07-31)
+- **Contexto:** `SyncController.push` **já recebe** `@CurrentUser() user: RequestUser` e `SyncAuthorizationService` já calcula o conjunto efetivo de permissões — mas `SyncService.pushItems(dto.items, user.tenantId)` descarta os dois e leva só o tenant adiante. Consequência: um device de usuário `vendedor` pode empurrar item para o pedido de outro vendedor do mesmo tenant, coisa que a REST recusa (`isVendorOnly`/`vendorOwnershipWhere` em `orders/order-ownership.ts`). Não é regressão de PROB-0065 — é anterior, e vale para **todas** as entidades do sync, não só pedido.
+- **Por que não foi feito junto:** fechar PROB-0065 exigia a máquina de estados e a derivação de totais; ownership é outro eixo. Ao extrair `orders/order-write.ts` a assinatura chegou a prever um `OrderActor`, e ele foi **removido** em vez de preenchido com um `sub` inventado — abstração meio-usada mente sobre a garantia que oferece.
+- **O que fazer:** `SyncAuthorizationService.assertCanPush` devolver um `SyncActor { tenantId, sub, roles, permissions }` em vez de `void`; o controller repassar; `loadOrderForWrite` voltar a receber o ator e aplicar `vendorOwnershipWhere`; em CREATE de pedido pelo sync, forçar `vendedor_uuid = actor.sub`, espelhando `resolveHeader`. Custo de teste conhecido: uma asserção em `sync-authorization.service.spec.ts`, o argumento de `pushItems` em `sync.controller.spec.ts` e os literais `'tenant-1'` em `sync.service.spec.ts` atrás de um helper.
+- **Aceitação:** device de vendedor recebe recusa terminal ao tocar pedido de outro vendedor, nos dois protocolos, com teste cobrindo v1 e v2.
+- **Relacionado:** PROB-0065, FIX-0027
+
+### BACKLOG-0079 — Item de sync cujo pedido pai ainda não chegou é classificado como não-retryable
+- **Prioridade:** P2
+- **Status:** ABERTO
+- **Origem:** achado ao fechar PROB-0065 (2026-07-31)
+- **Contexto:** um `itens_pedido` CREATE que chegue antes do `pedidos` CREATE do mesmo lote falha ao resolver o pai e vira `rejected`/`VALIDATION_FAILED`/`retryable: false` no v2 — estado terminal para uma falha que é **transitória**. O item é descartado logicamente quando bastaria tentar de novo depois do pai. É pré-existente (a resolução de FK sempre foi assim), não regressão do writer novo.
+- **O que fazer:** distinguir "FK de pai ausente" das demais recusas de validação e classificá-la como `retryable`, com teto de tentativas; ou ordenar o lote por dependência antes de processar.
+- **Aceitação:** lote fora de ordem converge sem perder item, com teste que empurre item antes do pai.
+- **Relacionado:** PROB-0065, ADR_SYNC_PUSH_V2

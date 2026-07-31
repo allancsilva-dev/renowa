@@ -223,7 +223,7 @@
 - **Data:** 2026-07-22
 - **Origem:** implementação (achado durante investigação da Etapa 4 do RBAC overhaul: remoção do bypass hardcoded de admin + fim do `RolesGuard`)
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO (2026-07-31) — o original já estava corrigido; o **sucessor** foi corrigido agora (FIX-0028).
 - **Área:** backend / segurança (RBAC)
 - **Sintoma:** `AutoProvisionGuard` é `APP_GUARD` global (`backend/src/app.module.ts:89`, ordem: `JwtAuthGuard` → `AutoProvisionGuard` → `PermissionGuard` → `UserThrottlerGuard`), roda em toda request não-`@Public()` antes de qualquer handler de controller. Quando não existe `local_users` para `(authUserId, tenantId)` (`backend/src/common/guards/auto-provision.guard.ts:64-86`), o guard busca uma `tenant_role` chamada exatamente `'viewer'` via `findTenantRoleByName(tenantId, 'viewer')` e, se não encontrar, lança `ForbiddenException('Tenant não provisionado com role viewer')` (`:70-78`) — 403 direto do guard global, antes de qualquer lógica de handler.
 - **Causa raiz:** confirmada por leitura de código — `findTenantRoleByName` (`backend/src/users/users.service.ts:167-178`) só faz `tenantRoleRepo.findOne(...)`; nada cria a role `'viewer'` automaticamente nesse caminho. O único ponto do código que efetivamente cria/garante uma tenant_role sob demanda é `ensureTenantRole`/`ensureTenantRoleWith` (`users.service.ts:43-48`, `:314+`), mas esse método só é chamado (a) dentro do handler `GET /users/me` (`users.controller.ts:48`, já depois do guard global) e (b) dentro de `createTenantUser`, o caminho de `POST /users` usado por um admin já existente para criar novo usuário (confirmado em `docs/superpowers/specs/2026-07-11-auth-nativa-fase1-design.md:116`: `ensureTenantRole` + insert de `LocalUser` dentro da mesma transação). Ou seja: se uma tenant_role `'viewer'` nunca foi criada para um tenant (por qualquer via), qualquer usuário desse tenant sem `local_user` ainda — por exemplo, o primeiro login de um usuário novo — recebe 403 do guard global antes de chegar a qualquer handler, incluindo o próprio `/users/me` que teria criado a role sob demanda.
@@ -234,6 +234,7 @@
 - **Evidências/comandos:** leitura direta de `auto-provision.guard.ts`, `users.service.ts`, `app.module.ts`, `auth.controller.ts`, `users.controller.ts`, `jwt-payload.type.ts` e `docs/superpowers/specs/2026-07-11-auth-nativa-fase1-design.md` (linhas 1-20, 115-138); `grep -n "APP_GUARD\|AutoProvisionGuard\|RolesGuard" backend/src/app.module.ts` confirma ordem dos 4 guards globais; `grep -n "@Get\|@Post\|@Patch\|@Delete" backend/src/auth/auth.controller.ts` confirma ausência de rota de signup/registro de tenant.
 - **Riscos residuais:** severidade real incerta — depende de um processo operacional de bootstrap de tenant que existe fora deste repositório (ops/script/ferramenta interna) e que este agente não tem como inspecionar ou confirmar. Se esse processo já cria a tenant_role `'viewer'` (ou o `local_user` do admin diretamente) antes do primeiro login, o bloqueio nunca se manifesta na prática; se não cria, qualquer tenant novo fica travado no primeiro login de qualquer usuário sem `local_user`, incluindo o próprio primeiro admin. Comentário legado em `jwt-payload.type.ts:2` (referência a ZonaDevAuth) não avaliado quanto a efeito funcional, só sinalizado como possível resquício de documentação/comentário desatualizado.
 - **Próximo passo:** delegar avaliação e decisão de correção ao `backend-engineer` (opções (a)/(b)/(c) acima); confirmar com o time/usuário qual é o processo real de bootstrap de tenant novo hoje (fora deste repo) antes de decidir a correção definitiva; se confirmado que o bloqueio é real, tratar como candidato a entrada em `docs/BACKLOG.md` na próxima passagem do `docs-reporter`.
+- **Evidência de fechamento (2026-07-31):** o `AutoProvisionGuard` não existe mais — foi substituído por `backend/src/common/guards/local-user-context.guard.ts` no commit `0f066ae`, cujo cabeçalho documenta a remoção do ramo que buscava a role `viewer`, com regressão em `local-user-context.guard.spec.ts`. **Mas o mesmo sintoma operacional continuava alcançável por outro mecanismo:** a tela de Usuários oferecia `manager`/`viewer` (e usava `viewer` como default), nomes sem template em `DEFAULT_ROLE_PERMISSIONS` — o backend criava a `tenant_role` vazia e o usuário logava para tomar 403 em toda tela. Havia quatro vocabulários de perfil independentes (backend, `UsuariosPage`, `lib/authorization.ts`, `AuditoriaPage`). Corrigido em **FIX-0028**: fonte única em `@renowa/shared` (`ROLE_TEMPLATES`), backend recusando com 400 nome sem template que não exista no tenant, e remoção do caminho de criação implícita de `local_users` com e-mail forjado. Evidências: `npm test --workspace=shared` → 13 passed; `... -- users.service.provisioning` → 8 passed.
 - **Relacionado:** Etapas 1-4 do RBAC overhaul (catálogo de permissões, migration+backfill do admin, provisionamento explícito de tenant_roles, remoção do bypass hardcoded de admin + fim do `RolesGuard`)
 
 ---
@@ -242,7 +243,7 @@
 - **Data:** 2026-07-22
 - **Origem:** revisão (achado próprio ao verificar o estado do banco durante a investigação de PROB-0059)
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO em dev (2026-07-31). Produção segue **não verificada** — BACKLOG-0041.
 - **Área:** banco / backend / infra
 - **Sintoma:** verificado por query própria no `renowa-dev-postgres` — `sync_outbox`, `sync_changes` e `sync_mutation_inbox` = **0 tabelas**; `capture_sync_outbox` e `drain_sync_outbox` = **0 funções**; `sync_change_revision_seq` = **0**. Ainda assim, `schema_migrations` tem `0008_sync_change_feed.sql` e `0009_sync_push_v2.sql` registradas como aplicadas em 2026-07-22 14:07:57.
 - **Causa raiz:** provável — **`schema_migrations` foi populada sem que o SQL correspondente tenha rodado**. As duas alternativas foram descartadas por verificação direta: (a) **não é o mecanismo do PROB-0059** — não existe nenhuma `@Entity` para essas tabelas (`grep @Entity backend/src/sync/` retorna vazio) e o `synchronize` do TypeORM só mexe em tabelas presentes nos seus metadados, nunca dropa tabela que desconhece; (b) as migrations `0008`/`0009` usam `CREATE TABLE IF NOT EXISTS` — se tivessem executado, as tabelas existiriam. Isso bate com a nota já existente no BACKLOG sobre "sanear o baseline de `schema_migrations` no banco dev legado" e tem a **mesma assinatura do PROB-0060** (migration registrada, objetos ausentes), o que sugere **causa comum, não coincidência**. Candidato à causa raiz mecânica: BACKLOG-0035 (`0007_optimistic_concurrency.sql` tem `BEGIN;`/`COMMIT;` próprios dentro da transação do runner).
@@ -254,13 +255,14 @@
 - **Evidências/comandos:** queries próprias no `renowa-dev-postgres` (contagem de tabelas/funções/sequences no catálogo + leitura de `schema_migrations`); `grep @Entity backend/src/sync/` sem resultado; leitura dos arquivos `0008`/`0009` confirmando `CREATE TABLE IF NOT EXISTS`.
 - **Riscos residuais:** enquanto ABERTO, o sync mobile em dev não funciona e nenhum teste de sync exercita o caminho real; o estado de produção segue desconhecido.
 - **Próximo passo:** decisão do usuário sobre religar os triggers de outbox em dev; independentemente disso, `db:verify` contra produção antes do deploy (BACKLOG-0041). Dono: `database-engineer` (+ `backend-engineer` para o impacto em `sync.service.ts`).
+- **Evidência de fechamento (2026-07-31):** os objetos já haviam sido restaurados em 2026-07-29 (reaplicação de `0008`/`0009` via `psql`, registrada no fechamento de PROB-0072) e este registro é que ficou para trás. Confirmado agora por catálogo, não por `schema_migrations`: `db:verify` contra o dev → `[5/7] 14/14 objetos de sync presentes`, verdito `OK: schema íntegro`. O verificador ganhou a seção que faltava (FIX-0029): sequence `sync_change_revision_seq`, os seis triggers `trg_*_sync_outbox` e a coluna `version` das seis tabelas da `0009` — antes, trigger de outbox derrubado era **invisível**, porque a seção de triggers só olhava `set_updated_at` e `CREATE OR REPLACE FUNCTION` restaura a função sem restaurar os triggers. A causa mecânica candidata (BACKLOG-0035) não é mais reproduzível: nenhum dos 35 `.sql` tem controle de transação próprio, e `migrations-hygiene.spec.ts` fixa a invariante.
 - **Relacionado:** PROB-0059, PROB-0060, BACKLOG-0035, BACKLOG-0039, BACKLOG-0041
 
 ### PROB-0064 — Mass assignment em `PATCH /produtos/:uuid` e `PATCH /transportadoras/:uuid` permite escrita cruzando fronteira de tenant
 - **Data:** 2026-07-22
 - **Origem:** revisão / auditoria de segurança
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO (verificado em 2026-07-31)
 - **Área:** segurança / backend
 - **Sintoma:** `backend/src/products/products.controller.ts:58` e `backend/src/transport/transport.controller.ts:51` usam `@Body() dto: Partial<CreateXDto>` (confirmado por leitura direta nesta sessão). `Partial<T>` é **tipo TypeScript, não classe**: o `design:paramtypes` emitido é `Object`, e o `ValidationPipe` global (com `whitelist` + `forbidNonWhitelisted`) **pula metatypes nativos** — o body chega cru em `Object.assign(product, rest)` (`products.service.ts:113-114`).
 - **Causa raiz:** confirmada — validação por DTO desativada de fato pelo uso de `Partial<T>` como tipo de parâmetro. `tenant_id`, `id`, `deleted_at` e `created_at` são graváveis: `PATCH {"tenant_id":"<uuid-vítima>"}` move o registro para outro tenant.
@@ -272,13 +274,14 @@
 - **Evidências/comandos:** leitura direta de `products.controller.ts:56-60` e `transport.controller.ts:49-53` nesta sessão, confirmando `@Body() dto: Partial<CreateXDto>`.
 - **Riscos residuais:** **gate de produção** — enquanto ABERTO, qualquer usuário autenticado com `produtos.editar` ou `transportadoras.editar` consegue mover registro entre tenants.
 - **Próximo passo:** delegar a `backend-engineer`. Corrigir **antes do deploy**.
+- **Evidência de fechamento (2026-07-31):** a correção já estava no código desde o commit `0f066ae`, e o ledger é que estava atrasado. `UpdateProductDto`/`UpdateTransportDto` usam `PartialType(CreateXDto)`, os dois controllers recebem as classes, e `main.ts` mantém `whitelist` + `forbidNonWhitelisted`. O "terceiro caso" que o `grep` original não pegaria virou teste de arquitetura: `backend/src/common/architecture/body-dto-metatype.spec.ts` varre **todo** `@Body()` sem chave em todos os controllers e reprova metatype nativo. `npm test --workspace=backend -- body-dto-metatype` → **20 passed**, 20 controllers cobertos.
 - **Relacionado:** BACKLOG-0037
 
 ### PROB-0065 — Caminho de sync (push do mobile) ignora a máquina de estados de pedido introduzida pelo commit
 - **Data:** 2026-07-22
 - **Origem:** revisão
 - **Severidade:** HIGH
-- **Status:** ABERTO
+- **Status:** FECHADO (2026-07-31) — ver FIX-0027.
 - **Área:** backend / mobile / segurança
 - **Sintoma:** `backend/src/sync/sync-entity-policy.ts:54` mantém `status` em `writableFields` de `pedidos` (confirmado por leitura direta nesta sessão), e o push escreve **direto na tabela**, sem passar por `OrdersService`.
 - **Causa raiz:** confirmada — a máquina de estados nova foi implementada só na camada REST/serviço; o caminho de sync é uma segunda porta de escrita que não a conhece.
@@ -289,8 +292,11 @@
 - **Evidências/comandos:** leitura direta de `sync-entity-policy.ts:50-58` nesta sessão.
 - **Riscos residuais:** enquanto ABERTO, as correções de PROB-0062 e PROB-0063 são **parciais** — a mesma classe de falha continua alcançável pelo sync.
 - **Atualização (2026-07-29) — segue ABERTO, mas com o mecanismo pronto:** PROB-0074 introduziu `writableFieldsFor` em `SyncEntityPolicy`, o gancho que deriva a allowlist da linha corrente. É exatamente o que este problema precisa: `status` já não é gravável em pedido de **origem externa**. Removê-lo para **toda** origem foi deliberadamente adiado — `mobile/SyncService.ts` recebe `payload: Record<string, unknown>` de uma fila cujo produtor não foi localizado, e a tabela SQLite local tem coluna `status`, então não há como provar que o mobile nunca o envia. Tirar `status` de `writableFields` globalmente é quebra de contrato num cliente que o escopo atual proíbe alterar e validar. Há teste de regressão fixando que `status` **continua** gravável em pedido interno (`sync.service.spec.ts`), justamente para que fechar isto seja uma decisão explícita e não um efeito colateral.
-- **Próximo passo:** decidir o caminho de transição de status para o sync, com contraparte no cliente mobile. Depende de escopo que inclua `mobile/`.
-- **Relacionado:** PROB-0062, PROB-0063, PROB-0061, PROB-0074
+- **Atualização (2026-07-30) — o escopo do problema cresceu, e continua ABERTO:** `writableFields` de `itens_pedido` inclui **`total_item`** (`sync-entity-policy.ts:136-139`, leitura direta nesta data), e `total_item` é justamente onde `OrdersService` persiste `total_item_sem_imposto` (`orders.service.ts:114`). O push escreve esse valor **direto na tabela, sem passar por `calculateOrderItem`**. Com FIX-0023 a aritmética do item mudou de política (arredondamento no total da linha, não no unitário), então o sync agora é uma segunda porta de escrita que **desconhece a política vigente**: um device que calcule localmente à moda antiga grava linha com centavos a mais e o cabeçalho do pedido não é recalculado por ninguém. Note que a allowlist **não** inclui `ipi_perc`, `valor_com_desconto` nem `valor_com_imposto` — o item gravado pelo sync fica com total sem os campos de leitura correspondentes.
+- **Próximo passo:** decidir o caminho de transição de status para o sync, com contraparte no cliente mobile. Depende de escopo que inclua `mobile/`. Na mesma decisão, avaliar remover `total_item` de `writableFields` — total é derivado, e derivado não deveria ser campo de entrada em porta nenhuma.
+- **Evidência de fechamento (2026-07-31):** o núcleo de escrita de pedido virou `backend/src/orders/order-write.ts`, e as duas portas — REST e push de sync (`sync/writers/orders-sync.writer.ts`) — chamam as mesmas funções. `status` passou a `serverControlledFields` e os totais a `derivedFields` (categoria nova na policy) para **toda** origem; `total_item` saiu da allowlist do item e `ipi_perc` entrou. Com isso `writableFieldsFor` e `assertCamposDaForma` ficaram sem função e foram removidos — a proteção de PROB-0074 ficou mais forte, não mais fraca. Gates novos: item exige pedido pai `interno` e `em_aberto`; toda escrita de item recalcula o cabeçalho na mesma transação; DELETE de pedido passa pela guarda de nota fiscal ativa nos dois protocolos; UPDATE do v1 passou a incrementar `version`. `npm test --workspace=backend` → **669 passed** (59 suítes), com `orders.service.spec.ts` passando **sem edição** — a prova de que a extração não mexeu no comportamento da web — e os dois pins de "status gravável em pedido interno" invertidos. Fronteira fixada por `sync-write-boundary.spec.ts` em três camadas: declaração na policy (`writer`), comportamento (toda operação de pedido passa pelo writer) e varredura de fonte contra SQL literal em pedido fora dos módulos donos.
+- **Não coberto:** ownership de vendedor no push (BACKLOG-0078, anterior a este problema e válido para todas as entidades) e o risco de cliente implantado fora desta árvore — mitigado por log estruturado `sync_write_rejected`, ver ressalvas de FIX-0027.
+- **Relacionado:** PROB-0062, PROB-0063, PROB-0061, PROB-0074, BACKLOG-0065, FIX-0023
 
 ### PROB-0066 — Endpoint legado `PATCH /financeiro/comissoes/:uuid` contorna a máquina de estados de comissão
 - **Data:** 2026-07-22
@@ -351,6 +357,7 @@
 - **Evidências/comandos:** `npm audit --omit=dev` executado nesta sessão (antes e depois) + leitura dos ranges de cada advisory.
 - **Riscos residuais:** ir para produção com 13 advisories abertos numa linha sem manutenção — **todos triados como não-alcançáveis hoje**, mas a triagem vale para o código atual: qualquer novo uso de `@nestjs/*` ou de `file-type`/`uuid` pode reabrir a exposição sem aviso.
 - **Próximo passo:** decisão do usuário sobre a data da migração; ver BACKLOG-0040.
+- **Atualização (2026-07-31):** segue ABERTO **por decisão do usuário**, tomada depois de a superfície de migração ter sido levantada e registrada em BACKLOG-0040 (versões exatas a subir, o bloco `overrides` da raiz a remover, os cinco pontos de risco em ordem, e o que foi verificado como não aplicável). O ponto que mais pesa na decisão de data: `@nestjs/testing` aparece em **1** dos 59 specs e não há teste de integração HTTP nem Postgres no CI — **suíte verde não certifica esta migração**, então a janela precisa incluir verificação manual pelo `ops/qa-safari/`.
 - **Relacionado:** PROB-0069, PROB-0071, BUG-0024, BUG-0026, BACKLOG-0040
 
 ### PROB-0072 — Banco de dev bloqueado para migrar: checksum de `0007_optimistic_concurrency.sql` diverge do arquivo
@@ -418,6 +425,7 @@
 - **Mudança observável de contrato:** o push passa a **rejeitar** o que hoje aceita em silêncio. É o comportamento correto, mas clientes que enviavam esses campos em pedido externo passam a receber erro. `mobile/` não foi alterado nem validado, por escopo.
 - **Evidência de fechamento:** `npm test --workspace=backend -- sync` → 79 passed, com 9 casos novos cobrindo v1 e v2: rejeição de `status`/`total_sem_imposto`/`total_com_imposto` em pedido externo, `status` ainda gravável em pedido **interno** (para não fechar PROB-0065 por acidente), recusa de edição fora de `em_aberto`, CREATE via sync intacto, e a projeção do v1 trazendo `origem` e `status`.
 - **Próximo passo:** nenhum. O mecanismo `writableFieldsFor` é o que PROB-0065 vai usar.
+- **Supersessão (2026-07-31):** o mecanismo introduzido aqui (`writableFieldsFor` + `assertCamposDaForma`) foi **removido** ao fechar PROB-0065, e isso NÃO reabre este problema: `status` e os totais deixaram de ser entrada para **toda** origem, num gate mais cedo e sem ida ao banco, então a allowlist condicional por origem ficou sem o que decidir. Gancho ligado a função identidade seria peso morto. O gate de edição fora de `em_aberto` também deixou de ser exclusivo do pedido externo. Ver FIX-0027.
 - **Relacionado:** PROB-0065, BACKLOG-0005
 
 ### PROB-0075 — Purga LGPD (ERASURE) não alcança `pedido_fotos` nem as tabelas de SAC, e a migration documenta o contrário
@@ -443,7 +451,8 @@
 - **Evidência de fechamento (2026-07-29):** `npm test --workspace=backend` → 500 passed. Smoke contra PostgreSQL real (`renowa_fix`, migrado até `0037`): semeadura de cliente + pedido + foto (`bytea`) + nota fiscal + inadimplência + chamado + item, execução do SQL gerado pelo registro e sete provas em SQL — foto sem conteúdo e com `storage_backend = 'purgado'`, motivo do item substituído, observações limpas em `chamados_sac`/`notas_fiscais`/`inadimplencia`, pedido anonimizado mas **não** apagado, cliente com o marcador. Nenhum CHECK nem `NOT NULL` violado; transação revertida ao final.
 - **Riscos residuais:** `parceiros_comerciais.nome_parceiro` é nome de pessoa física de um **terceiro**, que não é `CLIENT` nem `USER` — ver PROB-0076. Política de retenção continua inexistente (`pii_audit_events` cresce sem limite, não há `ScheduleModule` no backend) e a cobertura do ERASURE contra banco real segue em BACKLOG-0054.
 - **Próximo passo:** PROB-0076 e o que restou de BACKLOG-0054.
-- **Relacionado:** BACKLOG-0051, BACKLOG-0054, BACKLOG-0055, PROB-0076
+- **Atualização (2026-07-31) — o ramo de fotos foi fechado por REMOÇÃO, não pela regra de purga.** A feature "foto do pedido" saiu na `0040`: `pedido_fotos` foi dropada e o modelo passou a ser **foto do produto no catálogo**, uma por produto, reaproveitada por todo pedido que o use. A regra herdada em `produto_fotos` dependia de `origem_pedido_id`, coluna preenchida **só** pelo bloco de migração da `0040` — que rodou sobre tabela vazia. Nenhum caminho de código a escrevia (`ProductPhotosService.upsert` gravava `null` sempre), então o `UPDATE ... WHERE origem_pedido_id IN (...)` **nunca casava linha nenhuma**: o inventário declarava um controle que não existia. Pior, se a coluna voltasse a ser preenchida, o ERASURE de UM cliente apagaria a foto de catálogo que os pedidos de todos os outros também usam. A migration `0042_produto_fotos_sem_origem_pedido.sql` dropou a coluna e a FK, com guarda que **aborta** a migration se existir linha com `origem_pedido_id` não nulo; `produto_fotos` passou de `PII_REGISTRY` para `TABELAS_SEM_PII`, com justificativa. O risco que sobra — binário de catálogo podendo conter PII sem caminho de expurgo — está em PROB-0083.
+- **Relacionado:** BACKLOG-0051, BACKLOG-0054, BACKLOG-0055, PROB-0076, PROB-0083
 
 ### PROB-0076 — `parceiros_comerciais.nome_parceiro` guarda PII de terceiro sem tipo de titular nem caminho de apagamento
 - **Data:** 2026-07-29
@@ -461,3 +470,122 @@
 - **Riscos residuais:** enquanto ABERTO, o inventário de PII está completo e honesto, mas a cobertura não. `docs/LGPD_ARCHITECTURE.md` registra o limite na seção "Limite conhecido".
 - **Próximo passo:** decisão do usuário sobre (a)/(b)/(c).
 - **Relacionado:** PROB-0075, BACKLOG-0054
+
+### PROB-0077 — Foto do pedido persiste indefinidamente no banco, contrariando o requisito original — ressalva aceita por decisão do usuário
+- **Data:** 2026-07-29
+- **Origem:** revisão (reverificação independente das três frentes)
+- **Severidade:** MEDIUM
+- **Status:** FECHADO_COM_RESSALVA — **decisão do usuário: manter como está.** Nada pendente de código; a entrada existe para que o desvio esteja escrito.
+- **Área:** LGPD / banco
+- **Sintoma:** o requisito original da feature de fotos dizia que "a imagem não fica salva em nosso sistema". Não é o que o sistema faz: a foto é gravada como `bytea` em `pedido_fotos.conteudo`, **sem TTL** e sem nenhum job de expurgo por idade.
+- **Causa raiz:** confirmada, e é de design, não defeito. O armazenamento em banco foi decisão deliberada (registrada no cabeçalho da migration `0034`: zero infra nova, mesmo backup e mesma transação do pedido). O que ninguém fechou foi o ciclo de vida: **nem o soft delete da foto nem o do pedido apagam os bytes** — o soft delete só marca `deleted_at`. O único caminho que zera o binário é o ERASURE da LGPD (`backend/src/privacy/pii-registry.ts:89-106`), que zera `conteudo`/`storage_key`, marca `storage_backend = 'purgado'` e substitui `nome_arquivo`, deixando a linha como prova de que houve anexo.
+- **Impacto técnico:** (a) o requisito de negócio está formalmente **não cumprido**; (b) foto de nota fiscal traz nome, CNPJ e endereço **no pixel**, então o banco acumula PII por prazo indeterminado, sem base de retenção declarada — a política de retenção segue inexistente (BACKLOG-0054); (c) o volume de `pedido_fotos` cresce monotonicamente, hoje limitado só pelo teto de 3 MB por foto, 10 fotos por pedido e o downscale no cliente.
+- **Arquivos/módulos:** `backend/src/database/migrations/0034_pedido_fotos.sql`, `backend/src/privacy/pii-registry.ts:89-106`, `backend/src/orders/order-photos.service.ts`, `backend/src/orders/orders.service.ts` (cascata do soft delete)
+- **Solução proposta:** nenhuma a executar. Se a decisão for revista, os caminhos são: (a) apagar os bytes no soft delete da foto e do pedido, mantendo a linha como metadado — é a mudança mais barata e mais alinhada ao requisito; (b) job de retenção por idade, que hoje não tem onde morar (não há `ScheduleModule` no backend); (c) mover para bucket com lifecycle rule, que é BACKLOG-0051 e **não** resolve por si — o expurgo do objeto remoto teria de ser escrito à mão nos dois fluxos.
+- **Solução aplicada:** nenhuma, **por decisão explícita do usuário nesta rodada**. Registrado como ressalva para não voltar como surpresa numa auditoria de privacidade nem numa conversa sobre volume de banco.
+- **Evidências/comandos:** leitura de `pii-registry.ts:89-106` (único ponto que zera `conteudo`) e da cascata de soft delete em `orders.service.remove`, que marca `deleted_at` nas fotos e **não** toca no binário.
+- **Riscos residuais:** o requisito segue descumprido e a PII segue sem prazo. O risco é de conformidade, não funcional.
+- **Próximo passo:** nenhum. Reabrir só se a decisão mudar.
+- **Relacionado:** PROB-0075, BACKLOG-0051, BACKLOG-0054, [REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md](REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md)
+
+### PROB-0078 — Chamado SAC não registra autoria, e `findAll`/`findOne` do SAC não têm escopo de ownership de vendedor
+- **Data:** 2026-07-29
+- **Origem:** revisão (reverificação independente das três frentes)
+- **Severidade:** MEDIUM hoje; vira **HIGH** no momento em que `sac.ver` for concedido a `vendedor`, o que **não exige código**
+- **Status:** ABERTO — **adicionar autoria é escopo novo; aguarda decisão do usuário.**
+- **Área:** backend / segurança
+- **Sintoma:** `chamados_sac` não tem `created_by`/`usuario_id`: não há como saber quem abriu um chamado. E `findAll`/`findOne` do `SacService` filtram só por `tenant_id` + `deleted_at`, sem o escopo de ownership que o módulo de pedidos aplica a vendedor (`orders/order-ownership.ts`, reusado até pelo serviço de fotos).
+- **Causa raiz:** confirmada. As duas coisas se combinam: sem coluna de autoria, **não existe** o dado pelo qual filtrar, então o escopo de ownership não é uma linha esquecida — é impossível de escrever hoje.
+- **Impacto técnico:** latente **apenas** porque `vendedor` não recebeu nenhum slug `sac.*` (concessão fail-closed a `admin`/`gestao`; BACKLOG-0050). A tela de Perfis permite conceder `sac.ver` a qualquer papel **sem tocar em código**: no instante em que isso acontecer, todo vendedor passa a ver os chamados de **todos** os vendedores do tenant, sem nenhum filtro por autor. Não é vazamento cross-tenant — o `tenant_id` continua aplicado —, é ausência de compartimentação intra-tenant, exatamente o que o módulo de pedidos tem e o SAC não. Efeito colateral independente: sem autoria não há trilha de quem abriu o chamado, nem para auditoria nem para atribuição de atendimento.
+- **Arquivos/módulos:** `backend/src/sac/sac.service.ts` (`findAll`, `findOne`), `backend/src/sac/entities/sac-ticket.entity.ts`, `backend/src/database/migrations/0035_sac.sql`, referência do padrão a seguir em `backend/src/orders/order-ownership.ts`
+- **Solução proposta:** migration aditiva com `created_by` (FK composta `(tenant_id, usuario_id)`, como o resto do schema exige), preenchimento a partir do `RequestUser` no `create`, e escopo de ownership em `findAll`/`findOne` espelhando `order-ownership.ts`. Decisões que **precisam vir antes do código**: o vendedor deve ver só os chamados que abriu, ou todos os do cliente que atende? Chamados existentes ficam sem autoria (`NULL`) — e um `NULL` deve ser visível a quem? Editar chamado de outro autor é permitido a `gestao`?
+- **Solução aplicada:** nenhuma. Nesta rodada só foi diagnosticado e registrado.
+- **Evidências/comandos:** leitura de `sac.service.ts` (`findAll`/`findOne` sem chamada a nada de ownership, ao contrário de `orders.service.ts`) e da entity/migration do SAC, sem coluna de autoria. Confirmado que `vendedor` não tem `sac.*` no catálogo — é o que mantém o problema latente.
+- **Riscos residuais:** enquanto ABERTO, a segurança do módulo depende de **ninguém conceder `sac.ver` pela tela de Perfis** sem ler este registro. É proteção por desconhecimento, não por mecanismo.
+- **Próximo passo:** decisão do usuário sobre as três perguntas acima, e só então implementação. Se a concessão de BACKLOG-0050 for decidida primeiro, **este item passa a ser bloqueador dela**.
+- **Relacionado:** BACKLOG-0050, [REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md](REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md)
+
+### PROB-0079 — Mobile fora de paridade com pedido externo: schema SQLite sem as três colunas, v2 descarta em silêncio e v1 quebraria
+- **Data:** 2026-07-29
+- **Origem:** revisão (reverificação independente das três frentes)
+- **Severidade:** MEDIUM
+- **Status:** ABERTO — **`mobile/` não pode ser tocado nesta sessão** (`AGENTS.md`).
+- **Área:** mobile / backend
+- **Sintoma:** `mobile/src/storage/database.ts:95-115` declara a tabela `pedidos` local **sem** `origem`, `numero_pedido_externo` e `sistema_origem`. O pedido externo existe no servidor desde a migration `0033` e não existe no aparelho.
+- **Causa raiz:** confirmada. Duas consequências distintas, por caminho de código: no **v2** (`mobile/src/services/SyncService.ts:230-251`) o `applyPage` lê `PRAGMA table_info` e filtra as chaves por `allowed` — os três campos são **descartados em silêncio**, sem erro e sem log; no **v1** (`:261-311`, hoje **código morto**) o INSERT é montado com as chaves do payload sem filtro, e quebraria com `no such column: origem` se voltasse a ser usado.
+- **Impacto técnico:** um pedido externo puxado para o aparelho chega como pedido **interno sem itens**, com `origem` ausente. O operador vê um pedido de valor zero em itens e não tem como distinguir; qualquer regra local que dependa de `origem` (hoje nenhuma, no futuro qualquer uma) parte de dado errado. O gate de origem no push (`writableFieldsFor`, FIX-0003/PROB-0074) protege o servidor de escrita indevida, então o risco é de **leitura enganosa no cliente**, não de corrupção no servidor. Reativar o v1 sem a migration local é falha dura.
+- **Arquivos/módulos:** `mobile/src/storage/database.ts:95-115`, `mobile/src/services/SyncService.ts:230-251` (v2), `mobile/src/services/SyncService.ts:261-311` (v1, código morto)
+- **Solução proposta:** migration do schema SQLite local acrescentando as três colunas, mais decisão de produto sobre o que o app **mostra** para pedido externo (hoje o formulário e a lista assumem itens). Sessão própria, com o mobile em escopo. O filtro por `allowed` no v2 deve continuar existindo, mas **logar** o descarte em vez de silenciar — foi o silêncio que deixou isso passar por três leituras.
+- **Solução aplicada:** nenhuma. `AGENTS.md` proíbe alterar `mobile/` nesta sessão, e **nenhum item de backlog cobria isso** antes deste registro.
+- **Evidências/comandos:** leitura direta do `CREATE TABLE IF NOT EXISTS pedidos` em `database.ts` (colunas conferidas uma a uma: as três não estão) e dos dois caminhos de `SyncService` — o v2 com `allowed = new Set(columns.map(...))` filtrando as chaves, o v1 sem filtro.
+- **Riscos residuais:** enquanto ABERTO, todo pedido externo puxado para o mobile é indistinguível de interno. Não há alerta em nenhum dos dois lados.
+- **Próximo passo:** sessão com `mobile/` em escopo, depois da decisão de produto sobre a apresentação. Delegar a quem toca mobile.
+- **Relacionado:** PROB-0074, PROB-0065, [REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md](REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md)
+
+### PROB-0080 — Comissão de pedido externo grava o `numero_pedido` interno e não reconcilia com o sistema de origem
+- **Data:** 2026-07-29
+- **Origem:** revisão (reverificação independente das três frentes)
+- **Severidade:** MEDIUM
+- **Status:** ABERTO
+- **Área:** backend / frontend
+- **Sintoma:** ao emitir nota contra um pedido **externo**, a comissão gerada guarda em `numero_pedido` o número **interno** da `pedidos_numero_seq` (`backend/src/faturamento/faturamento.service.ts:200`). Na tela de financeiro não há como cruzar a comissão com o pedido no sistema de origem: o número que o operador conhece — `numero_pedido_externo` — não aparece em lugar nenhum daquele fluxo.
+- **Causa raiz:** confirmada, e é herança direta da decisão de design do pedido externo: ele vive na **mesma** tabela `pedidos` e consome a **mesma** sequence, justamente para herdar o ciclo comercial sem alterar o `FaturamentoService`. A comissão copia `order.numero_pedido` sem saber que existem duas origens.
+- **Impacto técnico:** conciliação manual entre a comissão registrada aqui e o pedido no sistema de terceiro. Não há erro de cálculo nem de valor — é rastreabilidade. Piora com volume: quanto mais pedidos externos, mais linhas de comissão sem chave reconhecível pelo operador.
+- **Arquivos/módulos:** `backend/src/faturamento/faturamento.service.ts:200`, entity `Commission`, telas de financeiro/comissões
+- **Solução proposta:** três caminhos, e a escolha é de negócio. (a) Coluna nova na comissão para o número de origem — aditiva, preserva o histórico, exige migration e ajuste de tela; (b) exibir o número de origem na tela lendo do pedido pela FK que **já existe** (`comissoes.pedido_id`) — nenhuma migration, só frontend e o service que monta a listagem; é a mais barata; (c) gravar o número de origem no próprio `numero_pedido` quando externo — **descartada**: o campo passaria a significar duas coisas e quebraria qualquer busca por número interno.
+- **Solução aplicada:** nenhuma. A rodada corrigiu a **fila de faturamento**, que agora expõe `origem`/`sistema_origem`/`numero_pedido_externo` (FIX-0018), mas a **comissão** não foi tocada.
+- **Evidências/comandos:** leitura de `faturamento.service.ts:200` (`numero_pedido: order.numero_pedido !== null ? String(order.numero_pedido) : null`), sem ramo para origem externa.
+- **Riscos residuais:** enquanto ABERTO, a conferência de comissão de pedido externo depende de o operador lembrar do vínculo.
+- **Próximo passo:** decisão entre (a) e (b). Recomendação: (b), por não exigir migration nem tocar em dado histórico.
+- **Relacionado:** FIX-0018, [REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md](REVIEW_REPORTS/2026-07-29_review_reverificacao-fotos-pedido-externo-sac.md)
+
+### PROB-0081 — Filtros `status` e `origem` nas listas de pedidos e SAC devolviam 400 antes de chegar ao service
+- **Data:** 2026-07-29
+- **Origem:** teste (suíte do roteiro na aba logada do Safari)
+- **Severidade:** BLOCKER
+- **Status:** FECHADO
+- **Área:** backend
+- **Sintoma:** `GET /pedidos?origem=externo`, `GET /pedidos?status=faturado` e `GET /sac?status=aberto` respondiam **400** com `property origem should not exist` (idem `status`). Na tela, escolher o filtro Origem em `/pedidos` imprimia **"Ocorreu um erro"** — a mensagem genérica do `ErrorState`, porque `usePaginatedQuery` descarta a mensagem da API. `search` funcionava, o que fazia o defeito parecer intermitente.
+- **Causa raiz:** confirmada. As rotas de lista declaravam `@Query() pagination: PaginationDto` **e** `@Query('status')` / `@Query('origem')` soltos. O `@Query()` sem chave faz o ValidationPipe global validar o objeto de query **inteiro** contra aquele DTO, e com `whitelist: true` + `forbidNonWhitelisted: true` (`main.ts`) todo parâmetro ausente do DTO derruba a requisição — inclusive os que a própria rota declarava por chave. `PaginationDto` só tinha `page`, `limit` e `search`; por isso `search` passava e os filtros não.
+- **Impacto técnico:** os dois filtros de `/pedidos` e o de `/sac` estavam inutilizáveis pela API e pela tela. **Consequência colateral, e a mais grave:** a validação de enum dos services (`orders.service.ts`, `sac.service.ts`) era **inalcançável por HTTP**, então os testes de roteiro "enum inválido → 400" passavam pelo motivo errado — o 400 vinha do whitelist. FIX-0014 não estava provado.
+- **Arquivos/módulos:** `backend/src/orders/orders.controller.ts`, `backend/src/sac/sac.controller.ts`, `backend/src/common/dto/pagination.dto.ts`, `backend/src/main.ts`
+- **Solução proposta:** declarar os filtros em DTOs de query que estendem `PaginationDto`, no padrão que o módulo de finance já usava, com `@IsIn` contra os enums e mensagem nomeando os valores aceitos.
+- **Solução aplicada:** FIX-0020. `ListOrdersQueryDto` e `ListSacQueryDto`; os `@Query('x')` soltos saíram (inclusive o `@Query('search')` duplicado); a checagem de enum ficou no service como defesa em profundidade, agora alcançável pelo mobile/sync, que não passa pelo DTO.
+- **Evidências/comandos:** antes — `GET /pedidos?origem=externo` → 400 `property origem should not exist`. Depois, na aba logada: `origem=externo` → 200 com `total=1` e toda linha com `origem: "externo"`; `origem=externa` → 400 `Origem inválida. Use um de: interno, externo.`; `status=faturadoo` → 400 `Status inválido. Use um de: em_aberto, liberado, ...`; `sac?status=resolvidoo` → 400 com a mensagem do enum; `?xpto=1` → 400 `property xpto should not exist`, provando que o whitelist não foi afrouxado. 9/9 no bloco de filtros.
+- **Riscos residuais:** nenhum conhecido para estas rotas. Continua valendo que `usePaginatedQuery` troca a mensagem da API pela genérica "Ocorreu um erro" em **todas** as listas — não foi tocado nesta rodada, e é o que tornou este defeito difícil de ler na tela.
+- **Próximo passo:** nenhum. Guarda de regressão em `backend/src/common/architecture/query-filter-whitelist.spec.ts`, que varre todos os controllers e tem um caso provando que o próprio guard dispara.
+- **Relacionado:** FIX-0014, FIX-0020, [REVIEW_REPORTS/2026-07-29_teste-automatizado-safari.md](REVIEW_REPORTS/2026-07-29_teste-automatizado-safari.md)
+
+### PROB-0082 — Miniatura de foto ficava em "Carregando..." para sempre quando o download falhava
+- **Data:** 2026-07-29
+- **Origem:** teste (suíte do roteiro na aba logada do Safari)
+- **Severidade:** LOW
+- **Status:** FECHADO
+- **Área:** frontend
+- **Sintoma:** com o endpoint de conteúdo devolvendo 404 (caminho real: foto purgada pela LGPD), as 9 miniaturas do painel ficavam em **"Carregando..."** indefinidamente. A tela afirmava um carregamento que já havia terminado em falha, e não havia como tentar de novo sem recarregar a página.
+- **Causa raiz:** confirmada, e é o **efeito colateral do próprio FIX-0008**. A guarda `buscados` (um `Set` em `useRef`) marca o uuid **antes** do fetch justamente para o efeito não re-disparar em laço quando o download falha. Ela parou o laço corretamente, mas não havia estado de erro: a única condição de render era `thumbs[uuid] ? <img> : "Carregando..."`, e para o uuid que falhou `thumbs` nunca recebe entrada.
+- **Impacto técnico:** cosmético, sem laço e sem custo de rede. O dano é de confiança na tela.
+- **Arquivos/módulos:** `frontend/src/components/orders/OrderPhotosPanel.tsx`
+- **Solução proposta:** registrar as falhas em estado (não em ref — sem re-render a tela continua mentindo) e renderizar "Indisponível" com ação de repetir.
+- **Solução aplicada:** FIX-0022.
+- **Evidências/comandos:** teste novo em `OrderPhotosPanel.test.tsx` — primeiro download rejeita com `{ response: { status: 404 } }`, a tela mostra "Indisponível" e **não** "Carregando..."; o clique em "Tentar de novo" refaz exatamente um download e a imagem aparece. `npm test --workspace=frontend` → 72 passed.
+- **Riscos residuais:** nenhum. A guarda contra o laço continua intacta — o botão remove o uuid de `buscados` sob ação explícita do usuário, não automaticamente.
+- **Próximo passo:** nenhum.
+- **Relacionado:** FIX-0008, FIX-0022, [REVIEW_REPORTS/2026-07-29_teste-automatizado-safari.md](REVIEW_REPORTS/2026-07-29_teste-automatizado-safari.md)
+
+### PROB-0083 — Foto de catálogo pode carregar PII e não tem caminho técnico de expurgo por titular
+- **Data:** 2026-07-31
+- **Origem:** revisão (fechamento dos P2/P3 de `ErrosAtuais.md`)
+- **Severidade:** LOW
+- **Status:** ABERTO (risco residual aceito, com controle declarado)
+- **Área:** LGPD / frontend / banco
+- **Sintoma:** nada quebra. A foto do produto é conteúdo comercial, mas nada no sistema impede alguém de fotografar uma nota fiscal, um documento ou uma etiqueta com dado de cliente e subir como foto do produto. Se isso acontecer, uma solicitação de exclusão do titular **não alcança** esse binário.
+- **Causa raiz:** confirmada, e é consequência do desenho, não defeito de implementação. A foto pertence ao **produto**, não a um pedido nem a um cliente: uma só por produto, reaproveitada por todo pedido que o use, de clientes diferentes. Não existe — nem pode existir sem quebrar o compartilhamento — coluna que a ligue a um titular. Purgar por titular apagaria a foto que os pedidos dos outros clientes também usam.
+- **Impacto técnico:** PII fora do alcance do ERASURE, por prazo indeterminado. Impacto hoje: nenhuma foto migrada de pedido existe (a `0040` rodou sobre `pedido_fotos` vazia) e o catálogo de dev não tem foto ativa.
+- **Arquivos/módulos:** `backend/src/privacy/pii-registry.ts` (entrada `produto_fotos` em `TABELAS_SEM_PII`); `frontend/src/components/products/ProductPhotoField.tsx`; `backend/src/database/migrations/0042_produto_fotos_sem_origem_pedido.sql`
+- **Solução proposta:** nenhuma correção de código resolve — a alternativa seria proibir foto de catálogo, o que mata a feature. O controle possível é **preventivo**: avisar quem sobe.
+- **Solução aplicada:** aviso `role='status'` no campo de foto (visível só para quem pode subir), dizendo que a foto é do catálogo, é compartilhada por todos os pedidos e **não** é alcançada por solicitação de exclusão — portanto não subir nota fiscal, documento ou foto com dado de cliente. Somado aos limites que já existiam: uma foto por produto, teto de 3 MB, `downscaleImage` no cliente e whitelist de mime por **magic bytes** (SVG recusado de propósito). A isenção em `TABELAS_SEM_PII` carrega a justificativa por escrito, e `pii-registry.spec.ts` continua obrigando toda tabela com `tenant_id` a estar classificada de um dos dois lados.
+- **Evidências/comandos:** `npm test --workspace=frontend` → 17 arquivos, 109 passed (dois casos novos em `ProductPhotoField.spec.tsx`: o aviso aparece para quem pode subir e **não** aparece para quem não pode). `npm test --workspace=backend` → 56 suítes, 602 passed, 1 skipped, incluindo o caso que prova que o ERASURE de CLIENT não emite comando algum para `produto_fotos`.
+- **Riscos residuais:** o aviso é um controle **humano**. Se alguém ignorar, a PII entra e fica. Não existe política de retenção nem varredura de conteúdo. Se um dia a foto voltar a nascer de um pedido, a tabela precisa voltar ao `PII_REGISTRY` — está escrito na própria justificativa da isenção.
+- **Próximo passo:** nenhum planejado. Reavaliar se surgir política de retenção (BACKLOG-0054) ou se o vínculo foto↔pedido for reintroduzido.
+- **Relacionado:** PROB-0075, PROB-0077, BACKLOG-0054, BACKLOG-0076, FIX-0026, [REVIEW_REPORTS/2026-07-31_fix_foto-de-catalogo-sem-titular-e-qa-sem-fase-morta.md](REVIEW_REPORTS/2026-07-31_fix_foto-de-catalogo-sem-titular-e-qa-sem-fase-morta.md)

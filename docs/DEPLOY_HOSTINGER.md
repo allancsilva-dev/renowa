@@ -88,16 +88,17 @@ O banco novo sobe vazio e **nao ha cadastro publico** — nenhuma rota cria tena
 
    Saida esperada: `Admin criado: ... (papel admin, tenant ...)`. O comando e idempotente: rodar de novo com o mesmo e-mail responde `Admin ja existe` e sai com 0.
 
-4. **Confirme as permissoes.** O admin precisa das 28 permissoes do catalogo — sem elas o login funciona e todo endpoint responde 403:
+4. **Confirme as permissoes.** O admin precisa do catalogo inteiro — sem ele o login funciona e todo endpoint responde 403. Nao conferir contra um numero fixo: o catalogo cresce a cada migration que adiciona modulo (eram 28, hoje sao 32 com o SAC da `0035`). Compare com a tabela `permissions`, que e a fonte no banco:
 
    ```bash
    docker exec Renowa-DB psql -U renowa -d renowa -tAc \
-     "select r.name, r.is_system, count(p.permission_slug)
+     "select r.name, r.is_system, count(p.permission_slug),
+             (select count(*) from permissions)
         from tenant_roles r left join tenant_role_permissions p on p.role_id = r.id
        group by r.name, r.is_system"
    ```
 
-   Esperado: `admin|t|28`.
+   Esperado: a linha do `admin` com `is_system = t` e as duas contagens iguais (ex.: `admin|t|32|32`).
 
 ## Nginx Proxy Manager
 

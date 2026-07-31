@@ -70,3 +70,33 @@ CREATE não exige `base_version`. UPDATE e DELETE exigem. Bigint do pull continu
 ## Rollout futuro
 
 Aplicar migration, publicar backend compatível, habilitar cliente por feature flag, medir adoção, definir retenção e só então retirar v1. Nenhuma dessas ações externas faz parte da alteração local.
+
+## Decisões incorporadas em 2026-07-31 (PROB-0065 / FIX-0027)
+
+**Transição de status não faz parte do contrato de sync.** `status` de pedido é
+`serverControlledFields` na `SyncEntityPolicy`: o push o recusa em qualquer
+origem e em qualquer operação. Transição tem endpoint próprio, permissão própria
+(`pedidos.liberar`) e máquina de estados; `parcialmente_faturado`/`faturado` só
+nascem do `FaturamentoService`. Quem faz push está online por definição — não há
+caso de uso offline que justifique liberar pedido pela fila. Se um dia houver,
+entra como **operação** de sync com permissão própria, nunca como campo de
+UPDATE.
+
+**Derivado não é entrada.** `total_sem_imposto`, `total_com_imposto` no
+cabeçalho e `total_item` + os quatro campos de leitura no item são
+`derivedFields` — categoria distinta de `serverControlledFields`, com mensagem
+própria que lista os insumos a enviar. `ipi_perc` **é** insumo e foi adicionado à
+allowlist do item: sem ele todo item vindo do sync nasceria com IPI zero.
+
+**Pedido tem uma porta de escrita só.** `pedidos` e `itens_pedido` declaram
+`writer: 'orders'` na policy e passam por `sync/writers/orders-sync.writer.ts` →
+`orders/order-write.ts`, o mesmo núcleo da REST. As demais entidades seguem no
+caminho genérico de SQL montado a partir da allowlist, que está correto para
+cadastro simples. A invariante é fixada em `sync-write-boundary.spec.ts`.
+
+**O v1 está congelado, não obsoleto.** É o protocolo que o cliente em árvore
+usa, então foi endurecido com as mesmas guardas do v2 — inclusive o bump de
+`version` no UPDATE, que era bug: sem ele a escrita de sync ficava invisível para
+a concorrência otimista da web. Fora isso, nada novo entra no v1: nem entidade,
+nem campo, nem semântica. A remoção continua condicionada ao rollout do v2 no
+cliente.
