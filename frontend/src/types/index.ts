@@ -140,20 +140,19 @@ export interface NotaFiscal {
 }
 
 /**
- * Metadados de uma foto do pedido. Os bytes vêm por endpoint separado
- * (`/pedidos/:uuid/fotos/:fotoUuid/conteudo`) — nunca nesta listagem.
+ * Metadados da foto do produto no catálogo — uma por produto. Os bytes vêm por
+ * endpoint separado (`/produtos/:uuid/foto/conteudo`), nunca aqui.
+ *
+ * `Product` não carrega este campo de propósito: a presença da foto é
+ * descoberta por `GET /produtos/:uuid/foto`, e o payload de `GET /produtos`
+ * continua leve.
  */
-export interface OrderPhoto {
+export interface ProductPhoto {
   uuid: string;
   version: number;
   nome_arquivo: string;
   mime_type: string;
   tamanho_bytes: number;
-  /** Código extraído do nome do arquivo, usado no auto-vínculo. */
-  codigo_vinculo: string | null;
-  /** Item ao qual a foto ficou vinculada; null = foto do pedido inteiro. */
-  item_uuid: string | null;
-  vinculado: boolean;
   created_at: string;
 }
 

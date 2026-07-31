@@ -45,9 +45,10 @@ export async function downscaleImage(file: File): Promise<File> {
     });
     if (!blob) return file;
 
-    // Nome preservado sem a extensão original: é ele que o servidor usa para
-    // vincular a foto ao item pelo código, então trocar o nome quebraria o
-    // auto-vínculo. Só a extensão acompanha o novo formato.
+    // Nome preservado sem a extensão original: hoje ele é só rótulo — o
+    // auto-vínculo por código de item morreu com a foto do pedido (0040) —, mas
+    // trocá-lo esconderia de quem cadastrou qual arquivo foi enviado. Só a
+    // extensão acompanha o novo formato.
     const nomeBase = file.name.replace(/\.[^.]+$/, '');
     return new File([blob], `${nomeBase}.jpg`, { type: 'image/jpeg' });
   } finally {

@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
 import type { ApiResponse, Product, Supplier } from '@/types';
-import { withGeneratedUuid } from '@/lib/entityPayload';
 import { getApiErrorMessage } from '@/lib/errors';
 import { fetchSuppliers } from '@/services/suppliers.service';
 import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
+import ProductPhotoField from '@/components/products/ProductPhotoField';
+import { FotoDoProdutoNaoEnviadaError, salvarProdutoNovo } from '@/services/products.service';
+import { useAuth } from '@/hooks/useAuth';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 
 type FormFields = {
   codigo: string;
@@ -52,10 +55,27 @@ export default function ProdutoForm() {
   const navigate = useNavigate();
   const isEdit = Boolean(uuid);
 
+  const { hasPermission } = useAuth();
   const [form, setForm] = useState<FormFields>(empty);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Foto escolhida antes de o produto existir. Só sobe depois que o POST
+   * retorna o uuid — enviar antes criaria foto órfã se o save falhasse.
+   */
+  const [pendingPhoto, setPendingPhoto] = useState<File | null>(null);
+  /**
+   * Identidade do produto em criação, estável entre tentativas. É o que impede
+   * o retry de virar um segundo produto.
+   */
+  const { uuid: uuidDeCriacao } = useUuidDeCriacao();
+  /**
+   * Uma tentativa anterior já criou o produto e só a foto ficou faltando. A
+   * tela precisa saber disso: sem essa marca, o próximo Salvar refazia o
+   * cadastro inteiro.
+   */
+  const [produtoCriado, setProdutoCriado] = useState(false);
 
   useEffect(() => {
     if (!uuid) return;
@@ -101,11 +121,27 @@ export default function ProdutoForm() {
       if (isEdit) {
         await api.patch(`/produtos/${uuid}`, payload);
       } else {
-        await api.post('/produtos', withGeneratedUuid(payload));
+        await salvarProdutoNovo({
+          uuid: uuidDeCriacao,
+          payload,
+          foto: pendingPhoto,
+          jaCriado: produtoCriado,
+        });
       }
       navigate('/produtos');
     } catch (err) {
-      setError(getApiErrorMessage(err));
+      // Produto salvo e foto não: o cadastro NÃO pode ser refeito. Marcar aqui
+      // é o que faz o próximo Salvar retentar só a foto — antes disto, o
+      // segundo clique gerava um uuid novo e criava um produto duplicado.
+      if (err instanceof FotoDoProdutoNaoEnviadaError) {
+        setProdutoCriado(true);
+        setError(
+          `O produto foi salvo, mas a foto não subiu: ${getApiErrorMessage(err.causa)} `
+          + 'Tente enviar a foto de novo ou siga sem ela — o produto já está no catálogo.',
+        );
+      } else {
+        setError(getApiErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -208,6 +244,16 @@ export default function ProdutoForm() {
             />
           </div>
 
+          {/* Mesma regra do `PUT /produtos/:uuid/foto`: criar OU editar. Quem
+              cadastra o produto define a foto dele no mesmo fluxo. */}
+          <ProductPhotoField
+            produtoUuid={uuid}
+            editable={isEdit
+              ? hasPermission('produtos.editar')
+              : hasPermission('produtos.criar') || hasPermission('produtos.editar')}
+            onPendingChange={setPendingPhoto}
+          />
+
           <div className='flex flex-col gap-1'>
             <label htmlFor='produto-ipi' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               IPI (%)
@@ -233,14 +279,16 @@ export default function ProdutoForm() {
             onClick={() => navigate('/produtos')}
             className='rounded-lg border border-slate-300 bg-white px-5 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'
           >
-            Cancelar
+            {/* Sair depois de o produto ter sido salvo não é cancelar: não há o
+                que desfazer, e chamar de Cancelar sugeriria que há. */}
+            {produtoCriado ? 'Continuar sem a foto' : 'Cancelar'}
           </button>
           <button
             type='submit'
             disabled={loading}
             className='min-h-11 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 disabled:opacity-60'
           >
-            {loading ? 'Salvando...' : 'Salvar'}
+            {loading ? 'Salvando...' : produtoCriado ? 'Tentar enviar a foto' : 'Salvar'}
           </button>
         </div>
       </form>

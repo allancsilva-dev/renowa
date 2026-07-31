@@ -12,8 +12,8 @@ import { canCancelarPedido, canLiberarPedido } from '@/lib/orderPermissions';
 import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
-import OrderPhotosPanel from '@/components/orders/OrderPhotosPanel';
-import { fetchOrderPhotoDataUrl, fetchOrderPhotos } from '@/services/orderPhotos.service';
+import { itensComProdutoDistinto } from '@/lib/orderItemPhotos';
+import { FotosDoPapelIndisponiveisError, fetchFotosPorProduto } from '@/services/productPhotos.service';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -73,7 +73,14 @@ export default function PedidoDetalhe() {
 
   async function generatePdf() {
     if (!uuid) return;
+    // Abrir aqui, dentro do gesto do usuário: depois de um `await` o bloqueador de
+    // popup mata a janela. O aviso evita a aba em branco enquanto o PDF monta —
+    // com fotos, montar leva um download por imagem.
     const previewWindow = window.open('', '_blank');
+    previewWindow?.document.write(
+      '<title>Gerando papel do pedido…</title>'
+      + '<p style="font:14px system-ui;padding:24px;color:#334155">Gerando o papel do pedido…</p>',
+    );
     setPdfLoading(true);
     setStatusError(null);
     try {
@@ -81,13 +88,12 @@ export default function PedidoDetalhe() {
       setOrder(persisted);
       // As fotos vão embutidas como data URL: o endpoint de conteúdo é
       // autenticado e o PDF é montado no cliente, então uma URL não resolveria.
-      // Falha ao buscar uma foto não pode impedir a emissão do papel.
-      const metadados = await fetchOrderPhotos(uuid).catch(() => []);
-      const fotos = (await Promise.all(metadados.map(async (foto) => {
-        const dataUrl = await fetchOrderPhotoDataUrl(uuid, foto.uuid).catch(() => null);
-        return dataUrl ? { ...foto, dataUrl } : null;
-      }))).filter((foto): foto is NonNullable<typeof foto> => foto !== null);
-      const blob = await pdf(<OrderValidationPdf order={persisted} fotos={fotos} />).toBlob();
+      // A foto é do produto, então baixa uma por produto DISTINTO — dois itens
+      // do mesmo produto compartilham a imagem e um só download. Produto sem
+      // foto responde 404 e sai com célula vazia; falha de verdade (429, 5xx,
+      // rede) aborta a emissão em vez de imprimir um papel furado.
+      const fotosPorProduto = await fetchFotosPorProduto(uuid, itensComProdutoDistinto(persisted));
+      const blob = await pdf(<OrderValidationPdf order={persisted} fotosPorProduto={fotosPorProduto} />).toBlob();
       const url = URL.createObjectURL(blob);
       if (previewWindow) previewWindow.location.href = url;
       const filePrefix = persisted.status === 'em_aberto' || persisted.status === 'liberado' ? 'pedido-validacao-renowa' : 'pedido-renowa';
@@ -98,7 +104,11 @@ export default function PedidoDetalhe() {
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
       previewWindow?.close();
-      setStatusError(getApiErrorMessage(err));
+      // A falta de foto já vem com o texto pronto, contando quantas faltaram —
+      // `getApiErrorMessage` a reduziria a "Erro inesperado".
+      setStatusError(
+        err instanceof FotosDoPapelIndisponiveisError ? err.message : getApiErrorMessage(err),
+      );
     } finally {
       setPdfLoading(false);
     }
@@ -244,14 +254,6 @@ export default function PedidoDetalhe() {
       </div>
       )}
 
-      <OrderPhotosPanel
-        orderUuid={order.uuid}
-        editable={order.status === 'em_aberto' && hasPermission('pedidos.editar')}
-        itemLabels={Object.fromEntries(order.itens.map((item) => [
-          item.uuid,
-          item.codigo_manual || item.produto?.codigo || item.descricao_manual || 'Item',
-        ]))}
-      />
 
       {notas.length > 0 && (
         <div className='rounded-xl border border-slate-100 bg-white shadow-sm p-6'>

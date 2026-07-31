@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ImagePlus, Plus, Trash2, Unlock, X } from 'lucide-react';
+import { Plus, Trash2, Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchOrder, liberarOrder, saveOrder } from '@/services/orders.service';
 import { fetchClients } from '@/services/clients.service';
@@ -11,10 +11,9 @@ import { moneyForDisplay, qtyForDisplay } from '@/lib/decimal';
 import { previewItem, previewOrder } from '@/lib/orderCalculation';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
-import { uploadOrderPhoto } from '@/services/orderPhotos.service';
-import OrderPhotosPanel from '@/components/orders/OrderPhotosPanel';
 
 type HeaderForm = {
   data: string; cliente_uuid: string; vendedor_uuid: string; fornecedor_uuid: string;
@@ -26,6 +25,12 @@ type ItemForm = {
   uuid: string; produto_uuid: string; codigo_manual: string; descricao_manual: string;
   qtd_caixas: string; qtd_unitaria: string; preco_unitario: number | null;
   desconto_perc: string; ipi_perc: string;
+  /**
+   * BACKLOG-0066: a linha perdeu o produto porque o fornecedor mudou e precisa
+   * de um novo. Flag explícita, não derivada de `produto_uuid` vazio — uma
+   * linha recém-adicionada também está sem produto e não é órfã.
+   */
+  precisa_produto: boolean;
 };
 
 type TenantUser = { authUserId: string; name: string; active: boolean };
@@ -39,6 +44,7 @@ const emptyHeader: HeaderForm = {
 const newItem = (): ItemForm => ({
   uuid: crypto.randomUUID(), produto_uuid: '', codigo_manual: '', descricao_manual: '',
   qtd_caixas: '1', qtd_unitaria: '1', preco_unitario: null, desconto_perc: '0', ipi_perc: '0',
+  precisa_produto: false,
 });
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -58,6 +64,7 @@ function orderToForm(order: Order): { header: HeaderForm; items: ItemForm[] } {
       descricao_manual: item.descricao_manual ?? item.produto?.descricao ?? '', qtd_caixas: item.qtd_caixas ?? '0',
       qtd_unitaria: item.qtd_unitaria ?? '0', preco_unitario: item.preco_unitario == null ? null : Number(item.preco_unitario),
       desconto_perc: item.desconto_perc ?? '0', ipi_perc: item.ipi_perc ?? '0',
+      precisa_produto: false,
     })),
   };
 }
@@ -80,6 +87,7 @@ export default function PedidoForm() {
   const { hasAnyRole, hasPermission } = useAuth();
   const canChooseVendor = hasAnyRole(['ADMIN', 'GESTAO']);
   const isEdit = Boolean(uuid);
+  const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [header, setHeader] = useState<HeaderForm>(emptyHeader);
   const [clienteLabel, setClienteLabel] = useState('');
   const [items, setItems] = useState<ItemForm[]>([newItem()]);
@@ -92,11 +100,6 @@ export default function PedidoForm() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liberando, setLiberando] = useState(false);
-  /**
-   * Fotos escolhidas antes de o pedido existir. Só sobem depois que o POST
-   * retorna o uuid — enviar antes criaria foto órfã se o save falhasse.
-   */
-  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -128,6 +131,7 @@ export default function PedidoForm() {
   }, [header.fornecedor_uuid]);
 
   const totals = previewOrder(items);
+  const itensSemProduto = items.filter((item) => item.precisa_produto).length;
   // Transportadora vinculada — tel/end exibidos automaticamente (§3.2), read-only
   const selectedTransport = transports.find((t) => t.uuid === header.transportadora_uuid);
   const readonlyClass = 'min-h-11 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500 outline-none';
@@ -148,6 +152,26 @@ export default function PedidoForm() {
     setClienteLabel(option.label);
   }
 
+  /**
+   * BACKLOG-0066: trocar o fornecedor descartava a lista inteira
+   * (`setItems([newItem()])`), sem aviso e sem undo — em edição isso perdia os
+   * `uuid` dos itens persistidos, e como o PUT manda `itens` completo, salvar
+   * depois apagava os itens no backend e quebrava os rótulos das fotos.
+   *
+   * Agora a linha sobrevive: só o que veio do produto do fornecedor antigo é
+   * desvinculado, e a linha é marcada para revisão. Quantidades e percentuais
+   * digitados ficam.
+   */
+  function handleSupplierChange(nextUuid: string) {
+    if (nextUuid === header.fornecedor_uuid) return;
+    setHeader((current) => ({ ...current, fornecedor_uuid: nextUuid }));
+    setItems((current) => current.map((item) => item.produto_uuid ? {
+      ...item,
+      produto_uuid: '', codigo_manual: '', descricao_manual: '', preco_unitario: null,
+      precisa_produto: true,
+    } : item)); // linha manual não depende de fornecedor: fica intacta
+  }
+
   function chooseProduct(itemUuid: string, productUuid: string) {
     const product = products.find((entry) => entry.uuid === productUuid);
     setItems((current) => current.map((item) => item.uuid === itemUuid ? {
@@ -155,11 +179,20 @@ export default function PedidoForm() {
       descricao_manual: product?.descricao ?? item.descricao_manual,
       preco_unitario: product?.preco_base == null ? item.preco_unitario : Number(product.preco_base),
       ipi_perc: product?.ipi_perc == null ? item.ipi_perc : String(product.ipi_perc),
+      precisa_produto: productUuid ? false : item.precisa_produto,
     } : item));
   }
 
   function updateItem(itemUuid: string, patch: Partial<ItemForm>) {
-    setItems((current) => current.map((item) => item.uuid === itemUuid ? { ...item, ...patch } : item));
+    setItems((current) => current.map((item) => {
+      if (item.uuid !== itemUuid) return item;
+      const updated = { ...item, ...patch };
+      // Digitar código ou descrição torna a linha manual — e manual é válido.
+      if (updated.precisa_produto && (updated.codigo_manual.trim() || updated.descricao_manual.trim())) {
+        updated.precisa_produto = false;
+      }
+      return updated;
+    }));
   }
 
   async function handleLiberar() {
@@ -191,7 +224,7 @@ export default function PedidoForm() {
     // então mandá-lo devolveria 400 em todo save.
     const { status: _status, ...headerFields } = header;
     const payload: Record<string, unknown> = {
-      uuid: uuid ?? crypto.randomUUID(), ...headerFields,
+      uuid: uuid ?? uuidDeCriacao, ...headerFields,
       vendedor_uuid: canChooseVendor && header.vendedor_uuid ? header.vendedor_uuid : undefined,
       transportadora_uuid: header.transportadora_uuid || null,
       data: header.data || null, pgt: header.pgt || null, prazo: header.prazo || null,
@@ -208,11 +241,6 @@ export default function PedidoForm() {
     };
     try {
       const saved = await saveOrder(payload, uuid);
-      // Fotos por último: o pedido já está salvo, então uma falha aqui não
-      // desfaz o save — o usuário reenvia pela tela de detalhe.
-      for (const file of pendingPhotos) {
-        await uploadOrderPhoto(saved.uuid, file);
-      }
       navigate(`/pedidos/${saved.uuid}`);
     } catch (reason) { setError(getApiErrorMessage(reason)); }
     finally { setLoading(false); }
@@ -261,7 +289,7 @@ export default function PedidoForm() {
             />
           </label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Fornecedor *</span>
-            <select disabled={locked} value={header.fornecedor_uuid} onChange={(e) => { setHeader((h) => ({ ...h, fornecedor_uuid: e.target.value })); setItems([newItem()]); }} className={inputClass} required>
+            <select disabled={locked} value={header.fornecedor_uuid} onChange={(e) => handleSupplierChange(e.target.value)} className={inputClass} required>
               <option value=''></option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
             </select></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
@@ -289,11 +317,16 @@ export default function PedidoForm() {
       <section className='rounded-lg border border-slate-200 bg-white p-5 shadow-sm'>
         <div className='mb-4 flex items-center justify-between'><h2 className='text-lg font-semibold text-slate-900'>Itens</h2>
           <button type='button' disabled={locked} onClick={() => setItems((current) => [...current, newItem()])} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40'><Plus className='h-4 w-4' />Adicionar item</button></div>
-        <div className='space-y-4'>{items.map((item, index) => { const calculated = previewItem(item); return <div key={item.uuid} className='rounded-lg border border-slate-200 p-4'>
+        {itensSemProduto > 0 && (
+          <div role='status' className='mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'>
+            O fornecedor mudou: {itensSemProduto === 1 ? '1 item precisa' : `${itensSemProduto} itens precisam`} de um novo produto. Quantidades e percentuais foram preservados.
+          </div>
+        )}
+        <div className='space-y-4'>{items.map((item, index) => { const calculated = previewItem(item); return <div key={item.uuid} className={`rounded-lg border p-4 ${item.precisa_produto ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
           <div className='mb-3 flex justify-between'><strong className='text-sm text-slate-800'>Item {index + 1}</strong><button type='button' aria-label={`Remover item ${index + 1}`} disabled={items.length === 1 || locked}
             onClick={() => setItems((current) => current.filter((entry) => entry.uuid !== item.uuid))} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-40'><Trash2 className='h-4 w-4' /></button></div>
           <div className='grid gap-3 md:grid-cols-4'>
-            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><select disabled={locked} value={item.produto_uuid} onChange={(e) => chooseProduct(item.uuid, e.target.value)} className={inputClass}><option value=''></option>{products.map((product) => <option key={product.uuid} value={product.uuid}>{product.codigo ? `${product.codigo} — ` : ''}{product.descricao}</option>)}</select></label>
+            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><select disabled={locked} value={item.produto_uuid} aria-invalid={item.precisa_produto || undefined} onChange={(e) => chooseProduct(item.uuid, e.target.value)} className={`${inputClass}${item.precisa_produto ? ' border-amber-400' : ''}`}><option value=''></option>{products.map((product) => <option key={product.uuid} value={product.uuid}>{product.codigo ? `${product.codigo} — ` : ''}{product.descricao}</option>)}</select></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Código</span><input disabled={locked} value={item.codigo_manual} onChange={(e) => updateItem(item.uuid, { codigo_manual: e.target.value })} className={inputClass} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Descrição</span><input disabled={locked} value={item.descricao_manual} onChange={(e) => updateItem(item.uuid, { descricao_manual: e.target.value })} className={inputClass} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Caixas</span><input disabled={locked} type='number' min='0' step='0.001' value={item.qtd_caixas} onChange={(e) => updateItem(item.uuid, { qtd_caixas: e.target.value })} className={inputClass} required /></label>
@@ -305,64 +338,6 @@ export default function PedidoForm() {
           </div></div>; })}</div>
         <div className='mt-5 flex justify-end gap-8 border-t border-slate-200 pt-4 text-right'><div><span className='block text-xs text-slate-600'>Total sem imposto</span><strong>{BRL.format(moneyForDisplay(totals.semImposto))}</strong></div><div><span className='block text-xs text-slate-600'>Total com imposto</span><strong className='text-lg text-slate-900'>{BRL.format(moneyForDisplay(totals.comImposto))}</strong></div></div>
       </section>
-
-      {/* Em edição o painel fala direto com a API; na criação o pedido ainda
-          não existe, então os arquivos ficam em memória até o save. */}
-      {isEdit && uuid ? (
-        <OrderPhotosPanel
-          orderUuid={uuid}
-          editable={!locked}
-          itemLabels={Object.fromEntries(items.map((item) => [
-            item.uuid,
-            item.codigo_manual || item.descricao_manual || 'Item',
-          ]))}
-        />
-      ) : (
-        <section className='rounded-lg border border-slate-200 bg-white p-5 shadow-sm'>
-          <div className='mb-4 flex flex-wrap items-center justify-between gap-3'>
-            <div>
-              <h2 className='text-lg font-semibold text-slate-900'>Fotos</h2>
-              <p className='mt-1 text-xs text-slate-600'>
-                Nomeie o arquivo com o código do item para vincular automaticamente. Enviadas ao salvar o pedido.
-              </p>
-            </div>
-            <label className='flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'>
-              <ImagePlus className='h-4 w-4' />
-              Adicionar fotos
-              <input
-                type='file'
-                accept='image/jpeg,image/png,image/webp'
-                multiple
-                className='hidden'
-                onChange={(event) => {
-                  const escolhidos = Array.from(event.target.files ?? []);
-                  event.target.value = '';
-                  setPendingPhotos((current) => [...current, ...escolhidos]);
-                }}
-              />
-            </label>
-          </div>
-          {pendingPhotos.length === 0 ? (
-            <p className='text-sm text-slate-500'>Nenhuma foto selecionada.</p>
-          ) : (
-            <ul className='flex flex-wrap gap-2'>
-              {pendingPhotos.map((file, index) => (
-                <li key={`${file.name}-${index}`} className='flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700'>
-                  <span className='max-w-48 truncate' title={file.name}>{file.name}</span>
-                  <button
-                    type='button'
-                    aria-label={`Remover ${file.name}`}
-                    onClick={() => setPendingPhotos((current) => current.filter((_, i) => i !== index))}
-                    className='rounded p-1 text-slate-500 hover:bg-red-50 hover:text-red-700'
-                  >
-                    <X className='h-3 w-3' />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
 
       <div className='flex justify-end gap-3'><button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button><button type='submit' disabled={loading || locked || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button></div>
     </form>

@@ -13,11 +13,10 @@ interface ApiRequestOptions extends RequestInit {
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
- * Binário precisa de mais folga que JSON: as telas de foto baixam até 10
- * imagens em `Promise.all` — miniaturas em `OrderPhotosPanel` e o PDF de
- * validação em `PedidoDetalhe` — compartilhando a mesma janela. Com 10 s, uma
- * conexão ruim aborta o lote inteiro e a tela fica sem foto nenhuma sem dizer
- * por quê (BACKLOG-0056).
+ * Binário precisa de mais folga que JSON: emitir o papel em `PedidoDetalhe`
+ * baixa uma imagem por produto do pedido, em fila de 6 por vez
+ * (`fetchFotosPorProduto`). Com 10 s, uma conexão ruim derruba os downloads e
+ * a emissão do papel é abortada por timeout (BACKLOG-0056).
  */
 const BLOB_TIMEOUT_MS = 30_000;
 
@@ -120,7 +119,7 @@ async function request<T>(url: string, options: ApiRequestOptions = {}): Promise
 }
 
 /**
- * Baixa um corpo binário (ex.: foto do pedido). Não passa por `request`
+ * Baixa um corpo binário (ex.: foto do produto). Não passa por `request`
  * porque `res.text()` corromperia os bytes. Em erro, o corpo ainda é lido
  * como JSON para preservar o formato de exceção que `getApiErrorMessage`
  * espera.

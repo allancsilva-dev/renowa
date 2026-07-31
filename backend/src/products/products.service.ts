@@ -1,14 +1,18 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException, ConflictException, Injectable, NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Product } from './entities/product.entity';
 import { money } from '../common/decimal/decimal';
+import { createIdempotente } from '../common/persistence/idempotent-create';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { ImportProductsResultDto, ImportProductRowError } from './dto/import-products-result.dto';
 import { parseCsvRows, normalizeRowKeys, pick } from '../common/csv/csv-import.util';
+import { ProductPhotosService } from './product-photos.service';
 
 const IMPORT_MAX_ROWS = 5000;
 
@@ -85,31 +89,89 @@ export class ProductsService {
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
     private readonly dataSource: DataSource,
+    private readonly photosService: ProductPhotosService,
   ) {}
 
+  private async resolveFornecedorId(
+    manager: EntityManager,
+    fornecedorUuid: string,
+    tenantId: string,
+  ): Promise<number> {
+    const rows = await manager.query(
+      `SELECT id FROM fornecedores WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
+      [fornecedorUuid, tenantId],
+    ) as Array<{ id: number }>;
+    if (!rows[0]) throw new NotFoundException('Fornecedor não encontrado.');
+    return rows[0].id;
+  }
+
+  /**
+   * Código é a chave natural do catálogo DO FORNECEDOR: a importação em massa
+   * sempre a usou para decidir entre criar e atualizar, e o cadastro manual
+   * ignorava. Espelha `uq_produtos_codigo` (0041) — a guarda dá a mensagem de
+   * negócio, o índice garante sob concorrência (duas abas, duas requisições ou
+   * dois dispositivos sincronizando ao mesmo tempo não passam pela guarda).
+   *
+   * Produto sem código e produto sem fornecedor ficam de fora, como no índice.
+   */
+  private async assertCodigoLivre(
+    manager: EntityManager,
+    tenantId: string,
+    fornecedorId: number | null,
+    codigo: string | null | undefined,
+    ignorarProdutoId: number | null,
+  ): Promise<void> {
+    if (!codigo || fornecedorId == null) return;
+    const rows = await manager.query(
+      `SELECT descricao FROM produtos
+        WHERE tenant_id = $1 AND fornecedor_id = $2 AND codigo = $3
+          AND deleted_at IS NULL AND ($4::int IS NULL OR id <> $4)
+        LIMIT 1`,
+      [tenantId, fornecedorId, codigo, ignorarProdutoId],
+    ) as Array<{ descricao: string }>;
+    if (rows.length) {
+      throw new ConflictException(
+        `Código ${codigo} já cadastrado para este fornecedor no produto "${rows[0].descricao}".`,
+      );
+    }
+  }
+
+  /**
+   * O uuid vem do cliente e é a chave de idempotência: reenviar a MESMA criação
+   * (duplo clique, retry de rede, fila offline que perdeu a resposta) devolve o
+   * produto que já existe em vez de criar um segundo. Ver `createIdempotente`.
+   */
   async create(dto: CreateProductDto, tenantId: string): Promise<Product> {
     // Fornecedor é obrigatório na CRIAÇÃO (não no DTO — update de produto
     // legado sem fornecedor continua permitido via PartialType).
     if (!dto.fornecedor_uuid) {
       throw new BadRequestException('Fornecedor é obrigatório para criar um produto.');
     }
-    const rows = await this.dataSource.query(
-      `SELECT id FROM fornecedores WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-      [dto.fornecedor_uuid, tenantId],
-    ) as Array<{ id: number }>;
-    if (!rows[0]) throw new NotFoundException('Fornecedor não encontrado.');
-    const fornecedor_id = rows[0].id;
 
-    const { fornecedor_uuid: _f, uuid, ...rest } = dto;
-    const product = this.productRepo.create({
-      ...rest,
-      preco_base: rest.preco_base === undefined ? null : money(rest.preco_base),
-      ipi_perc: rest.ipi_perc === undefined ? null : money(rest.ipi_perc),
-      uuid,
-      fornecedor_id,
-      tenant_id: tenantId,
+    return this.dataSource.transaction(async (manager) => {
+      const fornecedor_id = await this.resolveFornecedorId(manager, dto.fornecedor_uuid!, tenantId);
+      const { fornecedor_uuid: _f, uuid, ...rest } = dto;
+
+      return createIdempotente({
+        repository: this.productRepo,
+        manager,
+        uuid,
+        tenantId,
+        build: () => ({
+          ...rest,
+          preco_base: rest.preco_base === undefined ? null : money(rest.preco_base),
+          ipi_perc: rest.ipi_perc === undefined ? null : money(rest.ipi_perc),
+          uuid,
+          fornecedor_id,
+          tenant_id: tenantId,
+        }),
+        // Só corre quando a criação é de fato nova: replay do mesmo uuid não
+        // pode ser recusado por colidir com o próprio registro que ele replica.
+        antesDeInserir: () => this.assertCodigoLivre(
+          manager, tenantId, fornecedor_id, rest.codigo, null,
+        ),
+      });
     });
-    return this.productRepo.save(product);
   }
 
   async findAll(
@@ -159,24 +221,38 @@ export class ProductsService {
     Object.assign(product, rest);
     if (preco_base !== undefined) product.preco_base = money(preco_base);
     if (ipi_perc !== undefined) product.ipi_perc = money(ipi_perc);
-    if (Object.prototype.hasOwnProperty.call(dto, 'fornecedor_uuid')) {
-      if (!dto.fornecedor_uuid) {
-        product.fornecedor_id = null;
-      } else {
-        const rows = await this.dataSource.query(
-          `SELECT id FROM fornecedores WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
-          [dto.fornecedor_uuid, tenantId],
-        ) as Array<{ id: number }>;
-        if (!rows[0]) throw new NotFoundException('Fornecedor não encontrado.');
-        product.fornecedor_id = rows[0].id;
+
+    return this.dataSource.transaction(async (manager) => {
+      if (Object.prototype.hasOwnProperty.call(dto, 'fornecedor_uuid')) {
+        product.fornecedor_id = dto.fornecedor_uuid
+          ? await this.resolveFornecedorId(manager, dto.fornecedor_uuid, tenantId)
+          : null;
       }
-    }
-    return this.productRepo.save(product);
+      // Trocar o código, ou mover o produto para outro fornecedor, esbarra na
+      // mesma chave natural da criação — e antes disto não esbarrava em nada.
+      await this.assertCodigoLivre(
+        manager, tenantId, product.fornecedor_id, product.codigo, product.id,
+      );
+      return manager.getRepository(Product).save(product);
+    });
   }
 
+  /**
+   * As duas escritas correm na MESMA transação. Antes não corriam: a purga
+   * abria e commitava a própria, e só então vinha o soft delete. Um erro de
+   * conexão entre as duas deixava os bytes zerados (`purgado`, irreversível)
+   * com o produto vivo — foto destruída de um produto que ainda existe, sem
+   * como recuperar. Janela estreita, perda permanente.
+   */
   async remove(uuid: string, tenantId: string): Promise<void> {
     const product = await this.findOne(uuid, tenantId);
-    await this.productRepo.softDelete(product.id);
+    await this.dataSource.transaction(async (manager) => {
+      // A foto vai junto: o índice único parcial `uq_produto_fotos_produto` (0040)
+      // guardaria a vaga de um produto que não existe mais, e a imagem continuaria
+      // servível por qualquer pedido antigo que ainda referencie o produto.
+      await this.photosService.removeByProductId(product.id, tenantId, manager);
+      await manager.getRepository(Product).softDelete(product.id);
+    });
   }
 
   /**

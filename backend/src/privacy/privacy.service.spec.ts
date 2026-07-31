@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { PrivacyService } from './privacy.service';
 import { LgpdRequest } from './entities/lgpd-request.entity';
+import { PII_REGISTRY, TABELAS_SEM_PII } from './pii-registry';
 
 /**
  * ERASURE é o único fluxo destrutivo do sistema e não tinha spec nenhuma (m6 da
@@ -14,7 +15,9 @@ import { LgpdRequest } from './entities/lgpd-request.entity';
  * atribuições depois do refactor. Se algum `SET` mudar de forma silenciosa, o
  * caso correspondente quebra.
  *
- * As tabelas de `pedido_fotos` / SAC são a parte nova (PROB-0075).
+ * As tabelas de SAC são a parte nova (PROB-0075). `produto_fotos` chegou a
+ * entrar no ramo CLIENT e saiu na 0042: sem `origem_pedido_id` a foto de
+ * catálogo não tem titular, e o caso que restou prova a ausência do comando.
  */
 describe('PrivacyService.execute — ERASURE', () => {
   const SUBJECT = '3f2b1c9d-1111-2222-3333-444455556666';
@@ -115,20 +118,18 @@ describe('PrivacyService.execute — ERASURE', () => {
       expect(alvo?.sql).not.toContain('deleted_at');
     });
 
-    // PROB-0075: o `bytea` da foto sobrevivia a um ERASURE concluído com
-    // sucesso. Uma foto de nota fiscal traz nome, CNPJ e endereço no pixel.
-    it('purga o conteúdo das fotos do pedido', async () => {
+    // A regra de `produto_fotos` existia por causa de `origem_pedido_id`, coluna
+    // que nada escrevia e que saiu na 0042. Foto de catálogo é compartilhada por
+    // pedidos de clientes diferentes: purgar por titular apagaria a foto dos
+    // outros. O invariante agora é a AUSÊNCIA do comando — e a isenção declarada,
+    // porque sumir do registry sem entrar em `TABELAS_SEM_PII` seria a omissão do
+    // PROB-0075 de novo.
+    it('não emite comando para produto_fotos: foto de catálogo não tem titular', async () => {
       const { query } = await executar();
-      const alvo = comandos(query).find((c) => c.tabela === 'pedido_fotos');
 
-      expect(alvo).toBeDefined();
-      expect(alvo?.sql).toContain('conteudo = NULL');
-      expect(alvo?.sql).toContain("storage_backend = 'purgado'");
-      expect(alvo?.sql).toContain('storage_key = NULL');
-      // O nome do arquivo também carrega PII: "nota-fiscal-ACME-LTDA.jpg".
-      expect(alvo?.sql).toContain('nome_arquivo = $3');
-      expect(alvo?.sql).toContain('deleted_at = COALESCE(deleted_at, clock_timestamp())');
-      expect(alvo?.sql).toContain('version = version + 1');
+      expect(comandos(query).map((c) => c.tabela)).not.toContain('produto_fotos');
+      expect(PII_REGISTRY.some((p) => p.table === 'produto_fotos')).toBe(false);
+      expect(TABELAS_SEM_PII.produto_fotos).toBeDefined();
     });
 
     it('anonimiza chamados de SAC do titular', async () => {
@@ -166,7 +167,6 @@ describe('PrivacyService.execute — ERASURE', () => {
       // dizia qual das duas tinha sido purgada. O ramo USER já era qualificado.
       expect(evento.fields).toContain('clientes.razao_social');
       expect(evento.fields).toContain('pedidos.observacao');
-      expect(evento.fields).toContain('pedido_fotos.conteudo');
       expect(evento.fields).toContain('itens_chamado_sac.motivo');
     });
 
@@ -229,7 +229,7 @@ describe('PrivacyService.execute — ERASURE', () => {
       const tabelas = comandos(query).map((c) => c.tabela);
 
       expect(tabelas).not.toContain('clientes');
-      expect(tabelas).not.toContain('pedido_fotos');
+      expect(tabelas).not.toContain('produto_fotos');
       expect(tabelas).not.toContain('chamados_sac');
     });
   });

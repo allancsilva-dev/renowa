@@ -136,7 +136,7 @@ describe('SQL gerado pelo registro', () => {
 
   // Toda tabela com concorrência otimista precisa bumpar `version`, senão um
   // cliente com a linha em cache sobrescreve o apagamento no próximo push.
-  it.each(['clientes', 'pedidos', 'pedido_fotos', 'chamados_sac', 'itens_chamado_sac'])(
+  it.each(['clientes', 'pedidos', 'chamados_sac', 'itens_chamado_sac'])(
     '%s incrementa version',
     (tabela) => {
       const plano = PII_REGISTRY.find((p) => p.table === tabela);

@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ProductsService } from './products.service';
 
 function buildCsvFile(rows: string[]): Express.Multer.File {
@@ -37,7 +37,7 @@ function makeManager(existingProducts: Array<{ codigo: string; fornecedor_id: nu
 
 function buildService(manager: any) {
   const dataSource = { transaction: jest.fn((cb: any) => cb(manager)), query: jest.fn() } as any;
-  return new ProductsService({} as any, dataSource);
+  return new ProductsService({} as any, dataSource, {} as any);
 }
 
 describe('ProductsService#importFromFile', () => {
@@ -263,21 +263,49 @@ describe('ProductsService#importFromFile — CSV do Excel pt-BR', () => {
   });
 });
 
+/**
+ * Harness de `create`/`update`. As duas rodam em transação e conversam com o
+ * banco por três caminhos distintos, que o mock precisa distinguir: busca de
+ * fornecedor (SQL), busca de código já usado (SQL) e o repositório da entidade.
+ */
+function buildServiceWithRepo(options: {
+  existing?: Record<string, unknown> | null;
+  /** Linha devolvida pela checagem de código duplicado. */
+  codigoEmUso?: { descricao: string } | null;
+  /** Falha injetada no `save`, para exercitar rollback. */
+  falhaAoSalvar?: Error;
+} = {}) {
+  const saved: any[] = [];
+  const productRepo = {
+    target: 'Product',
+    create: jest.fn((value: any) => value),
+    save: jest.fn(async (value: any) => {
+      if (options.falhaAoSalvar) throw options.falhaAoSalvar;
+      saved.push(value);
+      return value;
+    }),
+    findOne: jest.fn(async () => options.existing ?? null),
+    softDelete: jest.fn(async () => ({ affected: 1 })),
+  };
+
+  const query = jest.fn(async (sql: string) => {
+    if (sql.includes('fornecedores')) return [{ id: 7 }];
+    if (sql.includes('FROM produtos')) return options.codigoEmUso ? [options.codigoEmUso] : [];
+    return [];
+  });
+
+  const manager = { query, getRepository: jest.fn(() => productRepo) };
+  const dataSource = {
+    query,
+    transaction: jest.fn(async (cb: any) => cb(manager)),
+  } as any;
+
+  const photosService = { removeByProductId: jest.fn(async () => undefined) };
+  const service = new ProductsService(productRepo as any, dataSource, photosService as any);
+  return { service, saved, productRepo, photosService, manager, dataSource };
+}
+
 describe('ProductsService#create/#update — ipi_perc', () => {
-  function buildServiceWithRepo(existing: Record<string, unknown> | null = null) {
-    const saved: any[] = [];
-    const productRepo = {
-      create: jest.fn((value: any) => value),
-      save: jest.fn(async (value: any) => {
-        saved.push(value);
-        return value;
-      }),
-      findOne: jest.fn(async () => existing),
-    };
-    const dataSource = { query: jest.fn().mockResolvedValue([{ id: 7 }]) } as any;
-    const service = new ProductsService(productRepo as any, dataSource);
-    return { service, saved };
-  }
 
   it('normaliza ipi_perc para 2 casas decimais ao criar', async () => {
     const { service, saved } = buildServiceWithRepo();
@@ -299,9 +327,149 @@ describe('ProductsService#create/#update — ipi_perc', () => {
 
   it('atualiza ipi_perc de um produto existente', async () => {
     const { service, saved } = buildServiceWithRepo({
-      id: 7, uuid: 'p1', tenant_id: 'tenant1', ipi_perc: '5.00',
+      existing: { id: 7, uuid: 'p1', tenant_id: 'tenant1', ipi_perc: '5.00' },
     });
     await service.update('p1', { ipi_perc: 18.5 } as any, 'tenant1');
     expect(saved[0].ipi_perc).toBe('18.50');
+  });
+});
+
+/**
+ * O uuid vem do cliente e é a chave de idempotência do sistema. Reenviar a mesma
+ * criação — duplo clique, retry de rede, fila offline do celular que perdeu a
+ * resposta — não pode produzir um segundo produto.
+ */
+describe('ProductsService#create — idempotência por uuid', () => {
+  it('uuid já cadastrado devolve o existente, sem gravar', async () => {
+    const existente = { id: 9, uuid: 'p1', tenant_id: 'tenant1', descricao: 'Produto' };
+    const { service, saved, productRepo } = buildServiceWithRepo({ existing: existente });
+
+    await expect(service.create(
+      { uuid: 'p1', fornecedor_uuid: 'f1', descricao: 'Produto' } as any, 'tenant1',
+    )).resolves.toBe(existente);
+
+    expect(productRepo.save).not.toHaveBeenCalled();
+    expect(saved).toHaveLength(0);
+  });
+
+  /**
+   * Duas requisições com o mesmo uuid ao mesmo tempo passam as duas pela busca;
+   * a segunda toma 23505 no índice `(tenant_id, uuid)`. A releitura resolve: o
+   * registro é o da concorrente, e o cliente recebe o mesmo produto.
+   */
+  it('corrida no mesmo uuid: 23505 vira releitura, não erro', async () => {
+    const concorrente = { id: 9, uuid: 'p1', tenant_id: 'tenant1' };
+    const { service, productRepo } = buildServiceWithRepo();
+    productRepo.findOne
+      .mockResolvedValueOnce(null)      // busca inicial: ainda não existe
+      .mockResolvedValueOnce(concorrente); // releitura após o 23505
+    productRepo.save.mockRejectedValueOnce(Object.assign(new Error('dup'), { code: '23505' }));
+
+    await expect(service.create(
+      { uuid: 'p1', fornecedor_uuid: 'f1', descricao: 'Produto' } as any, 'tenant1',
+    )).resolves.toBe(concorrente);
+  });
+
+  /**
+   * 23505 de OUTRO índice (código duplicado) não é replay: não há registro com
+   * aquele uuid para devolver, e engolir o erro criaria a ilusão de sucesso.
+   */
+  it('23505 que não é do uuid sobe intacto', async () => {
+    const { service, productRepo } = buildServiceWithRepo();
+    const violacao = Object.assign(new Error('uq_produtos_codigo'), { code: '23505' });
+    productRepo.save.mockRejectedValueOnce(violacao);
+
+    await expect(service.create(
+      { uuid: 'p1', fornecedor_uuid: 'f1', descricao: 'Produto', codigo: 'A1' } as any, 'tenant1',
+    )).rejects.toBe(violacao);
+  });
+});
+
+describe('ProductsService — código único por fornecedor', () => {
+  it('recusa criar com código já usado no mesmo fornecedor', async () => {
+    const { service, saved } = buildServiceWithRepo({ codigoEmUso: { descricao: 'Produto A' } });
+
+    await expect(service.create(
+      { uuid: 'p2', fornecedor_uuid: 'f1', descricao: 'Produto B', codigo: 'A1' } as any, 'tenant1',
+    )).rejects.toBeInstanceOf(ConflictException);
+    expect(saved).toHaveLength(0);
+  });
+
+  it('produto sem código não passa pela checagem', async () => {
+    const { service, manager, saved } = buildServiceWithRepo();
+
+    await service.create(
+      { uuid: 'p3', fornecedor_uuid: 'f1', descricao: 'Sem código' } as any, 'tenant1',
+    );
+
+    expect(manager.query).not.toHaveBeenCalledWith(
+      expect.stringContaining('FROM produtos'), expect.anything(),
+    );
+    expect(saved).toHaveLength(1);
+  });
+
+  it('recusa renomear para um código já usado, ignorando o próprio produto', async () => {
+    const { service } = buildServiceWithRepo({
+      existing: { id: 7, uuid: 'p1', tenant_id: 'tenant1', fornecedor_id: 7 },
+      codigoEmUso: { descricao: 'Produto A' },
+    });
+
+    await expect(service.update('p1', { codigo: 'A1' } as any, 'tenant1'))
+      .rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('a checagem do update exclui o próprio id — salvar sem trocar o código passa', async () => {
+    const { service, manager, saved } = buildServiceWithRepo({
+      existing: { id: 7, uuid: 'p1', tenant_id: 'tenant1', fornecedor_id: 7, codigo: 'A1' },
+    });
+
+    await service.update('p1', { descricao: 'Novo nome' } as any, 'tenant1');
+
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining('id <> $4'),
+      ['tenant1', 7, 'A1', 7],
+    );
+    expect(saved).toHaveLength(1);
+  });
+});
+
+/**
+ * A purga da foto zera bytes de forma IRREVERSÍVEL. Antes ela commitava numa
+ * transação própria e só então vinha o soft delete do produto: um erro no meio
+ * deixava a imagem destruída com o produto vivo, sem como recuperar.
+ */
+describe('ProductsService#remove', () => {
+  it('purga a foto e exclui o produto na MESMA transação', async () => {
+    const { service, productRepo, photosService, manager, dataSource } = buildServiceWithRepo({
+      existing: { id: 7, uuid: 'p1', tenant_id: 'tenant1' },
+    });
+
+    await service.remove('p1', 'tenant1');
+
+    expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+    // O manager da transação chega na purga: é isso que a torna atômica.
+    expect(photosService.removeByProductId).toHaveBeenCalledWith(7, 'tenant1', manager);
+    expect(productRepo.softDelete).toHaveBeenCalledWith(7);
+  });
+
+  it('falha no soft delete propaga de dentro da transação, que desfaz a purga', async () => {
+    const { service, productRepo, dataSource } = buildServiceWithRepo({
+      existing: { id: 7, uuid: 'p1', tenant_id: 'tenant1' },
+    });
+    const falha = new Error('deadlock');
+    productRepo.softDelete.mockRejectedValueOnce(falha);
+
+    await expect(service.remove('p1', 'tenant1')).rejects.toBe(falha);
+
+    // O erro escapa do callback da transação — é o que dispara o ROLLBACK e
+    // devolve os bytes. Antes, a purga já tinha commitado sozinha.
+    await expect(dataSource.transaction.mock.results[0].value).rejects.toBe(falha);
+  });
+
+  it('produto de outro tenant: 404 antes de tocar na foto', async () => {
+    const { service, photosService } = buildServiceWithRepo({ existing: null });
+
+    await expect(service.remove('p1', 'tenant1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(photosService.removeByProductId).not.toHaveBeenCalled();
   });
 });

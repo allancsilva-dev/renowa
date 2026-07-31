@@ -87,24 +87,6 @@ export const PII_REGISTRY: readonly PiiTablePlan[] = [
       + 'a estratégia é anonimizar mantendo a relação, não apagar o histórico.',
   },
   {
-    table: 'pedido_fotos',
-    subject: 'CLIENT',
-    vinculo: { kind: 'via', sql: 'pedido_id IN (SELECT id FROM pedidos WHERE tenant_id = $1 AND cliente_id = $2)' },
-    columns: {
-      conteudo: { set: 'null' },
-      storage_backend: { set: 'literal', value: 'purgado' },
-      storage_key: { set: 'null' },
-      nome_arquivo: { set: 'marker' },
-    },
-    softDelete: true,
-    bumpVersion: true,
-    motivo:
-      'PROB-0075. O binário É o dado pessoal: foto de nota fiscal traz nome, CNPJ '
-      + 'e endereço no pixel, fora do alcance de qualquer coluna de texto. O nome do '
-      + 'arquivo também vaza ("nota-fiscal-ACME.jpg"). Depende do backend "purgado" '
-      + 'criado pela 0037 — sem ele, zerar `conteudo` viola pedido_fotos_storage_check.',
-  },
-  {
     table: 'chamados_sac',
     subject: 'CLIENT',
     vinculo: { kind: 'own-id', column: 'cliente_id' },
@@ -275,6 +257,19 @@ export const TABELAS_SEM_PII: Readonly<Record<string, string>> = {
     + 'CLIENT e USER — fornecedor não é titular no modelo atual.',
   transportadoras: 'Mesma razão de fornecedores: pessoa jurídica, não titular.',
   produtos: 'Catálogo. Código, descrição e preço.',
+  produto_fotos:
+    'NÃO ISENTA POR SER INÓCUA, E SIM POR NÃO TER TITULAR: a foto é do produto no '
+    + 'catálogo, uma por produto, compartilhada por TODO pedido que o use — de '
+    + 'clientes diferentes. Não existe coluna que a ligue a um titular (a '
+    + '`origem_pedido_id`, herdada de `pedido_fotos`, saiu na 0042 justamente '
+    + 'porque nada a escrevia e porque, se escrevesse, o ERASURE de um cliente '
+    + 'apagaria a foto que os outros também usam). Sem vínculo não há solicitação '
+    + 'que a alcance, e uma regra de purga aqui seria comando que nunca casa linha '
+    + 'nenhuma — controle no papel, risco real. O binário AINDA pode carregar PII se '
+    + 'alguém fotografar um documento: o controle é o aviso na tela de cadastro do '
+    + 'produto (ProductPhotoField), somado a uma foto por produto, teto de 3 MB e '
+    + 'whitelist de mime por magic bytes. Risco residual em PROB-0083. Se a foto '
+    + 'voltar a nascer de um pedido, esta tabela volta ao PII_REGISTRY.',
   itens_pedido:
     '`descricao_manual` descreve produto, não pessoa. O que é livre e pode vazar '
     + 'no pedido (observacao, local_entrega) está no cabeçalho, já coberto.',

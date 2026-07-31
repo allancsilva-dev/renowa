@@ -2,17 +2,17 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
-import { OrderPhoto } from './entities/order-photo.entity';
 import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
-import { OrderPhotosService } from './order-photos.service';
-import { OrderPhotosController } from './order-photos.controller';
+import { OrderItemPhotosService } from './order-item-photos.service';
+import { OrderItemPhotosController } from './order-item-photos.controller';
+import { ProductsModule } from '../products/products.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Order, OrderItem, OrderPhoto, NotaFiscal])],
-  controllers: [OrdersController, OrderPhotosController],
-  providers: [OrdersService, OrderPhotosService],
+  imports: [TypeOrmModule.forFeature([Order, OrderItem, NotaFiscal]), ProductsModule],
+  controllers: [OrdersController, OrderItemPhotosController],
+  providers: [OrdersService, OrderItemPhotosService],
   exports: [OrdersService],
 })
 export class OrdersModule {}
