@@ -53,17 +53,22 @@ export class SacService {
     return rows[0].id;
   }
 
+  /**
+   * `chamadoId` é `null` na criação: o cabeçalho ainda não existe, e quem chama
+   * preenche a FK depois de gravá-lo. O total só depende dos valores calculados,
+   * então dá para conhecê-lo antes do primeiro `save`.
+   */
   private async buildItem(
     manager: EntityManager,
     dto: CreateSacTicketItemDto,
     tenantId: string,
-    chamadoId: number,
+    chamadoId: number | null,
   ): Promise<Partial<SacTicketItem>> {
     const calculated = calculateSacItem(dto);
     return {
       uuid: dto.uuid,
       tenant_id: tenantId,
-      chamado_id: chamadoId,
+      chamado_id: chamadoId ?? undefined,
       produto_id: await this.resolveUuid(manager, 'produtos', dto.produto_uuid, tenantId),
       codigo: dto.codigo.trim(),
       motivo: dto.motivo.trim(),
@@ -81,16 +86,68 @@ export class SacService {
     })));
   }
 
+  /**
+   * O uuid do chamado e dos itens vem do cliente. Duplo clique em "Salvar" ou
+   * retry de rede reenvia os mesmos uuids: sem esta guarda o INSERT morre no
+   * índice único e o usuário recebe erro de banco em vez de recusa de negócio.
+   */
+  private async assertUuidsLivres(
+    manager: EntityManager,
+    uuidChamado: string,
+    uuidsItens: readonly string[],
+  ): Promise<void> {
+    const chamados = await manager.query(
+      'SELECT 1 FROM chamados_sac WHERE uuid = $1 LIMIT 1',
+      [uuidChamado],
+    ) as unknown[];
+    if (chamados.length) throw new ConflictException(`Chamado ${uuidChamado} já cadastrado.`);
+
+    if (!uuidsItens.length) return;
+    const itens = await manager.query(
+      'SELECT uuid FROM itens_chamado_sac WHERE uuid = ANY($1) LIMIT 1',
+      [[...uuidsItens]],
+    ) as Array<{ uuid: string }>;
+    if (itens.length) {
+      throw new ConflictException(`Item ${itens[0].uuid} já cadastrado em outro chamado.`);
+    }
+  }
+
+  /**
+   * Emite o próximo número do chamado **do tenant**, em uma instrução atômica que
+   * trava só a linha do próprio tenant. Uma sequence global (o mecanismo anterior)
+   * é compartilhada entre tenants: o tenant A enxergava #1, #4, #9, e os buracos
+   * revelavam o volume de chamados dos outros. `nextval` não serve aqui porque não
+   * existe sequence por tenant sem DDL dinâmico.
+   */
+  private async proximoNumero(manager: EntityManager, tenantId: string): Promise<number> {
+    const rows = await manager.query(
+      `INSERT INTO sac_numero_contador (tenant_id, ultimo) VALUES ($1, 1)
+         ON CONFLICT (tenant_id) DO UPDATE SET ultimo = sac_numero_contador.ultimo + 1
+       RETURNING ultimo`,
+      [tenantId],
+    ) as Array<{ ultimo: number }>;
+    return rows[0].ultimo;
+  }
+
   async create(dto: CreateSacTicketDto, user: RequestUser): Promise<SacTicket> {
     const uuid = await this.dataSource.transaction(async (manager) => {
+      await this.assertUuidsLivres(manager, dto.uuid, dto.itens.map((item) => item.uuid));
       const cliente_id = await this.resolveUuid(manager, 'clientes', dto.cliente_uuid, user.tenantId, true);
       const fornecedor_id = await this.resolveUuid(manager, 'fornecedores', dto.fornecedor_uuid, user.tenantId, true);
-      const sequence = await manager.query(`SELECT nextval('sac_numero_seq')::int AS numero`) as Array<{ numero: number }>;
+      const numero = await this.proximoNumero(manager, user.tenantId);
+
+      // Itens calculados ANTES de gravar o cabeçalho: `buildItem` só precisa do
+      // `chamado_id` para a FK, então o total já é conhecido no primeiro `save` e
+      // o chamado nasce com `version = 1`. Salvar duas vezes fazia todo chamado
+      // recém-criado nascer com `version = 2`.
+      const items = await Promise.all(dto.itens.map((item) =>
+        this.buildItem(manager, item, user.tenantId, null),
+      ));
 
       const chamado = manager.create(SacTicket, {
         uuid: dto.uuid,
         tenant_id: user.tenantId,
-        numero_chamado: sequence[0].numero,
+        numero_chamado: numero,
         cliente_id: cliente_id!,
         fornecedor_id: fornecedor_id!,
         numero_nfe: dto.numero_nfe ?? null,
@@ -98,15 +155,14 @@ export class SacService {
         // Todo chamado nasce 'aberto'. Transição é endpoint dedicado.
         status: 'aberto',
         observacao: dto.observacao ?? null,
+        total: this.totalFromItems(items),
       });
       const saved = await manager.save(chamado);
 
-      const items = await Promise.all(dto.itens.map((item) =>
-        this.buildItem(manager, item, user.tenantId, saved.id),
-      ));
-      await manager.save(items.map((item) => manager.create(SacTicketItem, item)));
-      saved.total = this.totalFromItems(items);
-      await manager.save(saved);
+      await manager.save(items.map((item) => manager.create(SacTicketItem, {
+        ...item,
+        chamado_id: saved.id,
+      })));
       return saved.uuid;
     });
     return this.findOne(uuid, user);
@@ -139,17 +195,23 @@ export class SacService {
       const requested = new Set(dto.itens.map((item) => item.uuid));
       const calculatedItems: Array<Partial<SacTicketItem>> = [];
 
-      for (const itemDto of dto.itens) {
-        // Um uuid de item que já existe em outro chamado (ou tenant) seria
-        // sequestrado pelo upsert abaixo — mesma guarda de OrdersService.
-        const collisions = await manager.query(
-          'SELECT tenant_id, chamado_id FROM itens_chamado_sac WHERE uuid = $1 LIMIT 1',
-          [itemDto.uuid],
-        ) as Array<{ tenant_id: string; chamado_id: number }>;
-        if (collisions[0] && (collisions[0].tenant_id !== user.tenantId || collisions[0].chamado_id !== chamado.id)) {
+      // Um uuid de item que já existe em outro chamado (ou tenant) seria
+      // sequestrado pelo upsert abaixo — mesma guarda de OrdersService. Uma query
+      // só para o lote: era um SELECT por item dentro da transação que já mantém
+      // `pessimistic_write` no chamado, e 50 itens viravam 50 idas ao banco com o
+      // lock aberto.
+      if (dto.itens.length) {
+        const invasores = await manager.query(
+          `SELECT uuid FROM itens_chamado_sac
+            WHERE uuid = ANY($1) AND (tenant_id <> $2 OR chamado_id <> $3) LIMIT 1`,
+          [dto.itens.map((item) => item.uuid), user.tenantId, chamado.id],
+        ) as Array<{ uuid: string }>;
+        if (invasores[0]) {
           throw new BadRequestException('UUID de item já pertence a outro chamado ou tenant.');
         }
+      }
 
+      for (const itemDto of dto.itens) {
         const values = await this.buildItem(manager, itemDto, user.tenantId, chamado.id);
         calculatedItems.push(values);
         const existing = byUuid.get(itemDto.uuid);
@@ -190,7 +252,14 @@ export class SacService {
       .leftJoinAndSelect('c.fornecedor', 'fornecedor')
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.deleted_at IS NULL');
-    if (status) qb.andWhere('c.status = :status', { status });
+    // Status inválido devolvia 200 com lista vazia — indistinguível de "não há
+    // chamados". Mesma disciplina de `updateStatus`.
+    if (status) {
+      if (!(SAC_STATUSES as readonly string[]).includes(status)) {
+        throw new BadRequestException(`Status inválido. Use um de: ${SAC_STATUSES.join(', ')}.`);
+      }
+      qb.andWhere('c.status = :status', { status });
+    }
     if (search) {
       qb.andWhere(
         '(CAST(c.numero_chamado AS TEXT) ILIKE :search OR c.numero_nfe ILIKE :search'

@@ -4,6 +4,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { SacService } from './sac.service';
 import { CreateSacTicketDto, UpdateSacTicketDto } from './dto/create-sac-ticket.dto';
+import { ListSacQueryDto } from './dto/query-sac.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 
 const admin: RequestUser = {
@@ -37,13 +38,29 @@ const validBody = {
   ],
 };
 
+/**
+ * Roteia o `manager.query` por trecho do SQL. Um mock único devolvendo sempre a
+ * mesma linha faria a guarda de uuid enxergar chamado existente e recusar tudo.
+ */
+function managerDeCreate(overrides: { uuidOcupado?: boolean; itemOcupado?: boolean; ultimo?: number } = {}) {
+  const query = jest.fn(async (sql: string) => {
+    if (sql.includes('FROM chamados_sac')) return overrides.uuidOcupado ? [{ '?column?': 1 }] : [];
+    if (sql.includes('FROM itens_chamado_sac')) {
+      return overrides.itemOcupado ? [{ uuid: validBody.itens[0].uuid }] : [];
+    }
+    if (sql.includes('sac_numero_contador')) return [{ ultimo: overrides.ultimo ?? 77 }];
+    return [{ id: 10 }];
+  });
+  return {
+    query,
+    create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
+    save: jest.fn(async (value: unknown) => (Array.isArray(value) ? value : { ...(value as object), id: 1, uuid: chamadoUuid })),
+  };
+}
+
 describe('SacService.create', () => {
-  it('consome a sequence própria, nasce aberto e deriva o total dos itens', async () => {
-    const manager = {
-      query: jest.fn().mockResolvedValue([{ id: 10, numero: 77 }]),
-      create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
-      save: jest.fn(async (value: unknown) => (Array.isArray(value) ? value : { ...(value as object), id: 1, uuid: chamadoUuid })),
-    };
+  it('numera pelo contador do tenant, nasce aberto e deriva o total dos itens', async () => {
+    const manager = managerDeCreate();
     const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
     const service = new SacService({} as any, dataSource);
     const reloaded = { uuid: chamadoUuid };
@@ -51,14 +68,54 @@ describe('SacService.create', () => {
 
     await expect(service.create(validBody as CreateSacTicketDto, admin)).resolves.toBe(reloaded);
 
-    // Sequence própria — não compartilha numeração com pedidos.
-    expect(manager.query).toHaveBeenCalledWith(expect.stringContaining("nextval('sac_numero_seq')"));
+    // Numeração por tenant: UPSERT atômico no contador, nunca a sequence global.
+    expect(manager.query).toHaveBeenCalledWith(
+      expect.stringContaining('sac_numero_contador'),
+      ['tenant-a'],
+    );
+    expect(manager.query).not.toHaveBeenCalledWith(expect.stringContaining("nextval('sac_numero_seq')"));
+    // 2×10 + 1×5,50, gravado no PRIMEIRO save: chamado novo nasce com version 1.
     expect(manager.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      numero_chamado: 77, status: 'aberto', numero_nfe: '12345',
+      numero_chamado: 77, status: 'aberto', numero_nfe: '12345', total: '25.50',
     }));
-    // 2×10 + 1×5,50
-    const chamadoSalvo = manager.save.mock.calls.at(-1)?.[0] as { total: string };
-    expect(chamadoSalvo.total).toBe('25.50');
+    const primeiroSave = manager.save.mock.calls[0]?.[0] as { total: string };
+    expect(primeiroSave.total).toBe('25.50');
+    expect(manager.save.mock.calls.filter((call) => !Array.isArray(call[0]))).toHaveLength(1);
+  });
+
+  it('recusa uuid de chamado já cadastrado em vez de deixar o INSERT estourar', async () => {
+    const manager = managerDeCreate({ uuidOcupado: true });
+    const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+    const service = new SacService({} as any, dataSource);
+
+    await expect(service.create(validBody as CreateSacTicketDto, admin))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
+  it('recusa uuid de item que já pertence a outro chamado', async () => {
+    const manager = managerDeCreate({ itemOcupado: true });
+    const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+    const service = new SacService({} as any, dataSource);
+
+    await expect(service.create(validBody as CreateSacTicketDto, admin))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(manager.save).not.toHaveBeenCalled();
+  });
+
+  it('cada tenant recebe o próximo número do seu próprio contador', async () => {
+    const managerA = managerDeCreate({ ultimo: 1 });
+    const managerB = managerDeCreate({ ultimo: 1 });
+    for (const [manager, tenantId] of [[managerA, 'tenant-a'], [managerB, 'tenant-b']] as const) {
+      const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+      const service = new SacService({} as any, dataSource);
+      jest.spyOn(service, 'findOne').mockResolvedValue({ uuid: chamadoUuid } as any);
+      await service.create(validBody as CreateSacTicketDto, { ...admin, tenantId });
+      expect(manager.query).toHaveBeenCalledWith(expect.stringContaining('sac_numero_contador'), [tenantId]);
+      expect(manager.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+        numero_chamado: 1, tenant_id: tenantId,
+      }));
+    }
   });
 
   it('rejeita cliente de outro tenant', async () => {
@@ -68,6 +125,50 @@ describe('SacService.create', () => {
 
     await expect(service.create(validBody as CreateSacTicketDto, admin))
       .rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('SacService.findAll', () => {
+  function serviceParaLista() {
+    const qb = queryBuilder({ getManyAndCount: jest.fn().mockResolvedValue([[], 0]) });
+    const ticketRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) } as any;
+    return { service: new SacService(ticketRepo, {} as any), qb };
+  }
+
+  // Status inválido devolvia 200 com lista vazia — indistinguível de "não há
+  // chamados".
+  it('recusa status fora do enum', async () => {
+    const { service } = serviceParaLista();
+
+    await expect(service.findAll('tenant-a', { page: 1, limit: 20 }, 'resolvidoo'))
+      .rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('aceita status do enum', async () => {
+    const { service, qb } = serviceParaLista();
+
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, 'resolvido');
+
+    expect(qb.andWhere).toHaveBeenCalledWith('c.status = :status', { status: 'resolvido' });
+  });
+
+  // PROB-0081: `status` era `@Query('status')` solto e o `forbidNonWhitelisted`
+  // global devolvia 400 antes do service. A asserção de mensagem é o que
+  // distingue "enum recusou" de "whitelist recusou".
+  describe('ListSacQueryDto — filtro chega ao service e nomeia o enum', () => {
+    const pipeOptions = { whitelist: true, forbidNonWhitelisted: true };
+
+    it('aceita status do enum', async () => {
+      expect(await validate(plainToInstance(ListSacQueryDto, { status: 'aberto' }), pipeOptions)).toEqual([]);
+    });
+
+    it('recusa status fora do enum com a mensagem do enum', async () => {
+      const errors = await validate(plainToInstance(ListSacQueryDto, { status: 'resolvidoo' }), pipeOptions);
+
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('status');
+      expect(Object.values(errors[0].constraints ?? {}).join(' ')).toContain('Status inválido. Use um de:');
+    });
   });
 });
 

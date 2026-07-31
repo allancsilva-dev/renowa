@@ -4,7 +4,7 @@ import {
 import { IsString } from 'class-validator';
 import { SacService } from './sac.service';
 import { CreateSacTicketDto, UpdateSacTicketDto } from './dto/create-sac-ticket.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { ListSacQueryDto } from './dto/query-sac.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -28,13 +28,8 @@ export class SacController {
 
   @Get()
   @RequirePermission('sac.ver')
-  async findAll(
-    @Query() pagination: PaginationDto,
-    @Query('status') status: string,
-    @Query('search') search: string,
-    @CurrentUser() user: RequestUser,
-  ) {
-    return this.sacService.findAll(user.tenantId, pagination, status, search);
+  async findAll(@Query() query: ListSacQueryDto, @CurrentUser() user: RequestUser) {
+    return this.sacService.findAll(user.tenantId, query, query.status, query.search);
   }
 
   @Get(':uuid')

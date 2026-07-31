@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
@@ -42,7 +43,16 @@ export class CreateSacTicketDto {
   @IsDefined() @IsUUID('4') fornecedor_uuid: string;
 
   @IsOptional() @IsString() @MaxLength(120) numero_nfe?: string | null;
-  @IsOptional() @IsDateString() data?: string | null;
+  /**
+   * A coluna é `date`. `@IsDateString` sozinho aceitava `...T12:00:00Z` e o
+   * Postgres truncava a hora convertendo por fuso — dependendo do horário, o dia
+   * gravado saía diferente do informado. Só data pura.
+   *
+   * O chamado não trafega no sync, então apertar aqui não afeta o mobile.
+   */
+  @IsOptional() @IsDateString() @Matches(/^\d{4}-\d{2}-\d{2}$/, {
+    message: 'data deve estar no formato YYYY-MM-DD.',
+  }) data?: string | null;
   @IsOptional() @IsString() observacao?: string | null;
 
   @IsArray()
