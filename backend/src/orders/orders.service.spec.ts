@@ -635,6 +635,31 @@ describe('OrdersService.remove — atomicidade', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * BACKLOG-0080: sem a cascata o item sobrevive com `deleted_at IS NULL` e só
+   * fica escondido porque toda query o alcança pelo pedido — convenção, não
+   * mecanismo. O banco de dev tinha 81 desses quando o gap foi encontrado.
+   */
+  it('marca os itens do pedido junto, com bump de version', async () => {
+    const { service, query } = subject(1);
+
+    await service.remove(orderUuid2, 1, admin);
+
+    const cascata = query.mock.calls.find(([sql]) => /UPDATE itens_pedido/.test(String(sql)));
+    expect(cascata).toBeDefined();
+    expect(cascata![0]).toContain('version = version + 1');
+    expect(cascata![0]).toContain('deleted_at IS NULL');
+    expect(cascata![1]).toEqual([admin.tenantId, 7]);
+  });
+
+  /** Cascata DEPOIS do pai: conflito de version aborta antes de marcar filho. */
+  it('não marca item quando o pedido dá conflito de version', async () => {
+    const { service, query } = subject(0);
+
+    await expect(service.remove(orderUuid2, 1, admin)).rejects.toBeInstanceOf(NotFoundException);
+    expect(query.mock.calls.some(([sql]) => /UPDATE itens_pedido/.test(String(sql)))).toBe(false);
+  });
+
   it('propaga o conflito de version do pedido', async () => {
     const { service } = subject(0);
 

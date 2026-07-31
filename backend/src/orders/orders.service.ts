@@ -509,6 +509,18 @@ export class OrdersService {
       await optimisticSoftDelete({ repository: manager.getRepository(Order), uuid, tenantId: user.tenantId,
         expectedVersion: version, resource: 'order', notFoundMessage: `Pedido ${uuid} não encontrado.`,
         extraWhere: this.isVendorOnly(user) ? this.vendorOwnershipWhere(user) : undefined });
+
+      // Depois do pai, no mesmo molde do SAC (BACKLOG-0055): conflito de
+      // `version` aborta a transação e nenhum item fica marcado sem o pedido.
+      // Sem esta cascata o item sobrevive com `deleted_at IS NULL` e só fica
+      // escondido porque toda query o alcança através do pedido — convenção,
+      // não mecanismo. O banco de dev tinha 81 desses quando o gap foi achado
+      // (BACKLOG-0080).
+      await manager.query(
+        `UPDATE itens_pedido SET deleted_at = CURRENT_TIMESTAMP, version = version + 1
+          WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`,
+        [user.tenantId, order.id],
+      );
     });
   }
 }
