@@ -9,6 +9,7 @@ import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
 
@@ -68,6 +69,7 @@ export default function PedidoExternoForm() {
   const { hasAnyRole, hasPermission } = useAuth();
   const canChooseVendor = hasAnyRole(['ADMIN', 'GESTAO']);
   const isEdit = Boolean(uuid);
+  const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [form, setForm] = useState<ExternalForm>(emptyForm);
   const [clienteLabel, setClienteLabel] = useState('');
   const [version, setVersion] = useState<number | null>(null);
@@ -143,7 +145,7 @@ export default function PedidoExternoForm() {
     // `status` e `origem` ficam fora do payload: são derivados pelo servidor e o
     // ValidationPipe roda com forbidNonWhitelisted — mandá-los devolveria 400.
     const payload: Record<string, unknown> = {
-      uuid: uuid ?? crypto.randomUUID(),
+      uuid: uuid ?? uuidDeCriacao,
       cliente_uuid: form.cliente_uuid,
       fornecedor_uuid: form.fornecedor_uuid,
       vendedor_uuid: canChooseVendor && form.vendedor_uuid ? form.vendedor_uuid : undefined,

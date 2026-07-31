@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchSupplier, createSupplier, updateSupplier, lookupCnpj, type SupplierFormData } from '@/services/suppliers.service';
 import type { Supplier } from '@/types';
-import { withGeneratedUuid } from '@/lib/entityPayload';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { maskCnpj } from '@/lib/format';
 import { getApiErrorMessage } from '@/lib/errors';
 
@@ -65,6 +65,7 @@ export default function FornecedorForm() {
   const navigate = useNavigate();
   const isEdit = Boolean(uuid);
 
+  const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [form, setForm] = useState<FormFields>(empty);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
@@ -165,7 +166,7 @@ export default function FornecedorForm() {
       if (isEdit && uuid) {
         await updateSupplier(uuid, payload);
       } else {
-        await createSupplier(withGeneratedUuid(payload));
+        await createSupplier({ ...payload, uuid: uuidDeCriacao });
       }
       navigate('/fornecedores');
     } catch (err) {

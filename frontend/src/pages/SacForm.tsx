@@ -12,6 +12,7 @@ import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption 
 import { moneyForDisplay } from '@/lib/decimal';
 import { previewSacItem, previewSacTotal } from '@/lib/sacCalculation';
 import { getApiErrorMessage } from '@/lib/errors';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 
 type HeaderForm = {
   cliente_uuid: string; fornecedor_uuid: string; numero_nfe: string;
@@ -71,6 +72,7 @@ export default function SacForm() {
   const { uuid } = useParams<{ uuid: string }>();
   const navigate = useNavigate();
   const isEdit = Boolean(uuid);
+  const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [header, setHeader] = useState<HeaderForm>(emptyHeader);
   const [clienteLabel, setClienteLabel] = useState('');
   const [items, setItems] = useState<ItemForm[]>([newItem()]);
@@ -144,7 +146,7 @@ export default function SacForm() {
     // `status`, `total` e `valor_total` ficam fora do payload: são derivados
     // pelo servidor e o ValidationPipe roda com forbidNonWhitelisted.
     const payload: Record<string, unknown> = {
-      uuid: uuid ?? crypto.randomUUID(),
+      uuid: uuid ?? uuidDeCriacao,
       cliente_uuid: header.cliente_uuid,
       fornecedor_uuid: header.fornecedor_uuid,
       numero_nfe: header.numero_nfe || null,

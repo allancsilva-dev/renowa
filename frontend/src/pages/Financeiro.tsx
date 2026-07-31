@@ -6,6 +6,7 @@ import Dialog from '@/components/ui/Dialog';
 import DataTable from '@/components/tables/DataTable';
 import { moneyForDisplay, moneyString, percentageOf, sumMoney } from '@/lib/decimal';
 import { useAuth } from '@/hooks/useAuth';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -179,6 +180,10 @@ function FluxoCaixa() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<{ tipo: string; descricao: string; valor: number | null; data: string }>({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
   const [saving, setSaving] = useState(false);
+  // Identidade estável do lançamento em criação: o retry depois de um erro
+  // reenvia o MESMO uuid, e o servidor devolve o registro já criado em vez de
+  // criar um segundo. Renova só depois do sucesso.
+  const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
   const [error, setError] = useState<string | null>(null);
 
   const TIPO_COLORS: Record<string, string> = {
@@ -208,12 +213,13 @@ function FluxoCaixa() {
     setError(null);
     try {
       await api.post('/financeiro/lancamentos', {
-        uuid: crypto.randomUUID(),
+        uuid: uuidDeCriacao,
         tipo: form.tipo,
         descricao: form.descricao || null,
         valor: moneyString(form.valor),
         data: form.data || null,
       });
+      renovarUuidDeCriacao();
       setShowForm(false);
       setForm({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
       load();
@@ -696,6 +702,10 @@ function Parceiros() {
     valor_comissao: null, status: 'pendente',
   });
   const [saving, setSaving] = useState(false);
+  // Identidade estável do lançamento em criação: o retry depois de um erro
+  // reenvia o MESMO uuid, e o servidor devolve o registro já criado em vez de
+  // criar um segundo. Renova só depois do sucesso.
+  const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -715,7 +725,7 @@ function Parceiros() {
     setError(null);
     try {
       await api.post('/financeiro/parceiros', {
-        uuid: crypto.randomUUID(),
+        uuid: uuidDeCriacao,
         nome_parceiro: form.nome_parceiro,
         empresa_parceiro: form.empresa_parceiro || null,
         data_pedido: form.data_pedido,
@@ -725,6 +735,7 @@ function Parceiros() {
         valor_comissao: moneyString(form.valor_comissao),
         status: form.status,
       });
+      renovarUuidDeCriacao();
       setShowForm(false);
       load();
     } catch (requestError) {
@@ -868,6 +879,10 @@ function Custos() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<{ tipo: string; descricao: string; valor: number | null; data: string }>({ tipo: 'Custo Fixo', descricao: '', valor: null, data: '' });
   const [saving, setSaving] = useState(false);
+  // Identidade estável do lançamento em criação: o retry depois de um erro
+  // reenvia o MESMO uuid, e o servidor devolve o registro já criado em vez de
+  // criar um segundo. Renova só depois do sucesso.
+  const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
   const [writeError, setWriteError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -892,12 +907,13 @@ function Custos() {
     setWriteError(null);
     try {
       await api.post('/financeiro/lancamentos', {
-        uuid: crypto.randomUUID(),
+        uuid: uuidDeCriacao,
         tipo: form.tipo,
         descricao: form.descricao || null,
         valor: moneyString(form.valor),
         data: form.data || null,
       });
+      renovarUuidDeCriacao();
       setShowForm(false);
       load();
     } catch (requestError) {
@@ -1028,6 +1044,10 @@ function InadimplenciaTab() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<{ empresa_devedora: string; valor_aberto: number | null; observacao: string }>({ empresa_devedora: '', valor_aberto: null, observacao: '' });
   const [saving, setSaving] = useState(false);
+  // Identidade estável do lançamento em criação: o retry depois de um erro
+  // reenvia o MESMO uuid, e o servidor devolve o registro já criado em vez de
+  // criar um segundo. Renova só depois do sucesso.
+  const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
   const [writeError, setWriteError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -1047,11 +1067,12 @@ function InadimplenciaTab() {
     setWriteError(null);
     try {
       await api.post('/financeiro/inadimplencia', {
-        uuid: crypto.randomUUID(),
+        uuid: uuidDeCriacao,
         empresa_devedora: form.empresa_devedora,
         valor_aberto: moneyString(form.valor_aberto),
         observacao: form.observacao || null,
       });
+      renovarUuidDeCriacao();
       setShowForm(false);
       setForm({ empresa_devedora: '', valor_aberto: null, observacao: '' });
       load();

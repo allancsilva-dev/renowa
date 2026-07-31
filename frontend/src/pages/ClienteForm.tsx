@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import type { ApiResponse, Client, Transport } from '@/types';
-import { withGeneratedUuid } from '@/lib/entityPayload';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { maskCnpj } from '@/lib/format';
 import { lookupCnpj } from '@/services/clients.service';
 
@@ -103,6 +103,7 @@ export default function ClienteForm() {
   const navigate = useNavigate();
   const isEdit = Boolean(uuid);
 
+  const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [form, setForm] = useState<FormFields>(empty);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEdit);
@@ -233,7 +234,7 @@ export default function ClienteForm() {
       if (isEdit) {
         await api.patch(`/clientes/${uuid}`, payload);
       } else {
-        await api.post('/clientes', withGeneratedUuid(payload));
+        await api.post('/clientes', { ...payload, uuid: uuidDeCriacao });
       }
       navigate('/clientes');
     } catch {

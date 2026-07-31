@@ -6,7 +6,7 @@ import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import api from '@/lib/apiClient';
 import Dialog from '@/components/ui/Dialog';
-import { withGeneratedUuid } from '@/lib/entityPayload';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { importTransportadoras } from '@/services/import';
 import type { PaginatedResponse, Transport } from '@/types';
 
@@ -49,6 +49,9 @@ export default function Transporte() {
   const [formError, setFormError] = useState<string | null>(null);
   const [editingUuid, setEditingUuid] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  // Modal reaproveitado: a identidade da criação renova a cada abertura de
+  // "Nova", e sobrevive a quantas tentativas o mesmo cadastro precisar.
+  const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
@@ -96,7 +99,7 @@ export default function Transporte() {
         endereco_completo: form.endereco_completo || null,
       };
       if (editingUuid) await api.patch(`/transportadoras/${editingUuid}`, payload);
-      else await api.post('/transportadoras', withGeneratedUuid(payload));
+      else await api.post('/transportadoras', { ...payload, uuid: uuidDeCriacao });
       setIsOpen(false);
       setForm(emptyForm);
       reload();
@@ -124,7 +127,7 @@ export default function Transporte() {
           Importar
         </button>
         <button
-          onClick={() => { setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); }}
+          onClick={() => { renovarUuidDeCriacao(); setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); }}
           className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
         >
           <Plus className='h-4 w-4' />
