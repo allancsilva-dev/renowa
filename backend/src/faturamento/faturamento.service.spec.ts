@@ -67,6 +67,56 @@ function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: an
 }
 
 describe('FaturamentoService', () => {
+  describe('findPedidos', () => {
+    function filaComPedidos(orders: Order[]) {
+      const qb: any = {};
+      for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'skip', 'take']) {
+        qb[method] = jest.fn().mockReturnValue(qb);
+      }
+      qb.getManyAndCount = jest.fn().mockResolvedValue([orders, orders.length]);
+      const orderRepo = { createQueryBuilder: jest.fn(() => qb) };
+      const somaQb: any = {};
+      for (const method of ['select', 'addSelect', 'where', 'andWhere', 'groupBy']) {
+        somaQb[method] = jest.fn().mockReturnValue(somaQb);
+      }
+      somaQb.getRawMany = jest.fn().mockResolvedValue([]);
+      const notaRepo = { createQueryBuilder: jest.fn(() => somaQb) };
+      return new FaturamentoService(notaRepo as any, orderRepo as any, {} as any);
+    }
+
+    // Quem confere a nota precisa distinguir valor declarado de valor somado dos
+    // itens: no pedido externo a divergência não significa a mesma coisa.
+    it('projeta a origem e os dados do sistema de origem na fila', async () => {
+      const service = filaComPedidos([
+        buildOrder({ id: 1, numero_pedido: 10, origem: 'interno' } as Partial<Order>),
+        buildOrder({
+          id: 2,
+          numero_pedido: 11,
+          origem: 'externo',
+          sistema_origem: 'Sistema do Fornecedor',
+          numero_pedido_externo: 'PED-9911',
+        } as Partial<Order>),
+      ]);
+
+      const { data } = await service.findPedidos(tenantId, { page: 1, limit: 20 });
+
+      expect(data[0]).toMatchObject({ origem: 'interno', sistema_origem: null, numero_pedido_externo: null });
+      expect(data[1]).toMatchObject({
+        origem: 'externo',
+        sistema_origem: 'Sistema do Fornecedor',
+        numero_pedido_externo: 'PED-9911',
+      });
+    });
+
+    it('trata pedido legado sem `origem` como interno', async () => {
+      const service = filaComPedidos([buildOrder({ id: 1, origem: null } as unknown as Partial<Order>)]);
+
+      const { data } = await service.findPedidos(tenantId, { page: 1, limit: 20 });
+
+      expect(data[0].origem).toBe('interno');
+    });
+  });
+
   describe('registrarNota', () => {
     it('uma nota que cobre o total fecha o pedido (faturado) e cria comissão pendente', async () => {
       const order = buildOrder({ status: 'liberado' });

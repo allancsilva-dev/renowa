@@ -6,10 +6,11 @@ import Dialog from '@/components/ui/Dialog';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useAuth } from '@/hooks/useAuth';
+import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { fetchFaturamentoPedidos, registrarNota, type FaturamentoPedidoRow } from '@/services/faturamento.service';
 import { moneyForDisplay } from '@/lib/decimal';
 import { getApiErrorMessage } from '@/lib/errors';
-import { orderStatusLabel, orderStatusColor, type OrderStatus } from '@/types';
+import { orderStatusLabel, orderStatusColor, orderOrigemLabel, orderOrigemColor, type OrderStatus } from '@/types';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -25,6 +26,9 @@ export default function Faturamento() {
   const [notaForm, setNotaForm] = useState<NotaForm>(EMPTY_NOTA_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Nota fiscal duplicada por retry é dinheiro contado duas vezes: a identidade
+  // renova na abertura do diálogo e sobrevive a quantas tentativas forem.
+  const { uuid: uuidDaNota, renovar: renovarUuidDaNota } = useUuidDeCriacao();
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) => fetchFaturamentoPedidos(params),
@@ -34,6 +38,7 @@ export default function Faturamento() {
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<FaturamentoPedidoRow>({ fetcher });
 
   function openNotaDialog(row: FaturamentoPedidoRow) {
+    renovarUuidDaNota();
     setNotaPedido(row);
     setNotaForm(EMPTY_NOTA_FORM);
     setFormError(null);
@@ -50,7 +55,7 @@ export default function Faturamento() {
     setFormError(null);
     try {
       await registrarNota(notaPedido.uuid, {
-        uuid: crypto.randomUUID(),
+        uuid: uuidDaNota,
         numero_nota: notaForm.numero_nota.trim(),
         serie: notaForm.serie.trim() || undefined,
         valor: notaForm.valor,
@@ -73,6 +78,23 @@ export default function Faturamento() {
       cell: (row: FaturamentoPedidoRow) => (
         <span className='font-mono font-medium'>{row.numero_pedido != null ? `#${row.numero_pedido}` : '—'}</span>
       ),
+    },
+    {
+      key: 'origem',
+      header: 'Origem',
+      // Em pedido externo o valor é declarado, não somado dos itens: a divergência
+      // contra a nota tem outro significado, e quem confere precisa saber disso.
+      cell: (row: FaturamentoPedidoRow) => {
+        const origem = row.origem ?? 'interno';
+        return (
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${orderOrigemColor[origem] ?? 'bg-slate-100 text-slate-600'}`}
+            title={origem === 'externo' && row.numero_pedido_externo ? `Nº de origem ${row.numero_pedido_externo}` : undefined}
+          >
+            {origem === 'externo' && row.sistema_origem ? row.sistema_origem : orderOrigemLabel[origem] ?? origem}
+          </span>
+        );
+      },
     },
     { key: 'cliente', header: 'Cliente', cell: (row: FaturamentoPedidoRow) => row.cliente ?? '—' },
     { key: 'fornecedor', header: 'Fornecedor', cell: (row: FaturamentoPedidoRow) => row.fornecedor ?? '—' },

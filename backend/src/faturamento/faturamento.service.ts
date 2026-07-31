@@ -23,6 +23,14 @@ export interface PedidoFaturamentoRow {
   valor: string;
   total_faturado: string;
   divergencia: string;
+  /**
+   * Origem do pedido na fila. Em pedido externo o `valor` é **declarado** pelo
+   * operador, não calculado a partir de itens — quem confere a nota precisa saber
+   * disso, porque muda o que a divergência significa.
+   */
+  origem: string;
+  sistema_origem: string | null;
+  numero_pedido_externo: string | null;
 }
 
 @Injectable()
@@ -78,6 +86,9 @@ export class FaturamentoService {
         valor,
         total_faturado: totalFaturado,
         divergencia: money(decimal(valor).minus(totalFaturado)),
+        origem: o.origem ?? 'interno',
+        sistema_origem: o.sistema_origem ?? null,
+        numero_pedido_externo: o.numero_pedido_externo ?? null,
       };
     });
 

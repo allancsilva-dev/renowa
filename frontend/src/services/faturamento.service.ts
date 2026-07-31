@@ -1,5 +1,5 @@
 import api from '@/lib/apiClient';
-import type { ApiResponse, NotaFiscal, Order, PaginatedResponse } from '@/types';
+import type { ApiResponse, NotaFiscal, Order, OrderOrigem, PaginatedResponse } from '@/types';
 
 // Definida em @/types porque o detalhe do pedido também a expõe — reexportada
 // aqui para manter os imports das telas de Faturamento.
@@ -14,6 +14,10 @@ export interface FaturamentoPedidoRow {
   valor: string;
   total_faturado: string;
   divergencia: string;
+  /** Em pedido externo o valor é declarado pelo operador, não somado dos itens. */
+  origem: OrderOrigem;
+  sistema_origem: string | null;
+  numero_pedido_externo: string | null;
 }
 
 export interface FaturamentoPedidoDetalhe extends Order {
