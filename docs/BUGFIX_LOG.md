@@ -396,3 +396,17 @@
 - **Evidência:** `DATABASE_URL=…@localhost:5433/renowa npm run db:verify --workspace=backend` → `[5/7] 14/14 objetos de sync presentes` e verdito `OK: schema íntegro`, PostgreSQL 15.18.
 - **Efeito observável:** drift de infra de sync passa a reprovar o `db:verify` com exit 1, em vez de aparecer só quando um device tenta sincronizar.
 - **Ressalvas:** **produção continua sem verificação** — é BACKLOG-0041 (P0) e exige janela e `DATABASE_URL` de produção. Este trabalho entrega a ferramenta, não a execução. A causa mecânica candidata (BACKLOG-0035) não é mais reproduzível: nenhum dos 35 arquivos `.sql` tem controle de transação próprio, e `migrations-hygiene.spec.ts` transforma isso em teste.
+
+### FIX-0030 — Excluir pedido passou a marcar os itens junto
+- **Data:** 2026-07-31
+- **Fecha:** BACKLOG-0080 (parte de código; os órfãos já existentes seguem em aberto)
+- **Área:** backend / banco
+- **Sintoma:** invisível na tela, e é por isso que durou. `OrdersService.remove` marcava `deleted_at` **só no pedido**; o item continuava com `deleted_at IS NULL`. Ficava escondido apenas porque toda query alcança o item através do pedido — convenção, não mecanismo. Qualquer query nova que liste `itens_pedido` direto (relatório, export, auditoria de cálculo) ressuscitaria linha de pedido excluído.
+- **Causa raiz:** BACKLOG-0055 fechou exatamente essa classe para `pedido_fotos` e `itens_chamado_sac`, mas `itens_pedido` ficou de fora; depois a `0040` dropou `pedido_fotos` e levou junto a única cascata que o `remove` tinha. As FKs são `NO ACTION`.
+- **Correção:** `UPDATE itens_pedido SET deleted_at = CURRENT_TIMESTAMP, version = version + 1 WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`, dentro da transação que já existia e **depois** do soft delete do pai — no molde exato do `SacService.remove`. A ordem importa: conflito de `version` no pedido aborta a transação antes de marcar filho. O filtro `deleted_at IS NULL` evita re-marcar item já apagado e inflar `version` à toa.
+- **Arquivos:** `backend/src/orders/orders.service.ts`
+- **Evidência:** `npm test --workspace=backend` → **671 passed** (59 suítes, 1 skipped), com dois casos novos: a cascata sai com bump de `version` e os parâmetros certos, e **não** sai quando o pedido dá conflito de `version`. `lint` e `build` limpos.
+- **Como foi achado:** conferindo o estado do banco de dev depois da limpeza do `ops/qa-safari`, na verificação em runtime de PROB-0065 — `SELECT count(*) FROM itens_pedido i JOIN pedidos p ON p.id = i.pedido_id WHERE i.deleted_at IS NULL AND p.deleted_at IS NOT NULL` devolveu **81**.
+- **Efeito observável:** nenhum para quem usa a tela hoje. O ganho é que o ocultamento deixou de depender de cada query lembrar do filtro.
+- **Saneamento do dev (mesma data, decisão do usuário):** `UPDATE 81`, órfãos de **81 → 0**, com os 5 itens ativos restantes todos sob pedidos vivos. **Produção não foi inspecionada** — fica para a janela de BACKLOG-0041, junto do `db:verify`.
+- **Ressalvas:** o saneamento marcou `deleted_at = CURRENT_TIMESTAMP`, então a data de exclusão do item **não** é a data em que o pedido foi excluído. Para linha histórica invisível isso é irrelevante; para auditoria de quando algo saiu do ar, não é.

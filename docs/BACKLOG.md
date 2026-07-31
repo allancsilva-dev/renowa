@@ -90,7 +90,7 @@
 - **Dependências:** decidir contrato do endpoint de update de itens (substituir lista inteira vs. patch por item; interação com optimistic concurrency de `Order`, ver PROB-0040); confirmar com o dono do produto a fórmula de cálculo de `total_item` (ver ressalva de PROB-0046) antes ou junto desta implementação.
 - **Critério de aceite:** endpoint backend de update de itens de pedido (respeitando tenant, ownership de vendedor de PROB-0044 e versionamento otimista); tela `PedidoDetalhe.tsx` permite editar itens; testes cobrindo sucesso, conflito de versão e vendedor não-dono.
 - **Risco se ficar pendente:** erro de cadastro em pedido só é corrigível recriando o pedido (ou via acesso direto ao banco) — atrito operacional e risco de dado incorreto persistir em produção.
-- **Status:** ABERTO
+- **Status:** FECHADO (verificado contra o código em 2026-07-31) — o endpoint existe: `PUT /pedidos/:uuid` (`backend/src/orders/orders.controller.ts:69`, permissão `pedidos.editar`) e `OrdersService.update` processa `dto.itens` com checagem de tenant por item (`orders.service.ts:306-311`); concorrência otimista via `VersionDto`; `PedidoForm.tsx` edita itens em modo edição. Testes cobrindo ownership de vendedor e bloqueio de edição pós-liberação em `orders.service.spec.ts:231`. O registro seguia ABERTO por desatualização, não por escopo pendente.
 - **Relacionado:** PROB-0046, PROB-0044, PROB-0040
 
 ### BACKLOG-0012 — Seed do catálogo de `permissions` em ambiente de desenvolvimento local
@@ -194,8 +194,8 @@
 - **Dependências:** nenhuma.
 - **Critério de aceite:** trocar o fornecedor com itens já lançados exige confirmação explícita do usuário (ex.: modal "Trocar o fornecedor vai limpar os N itens já lançados. Continuar?") antes de executar `setItems([newItem()])`; se o usuário cancelar, o fornecedor anterior permanece selecionado e os itens são preservados.
 - **Risco se ficar pendente:** perda de dado em campo sem aviso — persona "representante não-técnico sob pressão" (ver `PRODUCT.md`) tem alta chance de perder um pedido inteiro já digitado por trocar o fornecedor sem querer ou para corrigir um erro de digitação no nome, não esperando que isso apague os itens.
-- **Status:** ABERTO
-- **Relacionado:** PROB-0059, PROB-0060 (achados da mesma implementação, sem relação direta de causa)
+- **Status:** FECHADO (verificado contra o código em 2026-07-31) — resolvido no escopo de BACKLOG-0066, por caminho diferente do critério de aceite acima: em vez de pedir confirmação antes de descartar, `handleSupplierChange` (`frontend/src/pages/PedidoForm.tsx:165-172`) **não descarta mais**. A linha sobrevive, só o que veio do produto do fornecedor antigo é desvinculado (`produto_uuid`, `codigo_manual`, `descricao_manual`, `preco_unitario`) e a linha é marcada com `precisa_produto`; quantidades e percentuais digitados ficam, e a linha manual fica intacta. Sem descarte, não há o que confirmar.
+- **Relacionado:** PROB-0059, PROB-0060 (achados da mesma implementação, sem relação direta de causa), BACKLOG-0066
 
 ### BACKLOG-0022 — "Liberar pedido" é irreversível mas não pede confirmação; ícone `Unlock` comunica o oposto do efeito real
 - **Prioridade:** P1
@@ -229,7 +229,7 @@
 ### BACKLOG-0025 — Comissão gerada pelo faturamento nasce sem `numero_nfe`/`data_faturamento` e some da tela por filtro de data errado
 - **Prioridade:** P1
 - **Área:** backend / frontend
-- **Motivo:** dois defeitos que se somam. (1) `faturamento.service.ts:182-196` cria a comissão sem `numero_nfe` e sem `data_faturamento` — a coluna "NF-e" da tela de Financeiro mostra sempre "—". (2) `findAllComissoes` e `getResumoComissoes` filtram por `data_pedido` (`finance.service.ts:304-309`, `:336-341`) enquanto a tela abre no mês corrente: faturar hoje um pedido antigo faz a comissão **não aparecer**; e com a data nula, ela não aparece em mês nenhum.
+- **Motivo:** dois defeitos que se somam. (1) `faturamento.service.ts:182-196` cria a comissão sem `numero_nfe` e sem `data_faturamento` — a coluna "NF-e" da tela de Financeiro mostra sempre "—". (2) `findAllComissoes` e `getResumoComissoes` filtram por `data_pedido` (`finance.service.ts:304-309`, `:336-341`) enquanto a tela abre no mês corrente: faturar hoje um pedido antigo faz a comissão **não aparecer** no mês corrente. **Correção ao registro original (2026-07-31):** a segunda metade da frase — "com a data nula, ela não aparece em mês nenhum" — é **falsa**. `faturamento.service.ts:201` grava `data_pedido: order.data`, então a comissão aparece normalmente no mês do pedido. O defeito de listagem é só o descasamento de mês descrito acima; o que fica nulo é `numero_nfe`/`data_faturamento`, o defeito (1).
 - **Dependências:** decisão de negócio sobre qual data governa a listagem de comissões (data do pedido vs. data do faturamento).
 - **Critério de aceite:** comissão criada pelo faturamento nasce com `numero_nfe` e `data_faturamento` preenchidos; a listagem/resumo de comissões usa a data acordada e exibe a comissão de um pedido antigo faturado hoje; teste cobre o caso "pedido de mês anterior faturado no mês corrente".
 - **Risco se ficar pendente:** comissão real invisível na tela — usuário conclui que o faturamento não gerou comissão.
@@ -245,14 +245,15 @@
 - **Risco se ficar pendente:** correção de nota fiscal só por acesso direto à URL ou ao banco.
 - **Status:** ABERTO
 
-### BACKLOG-0027 — `cross-tenant-foreign-keys.spec.ts` sem nenhuma asserção para `NotaFiscal`/`Commission`
+### BACKLOG-0027 — `cross-tenant-foreign-keys.spec.ts` sem asserção para as relações de `NotaFiscal`
 - **Prioridade:** P1
 - **Área:** backend / segurança
-- **Motivo:** `backend/src/database/cross-tenant-foreign-keys.spec.ts:30-47` — `NotaFiscal` foi adicionado só para o `buildMetadatas()` não quebrar; **nenhuma asserção** cobre `NotaFiscal.pedido`, `Commission.pedido` nem `Commission.notaFiscal`. As entidades **estão corretas** (FKs compostas com `tenant_id`), mas o módulo novo ficou sem guarda de regressão — exatamente o teste que existe para impedir que uma FK perca o par de tenant.
+- **Motivo:** `backend/src/database/cross-tenant-foreign-keys.spec.ts:30-47` — `NotaFiscal` foi adicionado só para o `buildMetadatas()` não quebrar; **nenhuma asserção** cobria `NotaFiscal.pedido`, `Commission.pedido` nem `Commission.notaFiscal`. As entidades **estão corretas** (FKs compostas com `tenant_id`), mas o módulo novo ficou sem guarda de regressão — exatamente o teste que existe para impedir que uma FK perca o par de tenant.
+- **Escopo restante (verificado contra o código em 2026-07-31):** `Commission` **já está coberto** — o array `tenantRelations` tem `[Commission, 'cliente']` e `[Commission, 'fornecedor']` (linhas 37-38). `NotaFiscal` segue aparecendo só na lista de entities do `DataSource` (linha 69), sem nenhuma entrada em `tenantRelations`, apesar de a FK composta existir na entity (`nota-fiscal.entity.ts:21-22`). Falta acrescentar a relação `NotaFiscal → pedido` (e, se aplicável, `Commission → pedido` / `Commission → notaFiscal`, que também não estão no array).
 - **Dependências:** nenhuma.
-- **Critério de aceite:** o spec passa a assertar as 3 relações; remover `tenant_id` de qualquer uma delas faz o teste falhar.
+- **Critério de aceite:** o spec passa a assertar as relações faltantes; remover `tenant_id` de qualquer uma delas faz o teste falhar.
 - **Risco se ficar pendente:** regressão silenciosa de isolamento multi-tenant no módulo mais novo do sistema.
-- **Status:** ABERTO
+- **Status:** ABERTO — escopo menor do que o título original sugeria
 
 ### BACKLOG-0028 — Teste de integração real contra Postgres para concorrência no `FaturamentoService`
 - **Prioridade:** P1
@@ -327,7 +328,7 @@
 - **Dependências:** nenhuma para a correção do arquivo; a investigação do baseline depende de BACKLOG-0039.
 - **Critério de aceite:** nenhuma migration contém `BEGIN`/`COMMIT` próprios; provisionamento de banco vazio do zero resulta em `db:verify` limpo; `grep` confirma que não há outro arquivo com o mesmo padrão.
 - **Risco se ficar pendente:** migrations continuam podendo ser marcadas como aplicadas sem ter aplicado nada — o problema que tornou `schema_migrations` não confiável.
-- **Status:** ABERTO
+- **Status:** PARCIALMENTE_RESOLVIDO (verificado contra o código em 2026-07-31) — **a correção do arquivo está feita**: `0007_optimistic_concurrency.sql:1-2` abre com comentário explicando que o runner é quem envolve cada migration em transação, e `rg '^\s*(BEGIN|COMMIT)\s*;' backend/src/database/migrations/` não retorna nada em **nenhum** arquivo, cumprindo os dois primeiros critérios de aceite. Resta só o terceiro — provisionamento de banco vazio do zero com `db:verify` limpo — que já é o escopo de BACKLOG-0039. Não há trabalho próprio deste item além disso.
 - **Relacionado:** PROB-0060, PROB-0061, BACKLOG-0039
 
 ### BACKLOG-0036 — Paridade dev/prod de versão do PostgreSQL (15.18 em dev, `postgres:16-alpine` em prod)
@@ -837,3 +838,16 @@
 - **O que fazer:** distinguir "FK de pai ausente" das demais recusas de validação e classificá-la como `retryable`, com teto de tentativas; ou ordenar o lote por dependência antes de processar.
 - **Aceitação:** lote fora de ordem converge sem perder item, com teste que empurre item antes do pai.
 - **Relacionado:** PROB-0065, ADR_SYNC_PUSH_V2
+
+### BACKLOG-0080 — Excluir pedido deixa os itens ativos: 81 órfãos no banco de dev
+- **Prioridade:** P2
+- **Status:** ABERTO
+- **Origem:** achado na verificação em runtime de PROB-0065 (2026-07-31), ao conferir o estado do banco depois da limpeza do `ops/qa-safari`
+- **Área:** backend / banco
+- **Motivo:** `OrdersService.remove` marca `deleted_at` **só no pedido**. BACKLOG-0055 fechou exatamente essa classe para `pedido_fotos` e `itens_chamado_sac`, mas `itens_pedido` ficou de fora — e a cascata das fotos foi removida junto com a tabela na `0040`, então hoje o `remove` não tem cascata nenhuma. As FKs são `NO ACTION`.
+- **Evidência (banco de dev, 2026-07-31):** `SELECT count(*) FROM itens_pedido i JOIN pedidos p ON p.id = i.pedido_id WHERE i.deleted_at IS NULL AND p.deleted_at IS NOT NULL` → **81**, espalhados por pedidos antigos (5, 7, 8, 11, …). Não é regressão do trabalho de PROB-0065: são anteriores, e o comportamento é o mesmo desde sempre.
+- **Impacto:** hoje é invisível, porque item só é lido através do pedido — o ocultamento depende de **toda** query lembrar do filtro. É a mesma dependência de convenção que BACKLOG-0055 removeu para os outros dois filhos. Uma query nova que liste `itens_pedido` direto (relatório, export, auditoria de cálculo) ressuscita linha de pedido excluído.
+- **O que fazer:** estender ao `itens_pedido` a cascata que BACKLOG-0055 já implementou — `UPDATE` filtrando `deleted_at IS NULL`, **depois** do soft delete do pai, na mesma transação, para conflito de `version` abortar tudo. Decidir à parte o que fazer com os 81 já existentes (script de saneamento ou deixar como está, já que são invisíveis pelas queries atuais).
+- **Aceitação:** excluir pedido marca os itens; teste cobrindo o caso, no molde do que já existe para SAC.
+- **Status (2026-07-31):** **parte de código FECHADA** em FIX-0030 — a cascata entrou em `OrdersService.remove`, depois do soft delete do pai e na mesma transação, com dois testes (sai com bump de `version`; **não** sai quando o pedido dá conflito de `version`). **Dev saneado na mesma data**, por decisão do usuário: `UPDATE itens_pedido i SET deleted_at = CURRENT_TIMESTAMP, version = i.version + 1 FROM pedidos p WHERE p.id = i.pedido_id AND p.tenant_id = i.tenant_id AND i.deleted_at IS NULL AND p.deleted_at IS NOT NULL` → `UPDATE 81`; a contagem de órfãos foi de **81 → 0**, e os 5 itens ativos restantes pertencem a pedidos vivos. **Continua ABERTO só produção**, que nunca foi inspecionada quanto a isto — conferir na mesma janela de BACKLOG-0041, com a contagem antes de decidir se sanea.
+- **Relacionado:** BACKLOG-0055, PROB-0065, FIX-0030
