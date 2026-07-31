@@ -47,6 +47,18 @@ const styles = StyleSheet.create({
 const brl = (value: Decimal.Value | null | undefined) => `R$ ${new Decimal(value ?? 0).toDecimalPlaces(2).toFixed(2).replace('.', ',')}`;
 const text = (value: string | null | undefined) => value?.trim() || '—';
 
+/**
+ * Data em pt-BR sem passar por fuso. A coluna é `date` e chega como
+ * `YYYY-MM-DD`; `new Date('2026-07-29')` seria lido como UTC e viraria dia 28 em
+ * qualquer fuso negativo, que é o do Brasil inteiro.
+ */
+function dataBR(value: string | null | undefined): string {
+  const iso = value?.slice(0, 10);
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '—';
+  const [ano, mes, dia] = iso.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
 function HeaderRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.headerRow}>
@@ -84,6 +96,9 @@ export function SacTicketPdf({ ticket }: { ticket: SacTicket }) {
           <HeaderRow label='DADOS DO CLIENTE' value={text(ticket.cliente?.razao_social)} />
           <HeaderRow label='FORNECEDOR' value={text(ticket.fornecedor?.razao_social)} />
           <HeaderRow label='NUMERO DE NFE' value={text(ticket.numero_nfe)} />
+          {/* O rodapé carimba a data da IMPRESSÃO; o papel precisa registrar a
+              data em que o chamado foi aberto, que é o dado do atendimento. */}
+          <HeaderRow label='DATA DE ABERTURA' value={dataBR(ticket.data)} />
         </View>
 
         <View style={styles.tableHeader} fixed>

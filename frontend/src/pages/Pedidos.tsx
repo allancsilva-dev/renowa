@@ -121,6 +121,7 @@ export default function Pedidos() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as OrderStatus | '')}
+            aria-label='Filtrar por status'
             className='rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40'
           >
             <option value=''>Todos os status</option>

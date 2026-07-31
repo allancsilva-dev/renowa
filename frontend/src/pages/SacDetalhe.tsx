@@ -56,7 +56,14 @@ export default function SacDetalhe() {
 
   async function generatePdf() {
     if (!uuid) return;
+    // A aba é aberta AQUI, dentro do gesto do usuário: depois de qualquer `await`
+    // o navegador já não trata a chamada como resposta ao clique e o bloqueador de
+    // popup mata a janela. O aviso evita que ela fique em branco enquanto monta.
     const previewWindow = window.open('', '_blank');
+    previewWindow?.document.write(
+      '<title>Gerando papel do chamado…</title>'
+      + '<p style="font:14px system-ui;padding:24px;color:#334155">Gerando o papel do chamado…</p>',
+    );
     setPdfLoading(true);
     setStatusError(null);
     try {

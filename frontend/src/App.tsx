@@ -70,13 +70,19 @@ export default function App() {
               </ProtectedRoute>
             )}
           >
+            {/* Cada formulário declara a permissão que o backend vai exigir no
+                submit: sem isso quem só tem `pedidos.ver` preenche a tela inteira
+                e descobre a recusa ao salvar. */}
             <Route index element={<Pedidos />} />
-            <Route path='novo' element={<PedidoForm />} />
+            <Route path='novo' element={<ProtectedRoute permission='pedidos.criar'><PedidoForm /></ProtectedRoute>} />
             {/* Pedido externo: form próprio (sem itens), mesmo detalhe e mesmo
                 ciclo de liberação/faturamento do pedido interno. */}
-            <Route path='externo/novo' element={<PedidoExternoForm />} />
-            <Route path='externo/:uuid/editar' element={<PedidoExternoForm />} />
-            <Route path=':uuid/editar' element={<PedidoForm />} />
+            <Route path='externo/novo' element={<ProtectedRoute permission='pedidos.criar'><PedidoExternoForm /></ProtectedRoute>} />
+            <Route path='externo/:uuid/editar' element={<ProtectedRoute permission='pedidos.editar'><PedidoExternoForm /></ProtectedRoute>} />
+            {/* `externo` sem sufixo cairia em `:uuid` e viraria erro de API em vez
+                de rota inexistente. */}
+            <Route path='externo' element={<Navigate to='/pedidos' replace />} />
+            <Route path=':uuid/editar' element={<ProtectedRoute permission='pedidos.editar'><PedidoForm /></ProtectedRoute>} />
             <Route path=':uuid' element={<PedidoDetalhe />} />
           </Route>
 
@@ -91,8 +97,8 @@ export default function App() {
             )}
           >
             <Route index element={<Sac />} />
-            <Route path='novo' element={<SacForm />} />
-            <Route path=':uuid/editar' element={<SacForm />} />
+            <Route path='novo' element={<ProtectedRoute permission='sac.criar'><SacForm /></ProtectedRoute>} />
+            <Route path=':uuid/editar' element={<ProtectedRoute permission='sac.editar'><SacForm /></ProtectedRoute>} />
             <Route path=':uuid' element={<SacDetalhe />} />
           </Route>
 
