@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -29,6 +30,19 @@ afterEach(() => {
 });
 
 describe('ProductPhotoField — produto já salvo', () => {
+  it('mostra a foto existente dentro do Strict Mode', async () => {
+    fetchProductPhoto.mockResolvedValue({ uuid: 'f1', version: 2, nome_arquivo: 'p.png' });
+    fetchProductPhotoDataUrl.mockResolvedValue('data:image/png;base64,STRICT');
+
+    render(<StrictMode><ProductPhotoField produtoUuid='prod-strict' editable /></StrictMode>);
+
+    await waitFor(() => expect(screen.getByAltText('Foto do produto'))
+      .toHaveAttribute('src', 'data:image/png;base64,STRICT'));
+    expect(screen.queryByText('Sem foto')).not.toBeInTheDocument();
+    expect(fetchProductPhoto).toHaveBeenCalledTimes(1);
+    expect(fetchProductPhotoDataUrl).toHaveBeenCalledTimes(1);
+  });
+
   it('mostra a foto existente', async () => {
     fetchProductPhoto.mockResolvedValue({ uuid: 'f1', version: 2, nome_arquivo: 'p.png' });
     fetchProductPhotoDataUrl.mockResolvedValue('data:image/png;base64,AAA');
@@ -79,6 +93,28 @@ describe('ProductPhotoField — produto já salvo', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(fetchProductPhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignora o preview obsoleto após trocar o produto', async () => {
+    let resolveFirst!: (value: string) => void;
+    fetchProductPhoto.mockImplementation((uuid: string) => Promise.resolve({
+      uuid: `foto-${uuid}`, version: 1, nome_arquivo: `${uuid}.png`,
+    }));
+    fetchProductPhotoDataUrl.mockImplementation((uuid: string) => {
+      if (uuid === 'prod-1') return new Promise<string>((resolve) => { resolveFirst = resolve; });
+      return Promise.resolve('data:image/png;base64,SECOND');
+    });
+
+    const { rerender } = render(<ProductPhotoField produtoUuid='prod-1' editable />);
+    await waitFor(() => expect(fetchProductPhotoDataUrl).toHaveBeenCalledWith('prod-1'));
+    rerender(<ProductPhotoField produtoUuid='prod-2' editable />);
+    await waitFor(() => expect(screen.getByAltText('Foto do produto'))
+      .toHaveAttribute('src', 'data:image/png;base64,SECOND'));
+
+    resolveFirst('data:image/png;base64,FIRST');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByAltText('Foto do produto'))
+      .toHaveAttribute('src', 'data:image/png;base64,SECOND');
   });
 
   it('esconde as ações quando não é editável', async () => {

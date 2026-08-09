@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ImagePlus, Trash2 } from 'lucide-react';
 import type { ProductPhoto } from '@/types';
 import { getApiErrorMessage } from '@/lib/errors';
@@ -8,6 +8,32 @@ import {
   fetchProductPhotoDataUrl,
   uploadProductPhoto,
 } from '@/services/productPhotos.service';
+
+type LoadedProductPhoto = { meta: ProductPhoto | null; dataUrl: string | null };
+
+/**
+ * O Strict Mode monta, desmonta e remonta efeitos em desenvolvimento. Manter a
+ * requisição em andamento fora do componente permite que a segunda montagem
+ * reutilize o mesmo resultado, sem duplicar o download nem perder o preview.
+ */
+const photoLoads = new Map<string, Promise<LoadedProductPhoto>>();
+
+function loadProductPhoto(produtoUuid: string): Promise<LoadedProductPhoto> {
+  const current = photoLoads.get(produtoUuid);
+  if (current) return current;
+
+  const request = fetchProductPhoto(produtoUuid).then(async (meta) => ({
+    meta,
+    dataUrl: meta ? await fetchProductPhotoDataUrl(produtoUuid) : null,
+  }));
+  photoLoads.set(produtoUuid, request);
+
+  const clear = () => {
+    if (photoLoads.get(produtoUuid) === request) photoLoads.delete(produtoUuid);
+  };
+  void request.then(clear, clear);
+  return request;
+}
 
 /**
  * Foto do produto: uma só, que vai na linha do item no papel de todo pedido
@@ -31,21 +57,17 @@ export default function ProductPhotoField({
   const [pending, setPending] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  /**
-   * Guarda do FIX-0008: o uuid cuja imagem já foi buscada. Sem ele, uma falha
-   * no download re-dispara o efeito a cada render e vira laço de requisições.
-   */
-  const baixados = useRef(new Set<string>());
-
   useEffect(() => {
-    if (!produtoUuid || baixados.current.has(produtoUuid)) return;
-    baixados.current.add(produtoUuid);
+    if (!produtoUuid) return;
     let ativo = true;
-    fetchProductPhoto(produtoUuid)
-      .then(async (meta) => {
-        if (!ativo || !meta) return;
+    setPhoto(null);
+    setPreview(null);
+    setErro(null);
+    loadProductPhoto(produtoUuid)
+      .then(({ meta, dataUrl }) => {
+        if (!ativo) return;
         setPhoto(meta);
-        setPreview(await fetchProductPhotoDataUrl(produtoUuid));
+        setPreview(dataUrl);
       })
       .catch(() => { if (ativo) setErro('Não foi possível carregar a foto.'); });
     return () => { ativo = false; };
