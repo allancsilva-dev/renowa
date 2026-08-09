@@ -522,7 +522,7 @@
     /* O pedido da p5 usa o produto da p3, que ganhou foto na p3b: o papel tem
        que trazer a imagem, além do logo do cabeçalho. */
     if (r) {
-      ok('papel do pedido traz a foto do produto', r.imagens >= 1, r.imagens + ' imagens embutidas');
+      ok('papel do pedido traz logo e foto do produto', r.imagens >= 2, r.imagens + ' imagens embutidas');
     }
     st.ids.pdfPedido = r; Q.flush();
     return r;
