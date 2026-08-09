@@ -1,7 +1,7 @@
-codigo;descricao;preco_base
-P-001;Parafuso sextavado M8 x 40mm;0,85
-P-002;Porca autotravante M8;1.234,56
-P-003;Arruela lisa M8;0,12
-P-004;Chave de fenda 3mm;15,90
+codigo;descricao;preco_base;ipi_perc;foto
+P-001;Parafuso sextavado M8 x 40mm;0,85;5;
+P-002;Porca autotravante M8;1.234,56;12,5;
+P-003;Arruela lisa M8;0,12;0;
+P-004;Chave de fenda 3mm;15,90;;
 P-005;Cadeira de escritório giratória;1.499,00
 P-006;Fita isolante 20m;7,50

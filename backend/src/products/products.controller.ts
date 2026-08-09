@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
-  UseInterceptors, UploadedFile,
+  UseInterceptors, UploadedFile, Res, StreamableFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
@@ -11,8 +11,9 @@ import { FindProductsQueryDto } from './dto/find-products-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import type { Response } from 'express';
 
-const MAX_IMPORT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_IMPORT_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
 /** Criar/Editar: ADMIN, VENDEDOR, GESTAO | Excluir: ADMIN, GESTAO */
 @Controller('produtos')
@@ -36,6 +37,14 @@ export class ProductsController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.productsService.importFromFile(file, fornecedorUuid, user.tenantId);
+  }
+
+  @Get('importacao/modelo.xlsx')
+  @RequirePermission('produtos.criar')
+  async modeloXlsx(@Res({ passthrough: true }) response: Response): Promise<StreamableFile> {
+    response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    response.setHeader('Content-Disposition', 'attachment; filename="modelo-produtos.xlsx"');
+    return new StreamableFile(await this.productsService.xlsxTemplate());
   }
 
   @Get()

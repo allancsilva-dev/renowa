@@ -8,5 +8,7 @@ export class ImportProductsResultDto {
   criados: number;
   atualizados: number;
   rejeitados: number;
+  fotosCriadas: number;
+  fotosIgnoradas: number;
   erros: ImportProductRowError[];
 }

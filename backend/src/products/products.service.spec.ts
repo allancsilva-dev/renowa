@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import * as ExcelJS from 'exceljs';
 import { ProductsService } from './products.service';
 
 function buildCsvFile(rows: string[]): Express.Multer.File {
@@ -13,7 +14,7 @@ function buildRawCsvFile(buffer: Buffer): Express.Multer.File {
   return { originalname: 'produtos.csv', buffer } as Express.Multer.File;
 }
 
-function makeManager(existingProducts: Array<{ codigo: string; fornecedor_id: number }> = []) {
+function makeManager(existingProducts: Array<{ codigo: string; fornecedor_id: number; [key: string]: unknown }> = []) {
   const saved: any[] = [];
   const productRepo = {
     findOne: jest.fn(async ({ where }: any) => {
@@ -31,6 +32,8 @@ function makeManager(existingProducts: Array<{ codigo: string; fornecedor_id: nu
   const manager = {
     query: jest.fn().mockResolvedValue([{ id: 42 }]),
     getRepository: jest.fn(() => productRepo),
+    create: jest.fn((_entity: unknown, value: unknown) => value),
+    save: jest.fn(async (value: unknown) => value),
   };
   return { manager, productRepo, saved };
 }
@@ -61,12 +64,12 @@ describe('ProductsService#importFromFile', () => {
     await expect(service.importFromFile(file, 'fornecedor-uuid', 'tenant-a')).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('rejeita .xlsx (import aceita apenas .csv)', async () => {
+  it('rejeita conteúdo inválido em arquivo .xlsx', async () => {
     const { manager } = makeManager();
     const service = buildService(manager);
     const file = { originalname: 'produtos.xlsx', buffer: Buffer.from('x') } as Express.Multer.File;
     await expect(service.importFromFile(file, 'fornecedor-uuid', 'tenant-a')).rejects.toThrow(
-      /Tipo de arquivo inválido/,
+      /Arquivo XLSX inválido/,
     );
   });
 
@@ -143,6 +146,84 @@ describe('ProductsService#importFromFile', () => {
     expect(result.rejeitados).toBe(0);
     expect(saved[0].descricao).toBe('Produto atualizado');
     expect(saved[0].preco_base).toBe('20.00');
+  });
+
+  it.each([
+    ['0', '0.00'],
+    ['100', '100.00'],
+    ['12,5', '12.50'],
+    ['12.50', '12.50'],
+  ])('importa IPI válido "%s" como %s', async (raw, expected) => {
+    const { manager, saved } = makeManager();
+    const service = buildService(manager);
+    const result = await service.importFromFile(buildCsvFile([
+      'codigo;descricao;preco_base;ipi_perc;foto',
+      `C1;Produto 1;10,50;${raw};`,
+    ]), 'fornecedor-uuid', 'tenant-a');
+
+    expect(result.rejeitados).toBe(0);
+    expect(saved[0].ipi_perc).toBe(expected);
+  });
+
+  it.each(['-0,01', '100,01', 'abc'])('rejeita apenas a linha com IPI inválido "%s"', async (raw) => {
+    const { manager, saved } = makeManager();
+    const service = buildService(manager);
+    const result = await service.importFromFile(buildCsvFile([
+      'codigo;descricao;preco_base;ipi_perc',
+      `C1;Inválido;99;${raw}`,
+      'C2;Válido;20;5',
+    ]), 'fornecedor-uuid', 'tenant-a');
+
+    expect(result).toMatchObject({ criados: 1, rejeitados: 1 });
+    expect(result.erros[0]).toMatchObject({ linha: 2, codigo: 'C1', erro: 'IPI inválido.' });
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ codigo: 'C2', ipi_perc: '5.00' });
+  });
+
+  it('grava IPI nulo no novo e preserva o atual no produto existente quando vazio', async () => {
+    const { manager, saved } = makeManager([{ codigo: 'C1', fornecedor_id: 42, ipi_perc: '8.00' }]);
+    const service = buildService(manager);
+    const result = await service.importFromFile(buildCsvFile([
+      'codigo;descricao;preco_base;ipi_perc',
+      'C1;Existente atualizado;20;',
+      'C2;Novo;30;',
+    ]), 'fornecedor-uuid', 'tenant-a');
+
+    expect(result).toMatchObject({ criados: 1, atualizados: 1, rejeitados: 0 });
+    expect(saved.find((product) => product.codigo === 'C1').ipi_perc).toBe('8.00');
+    expect(saved.find((product) => product.codigo === 'C2').ipi_perc).toBeNull();
+  });
+
+  it('localiza as colunas XLSX pelo cabeçalho e aceita foto na coluna D do modelo antigo', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Produtos');
+    sheet.addRow(['descricao', 'preco_base', 'codigo', 'foto']);
+    sheet.addRow(['Produto legado', 10.5, 'LEG-1', '']);
+    const imageId = workbook.addImage({
+      base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      extension: 'png',
+    });
+    sheet.addImage(imageId, { tl: { col: 3, row: 1 }, ext: { width: 24, height: 24 } });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const file = { originalname: 'produtos.xlsx', buffer: Buffer.from(buffer), size: buffer.byteLength } as Express.Multer.File;
+    const { manager, saved } = makeManager();
+
+    const result = await buildService(manager).importFromFile(file, 'fornecedor-uuid', 'tenant-a');
+
+    expect(result.rejeitados).toBe(0);
+    expect(saved[0]).toMatchObject({ codigo: 'LEG-1', descricao: 'Produto legado', preco_base: '10.50', ipi_perc: null });
+    expect(manager.save).toHaveBeenCalledWith(expect.objectContaining({ produto_id: saved[0].id }));
+  });
+
+  it('gera modelo XLSX novo com IPI antes de foto', async () => {
+    const { manager } = makeManager();
+    const buffer = await buildService(manager).xlsxTemplate();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+
+    expect(workbook.worksheets[0].getRow(1).values).toEqual([
+      undefined, 'codigo', 'descricao', 'preco_base', 'ipi_perc', 'foto',
+    ]);
   });
 });
 

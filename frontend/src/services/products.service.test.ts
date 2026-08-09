@@ -21,7 +21,7 @@ describe('importProducts', () => {
   });
 
   it('envia o arquivo e o fornecedor_uuid como multipart/form-data', async () => {
-    const result: ImportProductsResult = { criados: 2, atualizados: 1, rejeitados: 1, erros: [{ linha: 4, codigo: 'X1', erro: 'Código duplicado no arquivo' }] };
+    const result: ImportProductsResult = { criados: 2, atualizados: 1, rejeitados: 1, fotosCriadas: 1, fotosIgnoradas: 0, erros: [{ linha: 4, codigo: 'X1', erro: 'Código duplicado no arquivo' }] };
     vi.mocked(apiClient.post).mockResolvedValue({ data: { data: result } });
 
     const file = new File(['codigo,descricao\nA1,Produto A'], 'produtos.csv', { type: 'text/csv' });
@@ -41,6 +41,8 @@ describe('importProducts', () => {
       criados: 0,
       atualizados: 0,
       rejeitados: 3,
+      fotosCriadas: 0,
+      fotosIgnoradas: 0,
       erros: [
         { linha: 2, codigo: '', erro: 'Código obrigatório' },
         { linha: 3, codigo: 'B2', erro: 'Código duplicado no arquivo' },

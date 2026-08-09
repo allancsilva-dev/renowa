@@ -74,14 +74,23 @@ export interface ImportProductsResult {
   criados: number;
   atualizados: number;
   rejeitados: number;
+  fotosCriadas: number;
+  fotosIgnoradas: number;
   erros: ImportProductRowError[];
 }
 
-/** Importação em massa de produtos (.csv) vinculados a um fornecedor. */
+/** Importação em massa de produtos (.csv ou .xlsx) vinculados a um fornecedor. */
 export async function importProducts(file: File, fornecedorUuid: string): Promise<ImportProductsResult> {
   const formData = new FormData();
   formData.append('arquivo', file);
   formData.append('fornecedor_uuid', fornecedorUuid);
   const { data } = await api.post<ApiResponse<ImportProductsResult>>('/produtos/importacao', formData);
   return data.data;
+}
+
+export async function downloadProductsXlsxTemplate(): Promise<void> {
+  const { data } = await api.getBlob('/produtos/importacao/modelo.xlsx');
+  const url = URL.createObjectURL(data); const link = document.createElement('a');
+  link.href = url; link.download = 'modelo-produtos.xlsx'; link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }

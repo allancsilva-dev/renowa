@@ -6,7 +6,7 @@ import Dialog from '@/components/ui/Dialog';
 import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
-import { fetchProducts, importProducts, type ImportProductsResult } from '@/services/products.service';
+import { downloadProductsXlsxTemplate, fetchProducts, importProducts, type ImportProductsResult } from '@/services/products.service';
 import { fetchSuppliers } from '@/services/suppliers.service';
 import { getApiErrorMessage } from '@/lib/errors';
 import type { Product, Supplier } from '@/types';
@@ -61,7 +61,7 @@ export default function Produtos() {
   async function handleImportSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!importFile) {
-      setImportError('Selecione um arquivo .csv para importar.');
+      setImportError('Selecione um arquivo .csv ou .xlsx para importar.');
       return;
     }
     if (!importFornecedorUuid) {
@@ -214,21 +214,22 @@ export default function Produtos() {
 
             <div className='flex flex-col gap-1'>
               <label htmlFor='import-arquivo' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
-                Arquivo (.csv) <span className='text-red-500'>*</span>
+                Arquivo (.csv ou .xlsx) <span className='text-red-500'>*</span>
               </label>
               <input
                 id='import-arquivo'
                 type='file'
-                accept='.csv,text/csv'
+                accept='.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
                 className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium focus:border-primary focus:ring-1 focus:ring-primary/40'
               />
               <p className='text-xs text-slate-500'>
-                No Excel, use <strong>Arquivo &gt; Salvar como &gt; CSV UTF-8 (delimitado por vírgulas)</strong>.
                 O arquivo precisa ter uma linha de cabeçalho com as colunas{' '}
                 <code className='rounded bg-slate-100 px-1'>codigo</code>,{' '}
                 <code className='rounded bg-slate-100 px-1'>descricao</code> e{' '}
-                <code className='rounded bg-slate-100 px-1'>preco_base</code>. Máximo de 5.000 linhas.
+                <code className='rounded bg-slate-100 px-1'>preco_base</code>,{' '}
+                <code className='rounded bg-slate-100 px-1'>ipi_perc</code> e{' '}
+                <code className='rounded bg-slate-100 px-1'>foto</code>. No XLSX, ancore uma imagem flutuante na célula <code className='rounded bg-slate-100 px-1'>foto</code> da mesma linha. O modo “Imagem na célula” não é aceito. Máximo de 5.000 linhas e 500 imagens.
               </p>
               <button
                 type='button'
@@ -237,6 +238,10 @@ export default function Produtos() {
               >
                 Baixar modelo (.csv)
               </button>
+              <button type='button' onClick={() => void downloadProductsXlsxTemplate()}
+                className='ml-4 self-start text-sm font-medium text-primary underline-offset-2 hover:underline'>
+                Baixar modelo (.xlsx)
+              </button>
             </div>
 
             {importResult && (
@@ -244,6 +249,7 @@ export default function Produtos() {
                 <p className='font-medium text-slate-800'>
                   {importResult.criados} criado(s), {importResult.atualizados} atualizado(s), {importResult.rejeitados} rejeitado(s).
                 </p>
+                <p className='text-xs text-slate-600'>{importResult.fotosCriadas} foto(s) criada(s), {importResult.fotosIgnoradas} preservada(s).</p>
                 {importResult.erros.length > 0 && (
                   <div className='max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white'>
                     <table className='w-full text-xs'>

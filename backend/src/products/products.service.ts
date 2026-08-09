@@ -13,13 +13,64 @@ import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { ImportProductsResultDto, ImportProductRowError } from './dto/import-products-result.dto';
 import { parseCsvRows, normalizeRowKeys, pick } from '../common/csv/csv-import.util';
 import { ProductPhotosService } from './product-photos.service';
+import { ProductPhoto } from './entities/product-photo.entity';
+import { detectImageMimeType, MAX_PHOTO_SIZE_BYTES } from '../common/images/image-validation';
+import * as ExcelJS from 'exceljs';
 
 const IMPORT_MAX_ROWS = 5000;
+const IMPORT_MAX_IMAGES = 500;
 
 interface ImportedRow {
   codigo?: string;
   descricao?: string;
   preco_base?: string;
+  ipi_perc?: string;
+}
+
+type ParsedImport = { rows: Record<string, unknown>[]; images: Map<number, { buffer: Buffer; name: string }>; xlsx: boolean };
+
+async function parseImportFile(file: Express.Multer.File | undefined): Promise<ParsedImport> {
+  const name = file?.originalname?.toLowerCase() ?? '';
+  if (!name.endsWith('.xlsx')) return { rows: parseCsvRows(file, IMPORT_MAX_ROWS), images: new Map(), xlsx: false };
+  if (!file?.buffer?.length) throw new BadRequestException('Envie um arquivo .csv ou .xlsx.');
+  if (file.size > 25 * 1024 * 1024) throw new BadRequestException('Arquivo XLSX maior que 25 MB.');
+  const workbook = new ExcelJS.Workbook();
+  try { await workbook.xlsx.load(file.buffer as unknown as ExcelJS.Buffer); }
+  catch { throw new BadRequestException('Arquivo XLSX inválido.'); }
+  const sheet = workbook.worksheets[0];
+  if (!sheet) throw new BadRequestException('O XLSX precisa ter uma planilha.');
+  if (sheet.rowCount - 1 > IMPORT_MAX_ROWS) throw new BadRequestException('Arquivo excede o limite de 5.000 linhas.');
+  const drawings = sheet.getImages();
+  if (drawings.length > IMPORT_MAX_IMAGES) throw new BadRequestException('Arquivo excede o limite de 500 imagens.');
+  const headerByColumn = new Map<number, string>();
+  for (let column = 1; column <= sheet.columnCount; column++) {
+    const value = sheet.getCell(1, column).value;
+    if (value != null) headerByColumn.set(column, String(value));
+  }
+  const normalizedHeaders = normalizeRowKeys(Object.fromEntries(
+    [...headerByColumn].map(([column, header]) => [header, String(column)]),
+  ));
+  const photoColumn = Number(normalizedHeaders.foto || 0);
+  const images = new Map<number, { buffer: Buffer; name: string }>();
+  for (const drawing of drawings) {
+    const tl = drawing.range.tl as unknown as { nativeCol: number; nativeRow: number };
+    if (!photoColumn || tl.nativeCol !== photoColumn - 1 || tl.nativeRow < 1) throw new BadRequestException('Cada foto deve estar ancorada na coluna FOTO da linha do produto.');
+    const line = tl.nativeRow + 1;
+    if (images.has(line)) throw new BadRequestException(`Mais de uma foto ancorada na linha ${line}.`);
+    const image = workbook.getImage(Number(drawing.imageId));
+    if (!image?.buffer) throw new BadRequestException(`Não foi possível ler a foto da linha ${line}.`);
+    images.set(line, { buffer: Buffer.from(image.buffer), name: `foto-linha-${line}.${image.extension ?? 'img'}` });
+  }
+  const rows: Record<string, unknown>[] = [];
+  for (let line = 2; line <= sheet.rowCount; line++) {
+    const row: Record<string, unknown> = {};
+    headerByColumn.forEach((header, column) => {
+      const value = sheet.getCell(line, column).value;
+      row[header] = value == null ? undefined : String(value);
+    });
+    rows.push(row);
+  }
+  return { rows, images, xlsx: true };
 }
 
 // Agrupamento de milhar válido: "1.234", "1.234.567". Ancorado nas duas
@@ -80,6 +131,7 @@ function normalizeImportRow(row: Record<string, unknown>): ImportedRow {
     codigo: normalized['codigo'],
     descricao: pick(normalized, 'descricao', 'descrição'),
     preco_base: pick(normalized, 'preco_base', 'preço_base', 'preco', 'preço'),
+    ipi_perc: pick(normalized, 'ipi_perc'),
   };
 }
 
@@ -91,6 +143,23 @@ export class ProductsService {
     private readonly dataSource: DataSource,
     private readonly photosService: ProductPhotosService,
   ) {}
+
+  async xlsxTemplate(): Promise<Buffer> {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Produtos');
+    sheet.columns = [
+      { header: 'codigo', key: 'codigo', width: 18 },
+      { header: 'descricao', key: 'descricao', width: 42 },
+      { header: 'preco_base', key: 'preco_base', width: 16 },
+      { header: 'ipi_perc', key: 'ipi_perc', width: 14 },
+      { header: 'foto', key: 'foto', width: 22 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    sheet.addRow({ codigo: 'PROD-001', descricao: 'Produto de exemplo', preco_base: 10.5, ipi_perc: 5, foto: 'Ancore uma imagem flutuante nesta célula' });
+    sheet.getRow(2).height = 72;
+    const output = await workbook.xlsx.writeBuffer();
+    return Buffer.from(output);
+  }
 
   private async resolveFornecedorId(
     manager: EntityManager,
@@ -268,7 +337,8 @@ export class ProductsService {
   ): Promise<ImportProductsResultDto> {
     if (!fornecedorUuid) throw new BadRequestException('Fornecedor é obrigatório para importação.');
 
-    const rows = parseCsvRows(file, IMPORT_MAX_ROWS);
+    const parsedFile = await parseImportFile(file);
+    const rows = parsedFile.rows;
 
     return this.dataSource.transaction(async (manager) => {
       const fornecedorRows = await manager.query(
@@ -284,10 +354,13 @@ export class ProductsService {
       let criados = 0;
       let atualizados = 0;
       let rejeitados = 0;
+      let fotosCriadas = 0;
+      let fotosIgnoradas = 0;
 
       for (const [index, rawRow] of rows.entries()) {
         const linha = index + 2; // linha 1 = cabeçalho
-        const { codigo, descricao, preco_base } = normalizeImportRow(rawRow);
+        const { codigo, descricao, preco_base, ipi_perc } = normalizeImportRow(rawRow);
+        const importedPhoto = parsedFile.images.get(linha);
 
         if (!codigo) {
           erros.push({ linha, codigo: '', erro: 'Código é obrigatório.' });
@@ -318,15 +391,48 @@ export class ProductsService {
           precoValue = money(parsed);
         }
 
+        let ipiValue: string | null = null;
+        if (ipi_perc !== undefined) {
+          const parsed = parseImportPrice(ipi_perc);
+          if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+            erros.push({ linha, codigo, erro: 'IPI inválido.' });
+            rejeitados++;
+            continue;
+          }
+          ipiValue = money(parsed);
+        }
+
         const existing = await productRepo.findOne({
           where: { codigo, fornecedor_id: fornecedorId, tenant_id: tenantId, deleted_at: IsNull() },
         });
+        const hasPhoto = Boolean(existing && importedPhoto && await manager.getRepository(ProductPhoto).exist({
+          where: { produto_id: existing.id, tenant_id: tenantId, deleted_at: IsNull() },
+        }));
+
+        let photoMime: string | null = null;
+        if (importedPhoto && !hasPhoto) {
+          try {
+            if (importedPhoto.buffer.length > MAX_PHOTO_SIZE_BYTES) throw new BadRequestException('Imagem maior que 3 MB.');
+            photoMime = detectImageMimeType(importedPhoto.buffer);
+          } catch (reason) {
+            erros.push({ linha, codigo, erro: reason instanceof Error ? reason.message : 'Foto inválida.' });
+            rejeitados++; continue;
+          }
+        }
 
         if (existing) {
           existing.descricao = descricao;
           if (precoValue !== null) existing.preco_base = precoValue;
+          if (ipiValue !== null) existing.ipi_perc = ipiValue;
           await productRepo.save(existing);
           atualizados++;
+          if (importedPhoto && hasPhoto) fotosIgnoradas++;
+          else if (importedPhoto && photoMime) {
+            await manager.save(manager.create(ProductPhoto, { tenant_id: tenantId, produto_id: existing.id,
+              nome_arquivo: importedPhoto.name, mime_type: photoMime, tamanho_bytes: importedPhoto.buffer.length,
+              storage_backend: 'db', conteudo: importedPhoto.buffer, storage_key: null }));
+            fotosCriadas++;
+          }
         } else {
           const created = productRepo.create({
             uuid: randomUUID(),
@@ -335,13 +441,20 @@ export class ProductsService {
             codigo,
             descricao,
             preco_base: precoValue,
+            ipi_perc: ipiValue,
           });
           await productRepo.save(created);
           criados++;
+          if (importedPhoto && photoMime) {
+            await manager.save(manager.create(ProductPhoto, { tenant_id: tenantId, produto_id: created.id,
+              nome_arquivo: importedPhoto.name, mime_type: photoMime, tamanho_bytes: importedPhoto.buffer.length,
+              storage_backend: 'db', conteudo: importedPhoto.buffer, storage_key: null }));
+            fotosCriadas++;
+          }
         }
       }
 
-      return { criados, atualizados, rejeitados, erros };
+      return { criados, atualizados, rejeitados, fotosCriadas, fotosIgnoradas, erros };
     });
   }
 }
