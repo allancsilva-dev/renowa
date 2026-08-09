@@ -81,7 +81,8 @@ case "${1:-}" in
     js "localStorage.getItem('__QA_R')"
     ;;
   all)
-    FASES=(p0 p1 p2 p3 p3b p4 p5 p6 p6b p7 p8 p7c p8b p9 p10 p11 p12 p13)
+    "$0" reset >/dev/null
+    FASES=(p0 p1 p2 p3 p3b p4 p5 p6 p6b p7 p8 p7c p8b p9 p10 p11 p12 p13 p14)
     for f in $FASES; do
       print -r -- "── $f"
       "$0" phase "$f" 300 | tail -c 600

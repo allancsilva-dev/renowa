@@ -471,47 +471,54 @@
 
   function armarCapturaPdf() {
     window.__QA_BLOB = null;
-    if (window.__QA_PDF_HOOK) return;
-    window.__QA_PDF_HOOK = true;
     window.__QA_POPUPS = [];
-    var oco = URL.createObjectURL.bind(URL);
-    URL.createObjectURL = function (b) {
-      try { if (!ehBlobDeModulo(b)) window.__QA_BLOB = b; } catch (e) {}
-      return oco(b);
-    };
+    if (!window.__QA_PDF_HOOK) {
+      window.__QA_PDF_HOOK = true;
+      var oco = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = function (b) {
+        try { if (!ehBlobDeModulo(b)) window.__QA_BLOB = b; } catch (e) {}
+        return oco(b);
+      };
+    }
     /* não deixar abrir aba nova: mudaria a aba corrente do Safari e mataria o driver */
-    window.open = function (u) {
+    var openOriginal = window.open;
+    window.open = function () {
       var fake = { location: { href: '' }, document: { write: function () {} }, close: function () {}, closed: false };
       window.__QA_POPUPS.push(fake);
       return fake;
     };
+    return function () { window.open = openOriginal; };
   }
 
   async function gerarPdf(nome) {
-    armarCapturaPdf();
-    var b = btn(/Gerar PDF|Baixar PDF|Gerar papel/i);
-    if (!ok('botão de PDF (' + nome + ') existe', !!b)) return null;
-    ok('botão de PDF (' + nome + ') habilitado', !b.disabled);
-    b.click();
-    var blob = await waitFor(function () { return window.__QA_BLOB; }, 30000);
-    ok('PDF (' + nome + ') gerou blob', !!blob, blob && (blob.type + ' ' + blob.size + 'B'));
-    if (!blob) { note('erro', 'PDF ' + nome + ' não gerou blob em 30s: ' + (Q.screenErrors() || 'sem mensagem')); return null; }
-    ok('PDF (' + nome + ') tem MIME de PDF', blob.type === 'application/pdf', blob.type);
-    ok('PDF (' + nome + ') não está vazio', blob.size > 4000, blob.size + ' bytes');
-    var head = await new Response(blob.slice(0, 8)).text();
-    ok('PDF (' + nome + ') começa com %PDF', head.indexOf('%PDF') === 0, JSON.stringify(head));
-    var raw = await new Response(blob).text();
-    var pages = (raw.match(/\/Type\s*\/Page[^s]/g) || []).length;
-    ok('PDF (' + nome + ') tem ao menos 1 página', pages >= 1, pages + ' páginas');
-    /* A foto do catálogo tem que CHEGAR ao papel. Contar páginas não prova isso:
-       o PDF sai igual, com a célula de FOTO vazia. Imagem embutida prova. */
-    var imagens = (raw.match(/\/Subtype\s*\/Image/g) || []).length;
-    ok('preview abriu em aba nova (window.open interceptado)', (window.__QA_POPUPS || []).length > 0, (window.__QA_POPUPS || []).length + ' popups');
-    var e = Q.screenErrors();
-    ok('tela sem erro após gerar PDF (' + nome + ')', !e, e || '');
-    await waitFor(function () { return !/Gerando\.\.\./.test(Q.bodyText()); }, 15000);
-    ok('botão de PDF (' + nome + ') saiu do estado "Gerando..."', !/Gerando\.\.\./.test(Q.bodyText()));
-    return { size: blob.size, pages: pages, imagens: imagens };
+    var restaurarOpen = armarCapturaPdf();
+    try {
+      var b = btn(/Gerar PDF|Baixar PDF|Gerar papel/i);
+      if (!ok('botão de PDF (' + nome + ') existe', !!b)) return null;
+      ok('botão de PDF (' + nome + ') habilitado', !b.disabled);
+      b.click();
+      var blob = await waitFor(function () { return window.__QA_BLOB; }, 30000);
+      ok('PDF (' + nome + ') gerou blob', !!blob, blob && (blob.type + ' ' + blob.size + 'B'));
+      if (!blob) { note('erro', 'PDF ' + nome + ' não gerou blob em 30s: ' + (Q.screenErrors() || 'sem mensagem')); return null; }
+      ok('PDF (' + nome + ') tem MIME de PDF', blob.type === 'application/pdf', blob.type);
+      ok('PDF (' + nome + ') não está vazio', blob.size > 4000, blob.size + ' bytes');
+      var head = await new Response(blob.slice(0, 8)).text();
+      ok('PDF (' + nome + ') começa com %PDF', head.indexOf('%PDF') === 0, JSON.stringify(head));
+      var raw = await new Response(blob).text();
+      var pages = (raw.match(/\/Type\s*\/Page[^s]/g) || []).length;
+      ok('PDF (' + nome + ') tem ao menos 1 página', pages >= 1, pages + ' páginas');
+      /* A foto resolvida do item tem que CHEGAR ao papel. Contar páginas não
+         prova isso: o PDF sairia igual, com a célula de FOTO vazia. */
+      var imagens = (raw.match(/\/Subtype\s*\/Image/g) || []).length;
+      ok('preview abriu em aba nova (window.open interceptado)', (window.__QA_POPUPS || []).length > 0, (window.__QA_POPUPS || []).length + ' popups');
+      var e = Q.screenErrors();
+      ok('tela sem erro após gerar PDF (' + nome + ')', !e, e || '');
+      await waitFor(function () { return !/Gerando\.\.\./.test(Q.bodyText()); }, 15000);
+      ok('botão de PDF (' + nome + ') saiu do estado "Gerando..."', !/Gerando\.\.\./.test(Q.bodyText()));
+      return { size: blob.size, pages: pages, imagens: imagens };
+    } finally {
+      restaurarOpen();
+    }
   }
   Q.gerarPdf = gerarPdf;
 
@@ -519,8 +526,8 @@
     if (!st.ids.pedido) return 'sem pedido';
     await go('/pedidos/' + st.ids.pedido);
     var r = await gerarPdf('pedido');
-    /* O pedido da p5 usa o produto da p3, que ganhou foto na p3b: o papel tem
-       que trazer a imagem, além do logo do cabeçalho. */
+    /* O item da p5 usa como fallback a foto de catálogo criada na p3b: o papel
+       tem que trazer essa imagem, além do logo do cabeçalho. */
     if (r) {
       ok('papel do pedido traz logo e foto do produto', r.imagens >= 2, r.imagens + ' imagens embutidas');
     }
@@ -724,6 +731,10 @@
       var q = '';
       if (getPath) {
         var cur = await api('GET', getPath);
+        if (cur.status === 404) {
+          res.push({ alvo: label, status: 404, corpo: 'já removido' });
+          return;
+        }
         var v = cur.body && cur.body.data && cur.body.data.version;
         if (v != null) q = '?version=' + v;
       }
@@ -752,9 +763,29 @@
     if (st.ids.cliente) await del('/clientes/' + st.ids.cliente, 'cliente');
     if (st.ids.fornecedor) await del('/fornecedores/' + st.ids.fornecedor, 'fornecedor');
     if (st.ids.transportadora) await del('/transportadoras/' + st.ids.transportadora, 'transportadora');
-    res.forEach(function (r) { ok('limpeza: ' + r.alvo + ' removido', r.status === 200 || r.status === 204, r.status + ' ' + r.corpo); });
+    /* 404 também é sucesso idempotente: uma rodada interrompida pode ter sido
+       limpa manualmente antes de p14 ser repetida. */
+    res.forEach(function (r) { ok('limpeza: ' + r.alvo + ' removido', r.status === 200 || r.status === 204 || r.status === 404, r.status + ' ' + r.corpo); });
+    var buscas = [
+      ['clientes', '/clientes?search=' + S],
+      ['fornecedores', '/fornecedores?search=' + S],
+      ['produtos', '/produtos?search=' + S],
+      ['transportadoras', '/transportadoras?search=' + S],
+      ['pedidos', '/pedidos?search=' + S + '&limit=100'],
+      ['SAC', '/sac?search=' + S + '&limit=100'],
+    ];
+    var sobras = [];
+    for (var bi = 0; bi < buscas.length; bi++) {
+      var lista = await api('GET', buscas[bi][1]);
+      var dados = lista.body && lista.body.data;
+      var linhas = Array.isArray(dados) ? dados : dados && Array.isArray(dados.items) ? dados.items : [];
+      var encontrou = JSON.stringify(linhas).indexOf(S) >= 0;
+      ok('limpeza: stamp ausente em ' + buscas[bi][0], lista.status === 200 && !encontrou,
+        lista.status + (encontrou ? ' encontrou ' + S : ''));
+      if (encontrou || lista.status !== 200) sobras.push({ alvo: buscas[bi][0], status: lista.status, encontrou: encontrou });
+    }
     st.ids.limpeza = res; Q.flush();
-    return res;
+    return { removidos: res, sobras: sobras };
   };
 
   return 'fases: ' + Object.keys(P).join(',');

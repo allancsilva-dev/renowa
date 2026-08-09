@@ -42,7 +42,7 @@ jq -r '[.net[]|select(.status>=400)]|group_by(.u)[]|"\(length)x \(.[0].u) → \(
 | `p5` | pedido interno com 2 itens e código próprio por linha; confere o que o servidor guardou contra o digitado |
 | `p6`, `p6b` | pedido externo; unicidade do número por fornecedor; enum de `origem` |
 | `p7` | detalhe do pedido: total da API × soma dos itens × número na tela |
-| `p8`, `p8b` | PDF do pedido antes e depois de liberar; `p8` confere que a foto do produto está embutida |
+| `p8`, `p8b` | PDF do pedido antes e depois de liberar; `p8` confere que a foto resolvida do item (específica ou fallback do catálogo) está embutida |
 | `p7c` | liberar pedido |
 | `p9` | faturamento: registrar nota, total faturado, divergência, status |
 | `p10` | SAC: form, numeração, total, transição de status, PDF |
@@ -55,8 +55,9 @@ jq -r '[.net[]|select(.status>=400)]|group_by(.u)[]|"\(length)x \(.[0].u) → \(
 
 - **Timer estrangulado em aba de fundo.** Safari suspende `setTimeout` fora da aba
   ativa; `run.sh` ativa o Safari e traz a aba para frente antes de cada fase.
-- **`window.open` do PDF.** O papel abre uma aba de preview: interceptado por um
-  objeto falso, senão a aba corrente muda e o driver perde o alvo.
+- **`window.open` do PDF.** O papel abre uma aba de preview: cada geração o
+  intercepta com um objeto falso e restaura a função real em `finally`, senão a
+  aba corrente muda e o driver perde o alvo (ou a SPA fica sem prévia depois).
 - **`InputMoney` converte no blur.** O preenchimento dispara `focusout`; sem isso o
   campo fica com a string crua e o pedido salva preço 0.
 - **Trocar o fornecedor reseta os itens do pedido** (`PedidoForm`). Por isso o
