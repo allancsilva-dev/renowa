@@ -15,9 +15,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  RadialBarChart,
-  RadialBar,
-  PolarAngleAxis,
 } from 'recharts';
 import {
   Users,
@@ -42,7 +39,7 @@ interface DashboardData {
   pedidosAbertos: number;
   produtosAtivos: number;
   carteira: { total: number; ativos: number; inativos: number; prospect: number };
-  positivacao: { clientesComPedidoNoMes: number; totalClientes: number };
+  clientesInativos: { clienteUuid: string; cliente: string; ultimoPedidoEm: string; diasSemPedido: number }[];
   vendasMensais: { mes: string; valor: string }[];
   curvaAbc: { cliente: string; valor: string; badge: 'Prioridade' | 'Atenção' | 'Regular' }[];
 }
@@ -194,13 +191,8 @@ export default function Dashboard() {
     { name: 'Prospect', value: pct(carteira.prospect, carteira.total), color: '#E76F51' },
   ];
 
-  const positivacaoPct = pct(
-    data?.positivacao.clientesComPedidoNoMes ?? 0,
-    data?.positivacao.totalClientes ?? 0,
-  );
-  const positivacaoData = [{ name: 'Positivação', value: positivacaoPct, fill: '#2A9D8F' }];
-
   const abcData = data?.curvaAbc ?? [];
+  const clientesInativos = data?.clientesInativos ?? [];
 
   const handleExport = () => {
     const csvContent =
@@ -415,38 +407,24 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Col 2: Positivação */}
+        {/* Col 2: clientes sem pedido válido há mais de 30 dias */}
         <Card className='col-span-12 lg:col-span-4'>
-          <CardHeader title='Positivação' />
-          <div className='flex flex-col items-center justify-center px-5 py-4 gap-2'>
-            {/* RadialBarChart como gauge */}
-            <ResponsiveContainer width='100%' height={180}>
-              <RadialBarChart
-                cx='50%'
-                cy='70%'
-                innerRadius='60%'
-                outerRadius='90%'
-                startAngle={180}
-                endAngle={0}
-                data={positivacaoData}
-              >
-                <PolarAngleAxis type='number' domain={[0, 100]} angleAxisId={0} tick={false} />
-                <RadialBar
-                  dataKey='value'
-                  cornerRadius={6}
-                  background={{ fill: '#f1f5f9' }}
-                  fill='#2A9D8F'
-                />
-              </RadialBarChart>
-            </ResponsiveContainer>
-
-            <div className='text-center -mt-8'>
-              <p className='text-4xl font-bold text-slate-900'>{positivacaoPct}%</p>
-              <p className='mt-1 text-sm font-semibold text-slate-400'>
-                {data ? `${data.positivacao.clientesComPedidoNoMes} de ${data.positivacao.totalClientes} clientes` : 'Sem dados'}
-              </p>
-              <p className='text-xs text-slate-400'>Taxa de positivação mensal</p>
-            </div>
+          <CardHeader title='Clientes inativos' />
+          <div className='max-h-64 overflow-y-auto px-5 py-3'>
+            {clientesInativos.length === 0 ? (
+              <div className='py-10 text-center'>
+                <p className='text-sm font-medium text-slate-700'>Nenhum cliente inativo</p>
+                <p className='mt-1 text-xs text-slate-500'>Clientes com pedido nos últimos 30 dias estão em dia.</p>
+              </div>
+            ) : clientesInativos.map((cliente) => (
+              <div key={cliente.clienteUuid} className='flex items-start justify-between gap-3 border-b border-slate-100 py-3 last:border-0'>
+                <div className='min-w-0'>
+                  <p className='truncate text-sm font-semibold text-slate-800'>{cliente.cliente}</p>
+                  <p className='mt-0.5 text-xs text-slate-500'>Último pedido: {cliente.ultimoPedidoEm.split('-').reverse().join('/')}</p>
+                </div>
+                <span className='shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700'>{cliente.diasSemPedido} dias</span>
+              </div>
+            ))}
           </div>
         </Card>
 

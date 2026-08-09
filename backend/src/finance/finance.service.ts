@@ -592,7 +592,7 @@ export class FinanceService {
     pedidosAbertos: number;
     produtosAtivos: number;
     carteira: { total: number; ativos: number; inativos: number; prospect: number };
-    positivacao: { clientesComPedidoNoMes: number; totalClientes: number };
+    clientesInativos: { clienteUuid: string; cliente: string; ultimoPedidoEm: string; diasSemPedido: number }[];
     vendasMensais: { mes: string; valor: string }[];
     curvaAbc: { cliente: string; valor: string; badge: 'Prioridade' | 'Atenção' | 'Regular' }[];
   }> {
@@ -603,9 +603,8 @@ export class FinanceService {
       pedidosAbertosResult,
       produtosAtivosResult,
       totalClientesResult,
-      clientesAtivosResult,
       clientesComHistoricoResult,
-      positivacaoResult,
+      clientesInativosRows,
       vendasMensaisRows,
       curvaAbcRows,
       totalVendasPedidosResult,
@@ -654,21 +653,23 @@ export class FinanceService {
 
       this.dataSource.query(
         `SELECT COUNT(DISTINCT cliente_id)::int AS total FROM pedidos
-         WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'
-           AND data >= (CURRENT_DATE - INTERVAL '90 days')`,
-        [tenantId],
-      ),
-
-      this.dataSource.query(
-        `SELECT COUNT(DISTINCT cliente_id)::int AS total FROM pedidos
          WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'`,
         [tenantId],
       ),
 
       this.dataSource.query(
-        `SELECT COUNT(DISTINCT cliente_id)::int AS total FROM pedidos
-         WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'
-           AND data >= date_trunc('month', CURRENT_DATE)`,
+        `SELECT c.uuid AS "clienteUuid", c.razao_social AS cliente,
+                (MAX(p.created_at AT TIME ZONE 'America/Sao_Paulo'))::date::text AS "ultimoPedidoEm",
+                ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+                  - (MAX(p.created_at AT TIME ZONE 'America/Sao_Paulo'))::date)::int AS "diasSemPedido"
+           FROM clientes c
+           JOIN pedidos p ON p.cliente_id = c.id AND p.tenant_id = c.tenant_id
+          WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+            AND p.deleted_at IS NULL AND p.status <> 'cancelado'
+          GROUP BY c.id, c.uuid, c.razao_social
+         HAVING (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+                  - (MAX(p.created_at AT TIME ZONE 'America/Sao_Paulo'))::date > 30
+          ORDER BY "diasSemPedido" DESC, c.razao_social ASC`,
         [tenantId],
       ),
 
@@ -705,10 +706,12 @@ export class FinanceService {
     ]);
 
     const totalClientes = Number(totalClientesResult[0]?.total ?? 0);
-    const clientesAtivos = Number(clientesAtivosResult[0]?.total ?? 0);
     const clientesComHistorico = Number(clientesComHistoricoResult[0]?.total ?? 0);
     const clientesProspect = Math.max(totalClientes - clientesComHistorico, 0);
-    const clientesInativos = Math.max(clientesComHistorico - clientesAtivos, 0);
+    const clientesInativos = (clientesInativosRows as Array<{ clienteUuid: string; cliente: string; ultimoPedidoEm: string; diasSemPedido: number }>).map((row) => ({
+      ...row, diasSemPedido: Number(row.diasSemPedido),
+    }));
+    const clientesAtivos = Math.max(clientesComHistorico - clientesInativos.length, 0);
 
     const vendasMensais = this.buildVendasMensais(
       vendasMensaisRows as { mes: string; valor: string }[],
@@ -729,13 +732,10 @@ export class FinanceService {
       carteira: {
         total: totalClientes,
         ativos: clientesAtivos,
-        inativos: clientesInativos,
+        inativos: clientesInativos.length,
         prospect: clientesProspect,
       },
-      positivacao: {
-        clientesComPedidoNoMes: Number(positivacaoResult[0]?.total ?? 0),
-        totalClientes,
-      },
+      clientesInativos,
       vendasMensais,
       curvaAbc,
     };
