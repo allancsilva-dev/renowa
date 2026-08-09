@@ -12,7 +12,6 @@ import { canCancelarPedido, canLiberarPedido } from '@/lib/orderPermissions';
 import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
-import { itensComProdutoDistinto } from '@/lib/orderItemPhotos';
 import { FotosDoPapelIndisponiveisError, fetchFotosPorProduto } from '@/services/productPhotos.service';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -28,6 +27,7 @@ export default function PedidoDetalhe() {
 
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [pdfWarning, setPdfWarning] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
 
   const load = useCallback(() => {
@@ -83,16 +83,16 @@ export default function PedidoDetalhe() {
     );
     setPdfLoading(true);
     setStatusError(null);
+    setPdfWarning(null);
     try {
       const persisted = await fetchOrder(uuid);
       setOrder(persisted);
       // As fotos vão embutidas como data URL: o endpoint de conteúdo é
       // autenticado e o PDF é montado no cliente, então uma URL não resolveria.
-      // A foto é do produto, então baixa uma por produto DISTINTO — dois itens
-      // do mesmo produto compartilham a imagem e um só download. Produto sem
-      // foto responde 404 e sai com célula vazia; falha de verdade (429, 5xx,
-      // rede) aborta a emissão em vez de imprimir um papel furado.
-      const fotosPorProduto = await fetchFotosPorProduto(uuid, itensComProdutoDistinto(persisted));
+      // A rota resolve a foto específica do item e usa a foto do catálogo como
+      // fallback. O mapa fica indexado pelo uuid do item para que duas linhas do
+      // mesmo produto possam ter imagens diferentes.
+      const fotosPorProduto = await fetchFotosPorProduto(uuid, persisted.itens ?? []);
       const blob = await pdf(<OrderValidationPdf order={persisted} fotosPorProduto={fotosPorProduto} />).toBlob();
       const url = URL.createObjectURL(blob);
       if (previewWindow) previewWindow.location.href = url;
@@ -101,6 +101,11 @@ export default function PedidoDetalhe() {
       link.href = url;
       link.download = `${filePrefix}-${persisted.numero_pedido ?? persisted.uuid}.pdf`;
       link.click();
+      if (!previewWindow) {
+        setPdfWarning(
+          'O PDF foi baixado, mas a prévia não pôde ser aberta. Libere popups para este site e tente novamente.',
+        );
+      }
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
       previewWindow?.close();
@@ -167,6 +172,12 @@ export default function PedidoDetalhe() {
         {statusError && (
           <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>
             {statusError}
+          </div>
+        )}
+
+        {pdfWarning && (
+          <div role='status' className='rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700'>
+            {pdfWarning}
           </div>
         )}
 

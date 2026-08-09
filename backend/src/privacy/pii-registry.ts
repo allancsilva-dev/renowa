@@ -105,6 +105,15 @@ export const PII_REGISTRY: readonly PiiTablePlan[] = [
       + '(0035:90): NULL abortaria o ERASURE inteiro com 23502, daí o literal.',
   },
   {
+    table: 'pedido_item_fotos',
+    subject: 'CLIENT',
+    vinculo: { kind: 'via', sql: 'pedido_id IN (SELECT id FROM pedidos WHERE tenant_id = $1 AND cliente_id = $2)' },
+    columns: { conteudo: { set: 'null' }, storage_backend: { set: 'literal', value: 'purgado' } },
+    softDelete: true,
+    bumpVersion: true,
+    motivo: 'Foto específica do pedido pode conter PII e é purgada com o titular.',
+  },
+  {
     table: 'inadimplencia',
     subject: 'CLIENT',
     vinculo: { kind: 'own-id', column: 'cliente_id' },

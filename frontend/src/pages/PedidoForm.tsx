@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, Unlock } from 'lucide-react';
+import { Camera, Plus, Trash2, Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchOrder, liberarOrder, saveOrder } from '@/services/orders.service';
 import { fetchClients } from '@/services/clients.service';
@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
+import { deleteOrderItemPhoto, fetchOrderItemPhoto, fetchOrderItemPhotoDataUrl, uploadOrderItemPhoto } from '@/services/productPhotos.service';
 
 type HeaderForm = {
   data: string; cliente_uuid: string; vendedor_uuid: string; fornecedor_uuid: string;
@@ -31,6 +32,7 @@ type ItemForm = {
    * linha recém-adicionada também está sem produto e não é órfã.
    */
   precisa_produto: boolean;
+  foto: File | null; fotoPreview: string | null; fotoVersion: number | null;
 };
 
 type TenantUser = { authUserId: string; name: string; active: boolean };
@@ -45,6 +47,7 @@ const newItem = (): ItemForm => ({
   uuid: crypto.randomUUID(), produto_uuid: '', codigo_manual: '', descricao_manual: '',
   qtd_caixas: '1', qtd_unitaria: '1', preco_unitario: null, desconto_perc: '0', ipi_perc: '0',
   precisa_produto: false,
+  foto: null, fotoPreview: null, fotoVersion: null,
 });
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -65,6 +68,7 @@ function orderToForm(order: Order): { header: HeaderForm; items: ItemForm[] } {
       qtd_unitaria: item.qtd_unitaria ?? '0', preco_unitario: item.preco_unitario == null ? null : Number(item.preco_unitario),
       desconto_perc: item.desconto_perc ?? '0', ipi_perc: item.ipi_perc ?? '0',
       precisa_produto: false,
+      foto: null, fotoPreview: null, fotoVersion: null,
     })),
   };
 }
@@ -100,6 +104,7 @@ export default function PedidoForm() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liberando, setLiberando] = useState(false);
+  const [persistedUuid, setPersistedUuid] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -115,6 +120,12 @@ export default function PedidoForm() {
       if (order) {
         const mapped = orderToForm(order); setHeader(mapped.header); setItems(mapped.items.length ? mapped.items : [newItem()]);
         setVersion(order.version); setClienteLabel(order.cliente?.razao_social ?? '');
+        void Promise.all(mapped.items.map(async (item) => {
+          const metadata = await fetchOrderItemPhoto(order.uuid, item.uuid);
+          if (!metadata) return;
+          const preview = await fetchOrderItemPhotoDataUrl(order.uuid, item.uuid);
+          if (active) updateItemPhotoState(item.uuid, { fotoPreview: preview, fotoVersion: metadata.version });
+        })).catch(() => undefined);
       }
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
       .finally(() => { if (active) setFetching(false); });
@@ -195,6 +206,24 @@ export default function PedidoForm() {
     }));
   }
 
+  function updateItemPhotoState(itemUuid: string, patch: Partial<ItemForm>) {
+    setItems((current) => current.map((item) => item.uuid === itemUuid ? { ...item, ...patch } : item));
+  }
+
+  function chooseItemPhoto(itemUuid: string, file: File | null) {
+    if (!file) return;
+    updateItemPhotoState(itemUuid, { foto: file, fotoPreview: URL.createObjectURL(file) });
+  }
+
+  async function removeItemPhoto(item: ItemForm) {
+    try {
+      if ((uuid ?? persistedUuid) && item.fotoVersion != null) {
+        await deleteOrderItemPhoto((uuid ?? persistedUuid)!, item.uuid, item.fotoVersion);
+      }
+      updateItemPhotoState(item.uuid, { foto: null, fotoPreview: null, fotoVersion: null });
+    } catch (reason) { setError(getApiErrorMessage(reason)); }
+  }
+
   async function handleLiberar() {
     if (!uuid || version == null) return;
     setLiberando(true);
@@ -237,10 +266,20 @@ export default function PedidoForm() {
         desconto_perc: Number(item.desconto_perc || 0),
         ipi_perc: Number(item.ipi_perc || 0),
       })),
-      ...(isEdit ? { version } : {}),
+      ...((isEdit || persistedUuid) ? { version } : {}),
     };
     try {
-      const saved = await saveOrder(payload, uuid);
+      const saved = await saveOrder(payload, uuid ?? persistedUuid ?? undefined);
+      setPersistedUuid(saved.uuid); setVersion(saved.version);
+      const uploads = await Promise.allSettled(items.filter((item) => item.foto).map(async (item) => {
+        const metadata = await uploadOrderItemPhoto(saved.uuid, item.uuid, item.foto!);
+        updateItemPhotoState(item.uuid, { foto: null, fotoVersion: metadata.version });
+      }));
+      const failed = uploads.filter((result) => result.status === 'rejected').length;
+      if (failed) {
+        setError(`O pedido foi salvo, mas ${failed} foto(s) não foram enviadas. Tente salvar novamente para reenviar somente as fotos pendentes.`);
+        return;
+      }
       navigate(`/pedidos/${saved.uuid}`);
     } catch (reason) { setError(getApiErrorMessage(reason)); }
     finally { setLoading(false); }
@@ -334,6 +373,15 @@ export default function PedidoForm() {
             <label className='flex flex-col gap-1'><span className={labelClass}>Preço unitário</span><InputMoney disabled={locked} value={item.preco_unitario} onChange={(value) => updateItem(item.uuid, { preco_unitario: value })} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Desconto (%)</span><input disabled={locked} type='number' min='0' max='100' step='0.01' value={item.desconto_perc} onChange={(e) => updateItem(item.uuid, { desconto_perc: e.target.value })} className={inputClass} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>IPI (%)</span><input disabled={locked} type='number' min='0' max='100' step='0.01' value={item.ipi_perc} onChange={(e) => updateItem(item.uuid, { ipi_perc: e.target.value })} className={inputClass} /></label>
+            <div className='md:col-span-4 flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3'>
+              {item.fotoPreview ? <img src={item.fotoPreview} alt={`Foto específica do item ${index + 1}`} className='h-16 w-20 rounded-md bg-white object-contain' />
+                : <div className='flex h-16 w-20 items-center justify-center rounded-md bg-white text-slate-400'><Camera className='h-5 w-5' /></div>}
+              <div className='min-w-0 flex-1'><p className='text-sm font-semibold text-slate-800'>Foto deste pedido</p><p className='text-xs text-slate-600'>Substitui a foto do produto somente neste pedido. Ao remover, o PDF volta a usar a foto do catálogo.</p></div>
+              <label className={`cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 ${locked ? 'pointer-events-none opacity-40' : ''}`}>
+                {item.fotoPreview ? 'Trocar foto' : 'Escolher foto'}<input className='sr-only' type='file' accept='image/jpeg,image/png,image/webp' disabled={locked} onChange={(event) => chooseItemPhoto(item.uuid, event.target.files?.[0] ?? null)} />
+              </label>
+              {item.fotoPreview && <button type='button' disabled={locked} onClick={() => void removeItemPhoto(item)} className='rounded-lg px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-40'>Remover</button>}
+            </div>
             <div className='md:col-span-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700'><span>{qtyForDisplay(item.qtd_caixas || 0)} cx × {qtyForDisplay(item.qtd_unitaria || 0)} un = <strong>{qtyForDisplay(calculated.qtd_total)}</strong></span><span>Sem IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_sem_imposto))}</strong></span><span>Com IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_com_imposto))}</strong></span></div>
           </div></div>; })}</div>
         <div className='mt-5 flex justify-end gap-8 border-t border-slate-200 pt-4 text-right'><div><span className='block text-xs text-slate-600'>Total sem imposto</span><strong>{BRL.format(moneyForDisplay(totals.semImposto))}</strong></div><div><span className='block text-xs text-slate-600'>Total com imposto</span><strong className='text-lg text-slate-900'>{BRL.format(moneyForDisplay(totals.comImposto))}</strong></div></div>

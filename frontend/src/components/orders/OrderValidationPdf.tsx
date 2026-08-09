@@ -49,11 +49,11 @@ const styles = StyleSheet.create({
   // cor — laranja e vermelho, borda dos dois lados e valor colorido.
   // 0.8 e não 0.5 como as demais divisórias: em 0.5 a borda cai no meio do pixel
   // e sai lavada na tela, perdendo o destaque que a planilha do cliente tem.
-  colQtdTotal: { width: '6%', textAlign: 'right', borderLeftWidth: 0.8, borderLeftColor: '#ed7d31', borderRightWidth: 0.8, borderRightColor: '#ed7d31', paddingLeft: 3, paddingRight: 3 },
+  colQtdTotal: { width: '6%', textAlign: 'right', borderLeftWidth: 0.8, borderLeftColor: '#ed7d31', borderRightWidth: 0.8, borderRightColor: '#ed7d31', paddingLeft: 3, paddingRight: 3, fontFamily: 'Helvetica-Bold' },
   // Sem borda direita: a lateral esquerda colorida de DESC.% ocupa esse lugar.
   colVlrTb: { width: '7.5%', textAlign: 'right', paddingLeft: 3, paddingRight: 3 },
   colDescPerc: { width: '5.5%', textAlign: 'right', borderLeftWidth: 0.8, borderLeftColor: '#ff0000', borderRightWidth: 0.8, borderRightColor: '#ff0000', paddingLeft: 3, paddingRight: 3 },
-  colVlrComDesc: { width: '8%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
+  colVlrComDesc: { width: '8%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3, fontFamily: 'Helvetica-Bold' },
   colIpi: { width: '5%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colVlrComImp: { width: '8.5%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colTotalSemImp: { width: '9.5%', textAlign: 'right', paddingLeft: 3 },
@@ -63,6 +63,10 @@ const styles = StyleSheet.create({
   totals: { marginTop: 12, marginLeft: '55%', width: '45%', borderWidth: 0.7, borderColor: '#94a3b8', padding: 8 },
   totalLine: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }, finalLine: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1.2, borderTopColor: '#2A9D8F', paddingTop: 6, marginTop: 2, fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#0D2B2B' },
 });
+
+// Exportado para o teste de regressão dos pesos das colunas destacadas.
+// eslint-disable-next-line react-refresh/only-export-components
+export const orderValidationPdfStyles = styles;
 
 const brl = (value: Decimal.Value | null | undefined) => `R$ ${new Decimal(value ?? 0).toDecimalPlaces(2).toFixed(2).replace('.', ',')}`;
 const text = (value: string | null | undefined) => value?.trim() || '—';
@@ -80,11 +84,8 @@ function Field({ label, value, span = 1 }: { label: string; value: string; span?
 const ptBrDate = (value: string | null | undefined) => (value ? new Date(`${value}T12:00:00`).toLocaleDateString('pt-BR') : '—');
 
 /**
- * Foto de cada produto, já resolvida em data URL e indexada pelo uuid do
- * produto — o PDF é montado no cliente e não resolve URL autenticada.
- *
- * Indexado por PRODUTO, não por item: a foto é do catálogo, então dois itens do
- * mesmo produto compartilham a imagem e um só download.
+ * Foto resolvida de cada item, já em data URL e indexada pelo uuid do item. A
+ * foto específica do pedido tem prioridade e a do catálogo é o fallback.
  */
 export type OrderPdfPhotos = Record<string, string>;
 
@@ -141,9 +142,9 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
             olha a foto e o código juntos, sem varrer a linha até a coluna CÓDIGO.
             Item manual (sem produto cadastrado) não tem foto: célula vazia. */}
         <View style={styles.colFoto}>
-          {item.produto?.uuid && fotosPorProduto[item.produto.uuid] && <>
+          {fotosPorProduto[item.uuid] && <>
             <Text style={styles.rowPhotoCode}>{text(item.codigo_manual ?? item.produto?.codigo)}</Text>
-            <Image src={fotosPorProduto[item.produto.uuid]} style={styles.rowPhotoImage} />
+            <Image src={fotosPorProduto[item.uuid]} style={styles.rowPhotoImage} />
           </>}
         </View>
         <Text style={styles.colItem}>{index + 1}</Text>
@@ -161,10 +162,8 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
       </View>)}
       <View style={styles.totals} wrap={false}><View style={styles.totalLine}><Text>Valor bruto</Text><Text>{brl(gross)}</Text></View><View style={styles.totalLine}><Text>Desconto total</Text><Text>{brl(gross.minus(withoutTax))}</Text></View><View style={styles.totalLine}><Text>Total sem imposto</Text><Text>{brl(withoutTax)}</Text></View><View style={styles.totalLine}><Text>IPI total</Text><Text>{brl(withTax.minus(withoutTax))}</Text></View><View style={styles.finalLine}><Text>Total final</Text><Text>{brl(withTax)}</Text></View></View>
       </>)}
-      {/* Não existe mais seção de fotos em página separada: a foto é do produto
-          e vai na linha do item. Pedido externo não tem itens, então o papel do
-          externo sai sem foto — decisão explícita ao mover a foto para o
-          catálogo. */}
+      {/* Não existe seção de fotos separada: a foto resolvida vai na linha do
+          item. Pedido externo não tem itens e, portanto, sai sem foto. */}
       <View style={[styles.section, styles.obsSection]} wrap={false}><Text style={styles.sectionTitle}>Observações</Text><View style={styles.obsBox}><Text>{text(order.observacao)}</Text></View></View>
     </Page>
   </Document>;

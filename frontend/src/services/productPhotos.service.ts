@@ -103,7 +103,7 @@ function vaiMelhorarComEspera(erro: unknown): boolean {
 }
 
 /**
- * Baixa uma foto por produto distinto para o papel do pedido.
+ * Baixa a foto resolvida de cada item para o papel do pedido.
  *
  * Antes isto era um `Promise.all` sem teto com `.catch(() => null)` em cada
  * download: pedido grande disparava uma requisição por produto de uma vez,
@@ -111,24 +111,23 @@ function vaiMelhorarComEspera(erro: unknown): boolean {
  * avisar ninguém. Agora a fila tem teto, falha transitória tem retry, e o que
  * sobrar de falha aborta a emissão.
  *
- * Recebe a saída de `itensComProdutoDistinto` — quem emite o papel e quem o
- * monta têm que concordar sobre o que baixar, senão o PDF pede uma foto que
- * ninguém pediu ao servidor.
+ * A rota do item prefere a foto específica do pedido e usa a foto do catálogo
+ * como fallback. Por isso o resultado é indexado pelo uuid do item, não pelo
+ * produto: duas linhas do mesmo produto podem ter imagens diferentes.
  */
 export async function fetchFotosPorProduto(
   orderUuid: string,
   itens: OrderItem[],
 ): Promise<Record<string, string>> {
   const entradas = await mapComLimite(itens, LIMITE_DE_DOWNLOADS, async (item) => {
-    const produtoUuid = item.produto!.uuid;
     for (let tentativa = 0; ; tentativa += 1) {
       try {
-        return [produtoUuid, await fetchOrderItemPhotoDataUrl(orderUuid, item.uuid)] as const;
+        return [item.uuid, await fetchOrderItemPhotoDataUrl(orderUuid, item.uuid)] as const;
       } catch (err) {
         // Produto sem foto é o estado normal do catálogo, não uma falha.
-        if (statusDoErro(err) === 404) return [produtoUuid, null] as const;
+        if (statusDoErro(err) === 404) return [item.uuid, null] as const;
         if (tentativa >= TENTATIVAS - 1 || !vaiMelhorarComEspera(err)) {
-          return [produtoUuid, undefined] as const;
+          return [item.uuid, undefined] as const;
         }
         await espera(ESPERA_ENTRE_TENTATIVAS_MS[tentativa]);
       }
@@ -141,6 +140,22 @@ export async function fetchFotosPorProduto(
   return Object.fromEntries(
     entradas.filter((entrada): entrada is readonly [string, string] => typeof entrada[1] === 'string'),
   );
+}
+
+export async function fetchOrderItemPhoto(orderUuid: string, itemUuid: string): Promise<ProductPhoto | null> {
+  const { data } = await api.get<ApiResponse<ProductPhoto | null>>(`/pedidos/${orderUuid}/itens/${itemUuid}/foto/metadados`);
+  return data.data;
+}
+
+export async function uploadOrderItemPhoto(orderUuid: string, itemUuid: string, file: File): Promise<ProductPhoto> {
+  const reduzida = await downscaleImage(file);
+  const formData = new FormData(); formData.append('arquivo', reduzida);
+  const { data } = await api.put<ApiResponse<ProductPhoto>>(`/pedidos/${orderUuid}/itens/${itemUuid}/foto`, formData);
+  return data.data;
+}
+
+export async function deleteOrderItemPhoto(orderUuid: string, itemUuid: string, version: number): Promise<void> {
+  await api.delete(`/pedidos/${orderUuid}/itens/${itemUuid}/foto`, { params: { version } });
 }
 
 export async function deleteProductPhoto(produtoUuid: string, version: number): Promise<void> {

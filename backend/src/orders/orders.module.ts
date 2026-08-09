@@ -8,9 +8,10 @@ import { OrdersController } from './orders.controller';
 import { OrderItemPhotosService } from './order-item-photos.service';
 import { OrderItemPhotosController } from './order-item-photos.controller';
 import { ProductsModule } from '../products/products.module';
+import { OrderItemPhoto } from './entities/order-item-photo.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Order, OrderItem, NotaFiscal]), ProductsModule],
+  imports: [TypeOrmModule.forFeature([Order, OrderItem, OrderItemPhoto, NotaFiscal]), ProductsModule],
   controllers: [OrdersController, OrderItemPhotosController],
   providers: [OrdersService, OrderItemPhotosService],
   exports: [OrdersService],

@@ -1,10 +1,14 @@
-import { Controller, Get, Param, Res, StreamableFile } from '@nestjs/common';
+import { Controller, Delete, Get, HttpCode, HttpStatus, Param, Put, Query, Res, StreamableFile, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { OrderItemPhotosService } from './order-item-photos.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
+import { RequireAnyPermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { VersionDto } from '../common/dto/version.dto';
+import { MAX_PHOTO_SIZE_BYTES } from '../common/images/image-validation';
 
 /**
  * Foto que vai na linha do item no papel do pedido.
@@ -45,5 +49,26 @@ export class OrderItemPhotosController {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Cache-Control', 'private, max-age=3600');
     return new StreamableFile(buffer);
+  }
+  @Get('metadados')
+  @RequirePermission('pedidos.ver')
+  metadata(@Param('uuid') uuid: string, @Param('itemUuid') itemUuid: string, @CurrentUser() user: RequestUser) {
+    return this.service.find(uuid, itemUuid, user);
+  }
+
+  @Put()
+  @RequireAnyPermission('pedidos.criar', 'pedidos.editar')
+  @UseInterceptors(FileInterceptor('arquivo', { limits: { fileSize: MAX_PHOTO_SIZE_BYTES } }))
+  upsert(@Param('uuid') uuid: string, @Param('itemUuid') itemUuid: string,
+    @UploadedFile() file: Express.Multer.File, @CurrentUser() user: RequestUser) {
+    return this.service.upsert(uuid, itemUuid, file, user);
+  }
+
+  @Delete()
+  @RequireAnyPermission('pedidos.criar', 'pedidos.editar')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('uuid') uuid: string, @Param('itemUuid') itemUuid: string,
+    @Query() query: VersionDto, @CurrentUser() user: RequestUser) {
+    return this.service.remove(uuid, itemUuid, query.version, user);
   }
 }

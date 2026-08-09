@@ -177,6 +177,13 @@ export async function softDeleteOrderItem(
   tenantId: string,
 ): Promise<void> {
   await manager.query(
+    `UPDATE pedido_item_fotos SET conteudo = NULL, storage_backend = 'purgado',
+       deleted_at = NOW(), version = version + 1
+     WHERE tenant_id = $2 AND deleted_at IS NULL
+       AND item_pedido_id IN (SELECT id FROM itens_pedido WHERE uuid = $1 AND tenant_id = $2)`,
+    [uuid, tenantId],
+  );
+  await manager.query(
     `UPDATE itens_pedido SET deleted_at = NOW(), version = version + 1
       WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
     [uuid, tenantId],

@@ -31,13 +31,13 @@ afterEach(() => {
 });
 
 describe('fetchFotosPorProduto', () => {
-  it('indexa por produto e usa a rota do item do pedido', async () => {
+  it('indexa por item e usa a rota do item do pedido', async () => {
     getBlob.mockResolvedValue(blobDeFoto());
 
     const fotos = await fetchFotosPorProduto('pedido-1', [item('i1', 'p1'), item('i2', 'p2')]);
 
-    expect(Object.keys(fotos)).toEqual(['p1', 'p2']);
-    expect(fotos.p1).toMatch(/^data:image\/jpeg;base64,/);
+    expect(Object.keys(fotos)).toEqual(['i1', 'i2']);
+    expect(fotos.i1).toMatch(/^data:image\/jpeg;base64,/);
     expect(getBlob).toHaveBeenCalledWith('/pedidos/pedido-1/itens/i1/foto');
   });
 
@@ -48,8 +48,8 @@ describe('fetchFotosPorProduto', () => {
 
     const fotos = await fetchFotosPorProduto('pedido-1', [item('i1', 'p1'), item('i2', 'p2')]);
 
-    expect(fotos).not.toHaveProperty('p1');
-    expect(fotos).toHaveProperty('p2');
+    expect(fotos).not.toHaveProperty('i1');
+    expect(fotos).toHaveProperty('i2');
     expect(getBlob).toHaveBeenCalledTimes(2);
   });
 
@@ -60,7 +60,7 @@ describe('fetchFotosPorProduto', () => {
     const promessa = fetchFotosPorProduto('pedido-1', [item('i1', 'p1')]);
     await vi.advanceTimersByTimeAsync(800);
 
-    await expect(promessa).resolves.toHaveProperty('p1');
+    await expect(promessa).resolves.toHaveProperty('i1');
     expect(getBlob).toHaveBeenCalledTimes(2);
   });
 

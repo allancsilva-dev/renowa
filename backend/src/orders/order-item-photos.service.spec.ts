@@ -18,15 +18,16 @@ const orderUuid = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const itemUuid = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
-function subject(options: { order?: unknown; itens?: Array<{ produto_id: number | null }> } = {}) {
+function subject(options: { order?: unknown; itens?: Array<{ produto_id: number | null }>; specific?: unknown } = {}) {
   const builder: Record<string, jest.Mock> = {};
   for (const metodo of ['where', 'andWhere']) builder[metodo] = jest.fn().mockReturnValue(builder);
   builder.getOne = jest.fn().mockResolvedValue('order' in options ? options.order : { id: 7, uuid: orderUuid });
 
-  const query = jest.fn().mockResolvedValue(options.itens ?? [{ produto_id: 42 }]);
+  const query = jest.fn();
+  const findOne = jest.fn().mockResolvedValue((options.itens ?? [{ produto_id: 42 }])[0] ?? null);
   const orderRepo = {
     createQueryBuilder: jest.fn(() => builder),
-    manager: { query },
+    manager: { query, findOne },
   } as any;
 
   const photosService = {
@@ -35,10 +36,24 @@ function subject(options: { order?: unknown; itens?: Array<{ produto_id: number 
     }),
   } as any;
 
-  return { service: new OrderItemPhotosService(orderRepo, photosService), builder, query, photosService };
+  const photoBuilder: Record<string, jest.Mock> = {};
+  for (const metodo of ['addSelect', 'where']) photoBuilder[metodo] = jest.fn().mockReturnValue(photoBuilder);
+  photoBuilder.getOne = jest.fn().mockResolvedValue(options.specific ?? null);
+  const photoRepo = { createQueryBuilder: jest.fn(() => photoBuilder), findOne: jest.fn() } as any;
+  return { service: new OrderItemPhotosService(orderRepo, photoRepo, photosService), builder, findOne, photosService };
 }
 
 describe('OrderItemPhotosService#content', () => {
+  it('prioriza a foto específica e permite foto em item manual', async () => {
+    const specific = { conteudo: PNG, mime_type: 'image/png', nome_arquivo: 'item.png' };
+    const { service, photosService } = subject({ itens: [{ produto_id: null }], specific });
+
+    await expect(service.content(orderUuid, itemUuid, admin)).resolves.toEqual({
+      buffer: PNG, mimeType: 'image/png', nomeArquivo: 'item.png',
+    });
+    expect(photosService.contentByProductId).not.toHaveBeenCalled();
+  });
+
   it('serve a foto do produto do item', async () => {
     const { service, photosService } = subject();
 
@@ -53,12 +68,13 @@ describe('OrderItemPhotosService#content', () => {
    * catálogo: o item tem que ser DESTE pedido.
    */
   it('restringe a consulta ao pedido da rota', async () => {
-    const { service, query } = subject();
+    const { service, findOne } = subject();
 
     await service.content(orderUuid, itemUuid, admin);
 
-    expect(query.mock.calls[0][1]).toEqual([itemUuid, 7, admin.tenantId]);
-    expect(query.mock.calls[0][0]).toContain('deleted_at IS NULL');
+    expect(findOne).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      where: expect.objectContaining({ uuid: itemUuid, pedido_id: 7, tenant_id: admin.tenantId }),
+    }));
   });
 
   // Pedido de outro vendedor devolve 404, nunca 403: não vazar existência é a

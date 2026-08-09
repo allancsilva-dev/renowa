@@ -590,10 +590,9 @@ describe('OrdersService — IDOR entre vendedores do mesmo tenant', () => {
 });
 
 /**
- * A cascata para `pedido_fotos` (BACKLOG-0055) saiu junto com a tabela na 0040:
- * a foto passou a ser do produto do catálogo. O que estes casos ainda guardam é
- * a atomicidade entre a contagem de notas fiscais e o soft delete do pedido —
- * sem ela, uma nota emitida no intervalo passa despercebida.
+ * A cascata para a antiga `pedido_fotos` saiu na 0040. A foto específica por
+ * item voltou em `pedido_item_fotos`; ela pertence ao pedido e deve ser
+ * expurgada com ele, sem tocar a foto de catálogo usada como fallback.
  */
 describe('OrdersService.remove — atomicidade', () => {
   const orderUuid2 = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -615,16 +614,13 @@ describe('OrdersService.remove — atomicidade', () => {
     return { service, query, transaction };
   }
 
-  /**
-   * Nenhum caminho de exclusão de pedido pode tocar em foto: a imagem é do
-   * produto do catálogo e sobrevive ao pedido que a exibiu.
-   */
-  it('não escreve em tabela de fotos', async () => {
+  it('expurga fotos dos itens sem tocar nas fotos do catálogo', async () => {
     const { service, query } = subject(1);
 
     await service.remove(orderUuid2, 1, admin);
 
-    expect(query.mock.calls.some(([sql]) => /foto/i.test(String(sql)))).toBe(false);
+    expect(query.mock.calls.some(([sql]) => /UPDATE pedido_item_fotos/.test(String(sql)))).toBe(true);
+    expect(query.mock.calls.some(([sql]) => /produto_fotos/.test(String(sql)))).toBe(false);
   });
 
   it('roda tudo na mesma transação', async () => {

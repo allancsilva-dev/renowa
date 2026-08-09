@@ -326,7 +326,16 @@ export class OrdersService {
       }
 
       const omitted = existingItems.filter((item) => !item.deleted_at && !requested.has(item.uuid));
-      if (omitted.length) await itemRepo.softRemove(omitted);
+      if (omitted.length) {
+        const ids = omitted.map((item) => item.id);
+        await manager.query(
+          `UPDATE pedido_item_fotos SET conteudo = NULL, storage_backend = 'purgado',
+             deleted_at = CURRENT_TIMESTAMP, version = version + 1
+           WHERE tenant_id = $1 AND item_pedido_id = ANY($2::int[]) AND deleted_at IS NULL`,
+          [user.tenantId, ids],
+        );
+        await itemRepo.softRemove(omitted);
+      }
 
       const totals = this.totalsFromItems(calculatedItems);
       // `status` não é tocado no update: a guarda acima só deixa editar pedido
@@ -509,6 +518,13 @@ export class OrdersService {
       await optimisticSoftDelete({ repository: manager.getRepository(Order), uuid, tenantId: user.tenantId,
         expectedVersion: version, resource: 'order', notFoundMessage: `Pedido ${uuid} não encontrado.`,
         extraWhere: this.isVendorOnly(user) ? this.vendorOwnershipWhere(user) : undefined });
+
+      await manager.query(
+        `UPDATE pedido_item_fotos SET conteudo = NULL, storage_backend = 'purgado',
+           deleted_at = CURRENT_TIMESTAMP, version = version + 1
+         WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL`,
+        [user.tenantId, order.id],
+      );
 
       // Depois do pai, no mesmo molde do SAC (BACKLOG-0055): conflito de
       // `version` aborta a transação e nenhum item fica marcado sem o pedido.
