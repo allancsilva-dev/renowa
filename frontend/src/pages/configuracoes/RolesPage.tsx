@@ -49,6 +49,7 @@ export default function RolesPage() {
 
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [editForm, setEditForm] = useState<RoleForm>(DEFAULT_FORM);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [permissionsError, setPermissionsError] = useState<string | null>(null);
 
@@ -142,15 +143,16 @@ export default function RolesPage() {
           <button
             type='button'
             disabled={row.isSystem}
-            title={row.isSystem ? 'Permissões de um perfil de sistema não podem ser editadas' : undefined}
+            title={row.isSystem ? 'Perfil de sistema não pode ser editado' : undefined}
             onClick={() => {
               setEditingRole(row);
               setSelectedPermissions(row.permissions);
+              setEditForm({ name: row.name, description: row.description ?? '' });
               setPermissionsError(null);
             }}
             className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
           >
-            Permissões
+            Editar
           </button>
           <button
             type='button'
@@ -158,7 +160,9 @@ export default function RolesPage() {
             title={row.isSystem ? 'Perfil de sistema não pode ser excluído' : undefined}
             onClick={async () => {
               if (permissionsLoading) return;
-              if (!window.confirm(`Desativar o perfil "${row.name}"? Usuários associados podem perder acesso.`)) return;
+              // O backend recusa com 409 se ainda houver usuário no perfil, e
+              // apaga os vínculos de permissão junto quando aceita.
+              if (!window.confirm(`Desativar o perfil "${row.name}"? As permissões dele serão revogadas. Se ainda houver usuários associados, a exclusão será recusada.`)) return;
               setPermissionsLoading(true);
               setPermissionsError(null);
               try {
@@ -212,6 +216,21 @@ export default function RolesPage() {
     setPermissionsError(null);
 
     try {
+      // Identidade primeiro: se o nome colidir, nada de permissão é gravado.
+      // `PATCH /roles/:id` já existia no backend e não tinha chamador nenhum
+      // no frontend — nome e descrição só podiam ser definidos na criação.
+      const nextName = editForm.name.trim();
+      const nextDescription = editForm.description.trim();
+      const identityChanged = nextName !== editingRole.name
+        || nextDescription !== (editingRole.description ?? '');
+
+      if (identityChanged && !editingRole.isSystem) {
+        await apiClient.patch(`/roles/${editingRole.id}`, {
+          name: nextName,
+          description: nextDescription || null,
+        });
+      }
+
       await apiClient.patch(`/roles/${editingRole.id}/permissions`, {
         permissions: selectedPermissions,
       });
@@ -255,8 +274,11 @@ export default function RolesPage() {
         </button>
       </div>
 
+      {/* `role='alert'` porque é aqui que aparece a recusa do 409 ao desativar um
+          perfil em uso — a mensagem some da leitura assistiva sem isso, e o
+          resto do produto (`WriteError`, `rowActionError`) já usa o atributo. */}
       {permissionsError && (
-        <div className='rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600'>
+        <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600'>
           {permissionsError}
         </div>
       )}
@@ -347,11 +369,34 @@ export default function RolesPage() {
       )}
 
       {editingRole && (
-        <Dialog open title={`Permissões de ${editingRole.name}`} onClose={() => setEditingRole(null)} className='max-w-2xl'>
+        <Dialog open title={`Editar perfil ${editingRole.name}`} onClose={() => setEditingRole(null)} className='max-w-2xl'>
           <form
             onSubmit={handleSavePermissions}
             className='space-y-4'
           >
+            <div className='grid gap-3 sm:grid-cols-2'>
+              <div className='space-y-1'>
+                <label htmlFor='edit-role-name' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nome</label>
+                <input
+                  id='edit-role-name'
+                  required
+                  disabled={editingRole.isSystem}
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, name: e.target.value }))}
+                  className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 disabled:bg-slate-50 disabled:text-slate-400'
+                />
+              </div>
+              <div className='space-y-1'>
+                <label htmlFor='edit-role-description' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Descrição</label>
+                <input
+                  id='edit-role-description'
+                  disabled={editingRole.isSystem}
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, description: e.target.value }))}
+                  className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 disabled:bg-slate-50 disabled:text-slate-400'
+                />
+              </div>
+            </div>
 
             <div className='grid max-h-80 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-slate-200 p-3 sm:grid-cols-2'>
               {permissions.map((permission) => (

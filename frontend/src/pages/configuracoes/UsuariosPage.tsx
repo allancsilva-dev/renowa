@@ -5,7 +5,8 @@ import apiClient from '@/lib/apiClient';
 import { getApiErrorMessage } from '@/lib/errors';
 import { normalizeListResponse, type PaginationMeta } from '@/lib/pagination';
 import Dialog from '@/components/ui/Dialog';
-import { ROLE_TEMPLATES, formatRoleName } from '@renowa/shared';
+import { formatRoleName } from '@renowa/shared';
+import { mergeRoleOptions, type RoleOption, type TenantRoleSummary } from '@/lib/roleOptions';
 
 interface TenantUser {
   id: string;
@@ -25,16 +26,6 @@ interface UserUpsertForm {
 }
 
 const PAGE_LIMIT = 10;
-
-/**
- * Os perfis oferecidos aqui são os mesmos que o backend sabe provisionar
- * (`ROLE_TEMPLATES` em `@renowa/shared`). Esta tela já ofereceu `manager` e
- * `viewer` — e `viewer` era o default do formulário —, nomes sem template no
- * backend: o perfil era criado sem permissão nenhuma e o usuário logava para
- * tomar 403 em toda tela. Hoje o backend recusa nome desconhecido, e a lista
- * daqui vem da mesma fonte.
- */
-const ROLE_OPTIONS = ROLE_TEMPLATES;
 
 /**
  * Sem perfil pré-selecionado: a escolha é explícita. Um default aqui seria
@@ -58,6 +49,8 @@ export default function UsuariosPage() {
   const [createForm, setCreateForm] = useState<UserUpsertForm>(DEFAULT_FORM);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [roleOptions, setRoleOptions] = useState<RoleOption[]>(() => mergeRoleOptions([]));
+  const [roleOptionsError, setRoleOptionsError] = useState<string | null>(null);
 
   const [editingUser, setEditingUser] = useState<TenantUser | null>(null);
   const [editRole, setEditRole] = useState('');
@@ -103,9 +96,24 @@ export default function UsuariosPage() {
     }
   }, []);
 
+  const fetchRoleOptions = useCallback(async () => {
+    try {
+      const response = await apiClient.get<unknown>('/roles', { params: { limit: 100 } });
+      const parsed = normalizeListResponse<TenantRoleSummary>(response.data, 1, 100);
+      setRoleOptions(mergeRoleOptions(parsed.items));
+      setRoleOptionsError(null);
+    } catch {
+      // Não trava a tela: sem a lista do tenant, os templates ainda permitem
+      // criar usuário — só os perfis sob medida ficam de fora.
+      setRoleOptions(mergeRoleOptions([]));
+      setRoleOptionsError('Não foi possível carregar os perfis do tenant. Mostrando apenas os perfis padrão.');
+    }
+  }, []);
+
   useEffect(() => {
     void fetchUsers();
-  }, [fetchUsers]);
+    void fetchRoleOptions();
+  }, [fetchUsers, fetchRoleOptions]);
 
   const columns = useMemo(() => ([
     {
@@ -305,6 +313,9 @@ export default function UsuariosPage() {
             </div>
             <div className='space-y-1'>
               <label htmlFor='new-user-role' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Perfil de acesso</label>
+              {roleOptionsError && (
+                <p role='status' className='text-xs text-amber-700'>{roleOptionsError}</p>
+              )}
               <select
                 id='new-user-role'
                 required
@@ -313,7 +324,7 @@ export default function UsuariosPage() {
                 className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
               >
                 <option value='' disabled>Selecione o perfil</option>
-                {ROLE_OPTIONS.map((role) => (
+                {roleOptions.map((role) => (
                   <option key={role.name} value={role.name}>{role.label}</option>
                 ))}
               </select>
@@ -363,10 +374,10 @@ export default function UsuariosPage() {
               >
                 {/* Perfil sob medida (criado em Perfis) não está em ROLE_TEMPLATES;
                     sem esta opção ele sumiria do select ao editar o usuário. */}
-                {!ROLE_OPTIONS.some((role) => role.name === editRole) && (
+                {!roleOptions.some((role) => role.name === editRole) && (
                   <option value={editRole}>{formatRoleName(editRole)}</option>
                 )}
-                {ROLE_OPTIONS.map((role) => (
+                {roleOptions.map((role) => (
                   <option key={role.name} value={role.name}>{role.label}</option>
                 ))}
               </select>
