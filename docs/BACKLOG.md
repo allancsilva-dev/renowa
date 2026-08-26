@@ -851,3 +851,69 @@
 - **Aceitação:** excluir pedido marca os itens; teste cobrindo o caso, no molde do que já existe para SAC.
 - **Status (2026-07-31):** **parte de código FECHADA** em FIX-0030 — a cascata entrou em `OrdersService.remove`, depois do soft delete do pai e na mesma transação, com dois testes (sai com bump de `version`; **não** sai quando o pedido dá conflito de `version`). **Dev saneado na mesma data**, por decisão do usuário: `UPDATE itens_pedido i SET deleted_at = CURRENT_TIMESTAMP, version = i.version + 1 FROM pedidos p WHERE p.id = i.pedido_id AND p.tenant_id = i.tenant_id AND i.deleted_at IS NULL AND p.deleted_at IS NOT NULL` → `UPDATE 81`; a contagem de órfãos foi de **81 → 0**, e os 5 itens ativos restantes pertencem a pedidos vivos. **Continua ABERTO só produção**, que nunca foi inspecionada quanto a isto — conferir na mesma janela de BACKLOG-0041, com a contagem antes de decidir se sanea.
 - **Relacionado:** BACKLOG-0055, PROB-0065, FIX-0030
+
+### BACKLOG-0081 — Validar o RBAC pela UI em navegador (a única parte de FIX-0031 que não foi exercitada)
+- **Prioridade:** P1
+- **Área:** frontend / segurança / QA
+- **Origem:** FIX-0031 (2026-08-26) — backend e frontend passaram nos testes e a lógica foi provada contra o Postgres de dev por script, mas **nenhuma tela foi aberta**.
+- **Motivo:** o `ops/qa-safari` exige uma aba do Safari **já logada** e a senha do admin de dev, que não estavam disponíveis na sessão. O app chegou a subir (backend 3000 + frontend 5173, ambos respondendo 200) e parou aí. FIX-0031 mexeu em rota, Sidebar, ~19 botões e em duas telas de configuração: é exatamente o tipo de mudança que teste unitário não reprova e a tela reprova.
+- **Dependências:** aba do Safari logada + senha do admin de dev.
+- **Critério de aceite:** rodar a fase **`p12`** (varredura de 15 telas) sem erro; e mais um roteiro de perfil, ponta a ponta: (a) criar um perfil sob medida em Perfis; (b) atribuí-lo a um **usuário novo** pela tela de Usuários — o que era impossível antes de FIX-0031; (c) editar nome e descrição em Perfis (`PATCH /roles/:id`, que só ganhou chamador agora); (d) tentar desativar um perfil **em uso**, esperando a mensagem de 409 com a contagem de usuários.
+- **Risco se ficar pendente:** um gate errado numa rota ou num `<Can>` só aparece para quem usa. Falso negativo (esconder botão de quem podia) é bug de produto silencioso; falso positivo já é coberto pelo backend, mas custa 403 na cara do usuário.
+- **Evidência de fechamento (2026-08-26):** executado no Safari com sessão real de `admin@renowa.local`, driver `ops/qa-safari` injetado na aba logada. `p12` → **15 telas, zero erro**, rodada duas vezes (antes e depois das correções que o próprio teste motivou). Roteiro de perfil cumprido nos quatro pontos do critério: (a) perfil sob medida criado pela tela de Perfis com 2 permissões; (b) **apareceu no select de novo usuário** e o usuário nasceu com ele, não com um template; (c) nome e descrição editados pelo diálogo via `PATCH /roles/:id`, permissões preservadas, botão do perfil de sistema `disabled`; (d) desativar perfil em uso **recusado na tela** com o texto `Perfil em uso por 1 usuário(s). Mova-os para outro perfil antes de excluir.` e o perfil intacto. Fechado o ciclo: usuário movido pela tela, desativação aceita, e SQL confirmando `active=false` + `deleted_at` + **0 vínculos**, com `usuarios.roles = ["vendedor"]` e `access_token_version` em 2. Banco restaurado ao estado pré-teste, resíduo zero.
+- **O teste achou dois defeitos**, ambos introduzidos por FIX-0031 e corrigidos na mesma sessão: perfil do tenant com zero permissões voltou a ser oferecido sem aviso no select (o `viewer` do dev), e `VENDEDOR`/`vendedor` renderizavam o mesmo rótulo. Detalhe em FIX-0031; fixados por `frontend/src/lib/roleOptions.test.ts`.
+- **Limite do que foi provado:** tudo rodou como `admin`, com as 32 permissões — o ramo **negativo** dos gates não foi exercitado. Ver BACKLOG-0085.
+- **Status:** CONCLUÍDO (2026-08-26)
+- **Relacionado:** PROB-0084, FIX-0031, BACKLOG-0085
+
+### BACKLOG-0082 — Granularidade do catálogo de permissões: módulos inteiros sem slug e slugs grosseiros demais
+- **Prioridade:** P2
+- **Área:** backend / frontend / segurança
+- **Origem:** decidido com o usuário como **fora de escopo** durante FIX-0031 (2026-08-26), depois da conferência item a item do catálogo (32 slugs em 11 módulos, sem drift entre `shared/src/permissions/catalog.ts`, migrations e decorators).
+- **Motivo:** duas lacunas distintas. (a) **Não existe slug** para dashboard, importação, exportação e relatórios — por isso o Dashboard e o shell de `configuracoes` ficaram, em FIX-0031, apenas atrás de autenticação: não havia o que declarar. (b) Slugs **grosseiros demais**: `financeiro.editar`, `usuarios.gerenciar` e `faturamento.editar` cobrem operações de peso muito diferente — em faturamento, criar, editar e excluir nota compartilham um slug só, então quem pode corrigir uma nota pode apagá-la.
+- **Dependências:** mexer no catálogo altera `catalog.spec.ts` e o **provisionamento de todo tenant** (templates de perfil), e exige migration para os slugs novos. Decidir antes se slug novo nasce concedido a algum template ou fail-closed para todos.
+- **Critério de aceite:** slugs definidos para os módulos hoje descobertos; os três slugs grosseiros quebrados nas operações que realmente precisam ser separadas; templates atualizados com decisão explícita por perfil; migration aplicada; `catalog.spec.ts` e o teste de contrato do frontend (`lib/rbacContract.test.ts`) verdes; rotas de dashboard/configuracoes passando a declarar `permission`.
+- **Risco se ficar pendente:** conceder uma capacidade obriga a conceder junto o que veio no mesmo slug — o admin não tem como expressar "pode faturar, não pode apagar nota". E módulo sem slug é módulo que só a autenticação protege.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0084, FIX-0031, PROB-0058
+
+### BACKLOG-0083 — Eliminar `usuarios.roles` (jsonb) e derivar o nome do perfil de `local_users.role_id`
+- **Prioridade:** P2
+- **Área:** backend / banco / segurança
+- **Origem:** achado confirmado da auditoria de RBAC; decidido com o usuário como **fora de escopo** de FIX-0031 (2026-08-26).
+- **Motivo:** o perfil de um usuário existe em dois lugares — `local_users.role_id` (a associação de verdade, que o `PermissionGuard` usa) e `usuarios.roles` (jsonb por **nome**, a cópia que vai para o JWT). Eram duas fontes de verdade sem sincronia: o rename de perfil não propagava e o token seguia carregando nome de perfil inexistente. FIX-0031 **sincronizou** (o rename propaga na mesma transação e bumpa `access_token_version`), mas a duplicação continua — e toda escrita nova precisa lembrar dela.
+- **Dependências:** mexe em JWT, no conceito de SUPERADMIN, em `native-auth`, em `mobile-session`, e exige migration de **drop** da coluna. Nada disso é reversível barato.
+- **Critério de aceite:** nenhum caminho de código lê `usuarios.roles`; o nome do perfil no token é derivado de `local_users.role_id` na emissão; SUPERADMIN continua funcionando; sessão mobile continua funcionando; migration de drop aplicada; teste de arquitetura impedindo a coluna de voltar a ser lida.
+- **Risco se ficar pendente:** enquanto forem duas, qualquer caminho de escrita novo pode dessincronizar de novo, e o sintoma é permissão errada no token — o pior lugar para uma divergência silenciosa.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0084, FIX-0031
+
+### BACKLOG-0084 — Criar perfil com zero permissões é permitido e não avisa nada na UI
+- **Prioridade:** P3
+- **Área:** frontend / produto
+- **Origem:** decidido com o usuário como **fora de escopo** de FIX-0031 (2026-08-26): segue permitido, sem alerta.
+- **Motivo:** um perfil sem nenhum slug é criado sem qualquer sinal. Quem for atribuído a ele entra no sistema e toma 403 em toda tela — que é exatamente o sintoma operacional de PROB-0057, resolvido lá por outro caminho (vocabulário único de perfis). O comportamento é **correto** (fail-closed); o que falta é o aviso.
+- **Dependências:** nenhuma. É aviso de UI, não regra.
+- **Critério de aceite:** ao salvar um perfil sem permissão nenhuma, a tela de Perfis avisa que ninguém nesse perfil conseguirá usar o sistema, e pede confirmação. Criar continua possível.
+- **Deixou de ser hipotético (2026-08-26):** a validação pela UI encontrou o `viewer` do banco de dev com **0 permissões** sendo oferecido no select de novo usuário sem nada indicar. FIX-0031 tratou o lado de **consumo** — o select agora rotula esses perfis como `— sem permissões` —, mas o lado de **criação** segue como descrito aqui: a tela de Perfis deixa salvar um perfil vazio calada.
+- **Risco se ficar pendente:** baixo e recuperável — o admin edita as permissões e o usuário volta a funcionar. O custo é suporte e desconfiança na tela.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0057, PROB-0084, FIX-0031, BACKLOG-0081
+
+### BACKLOG-0085 — Provar o ramo NEGATIVO dos gates de RBAC: logar com perfil restrito
+- **Prioridade:** P1
+- **Área:** frontend / segurança / QA
+- **Origem:** limite explícito de BACKLOG-0081 (2026-08-26). A validação pela UI rodou inteira como `admin`, que tem as 32 permissões.
+- **Motivo:** rodar como admin prova que os gates de FIX-0031 **não escondem** nada de quem pode — e nada além disso. Nenhum `<Can>`, nenhuma `permission` de rota e nenhum filtro da Sidebar foi visto no ramo em que deveria barrar. É metade da asserção, e é a metade mais fácil: um `permission` com slug errado (`transportadoras.ver` escrito `transportadora.ver`, por exemplo) some com a tela para todo mundo **menos** para o admin, e nenhuma suíte reprova — `hasPermission` de slug inexistente só devolve `false`. O teste de contrato `lib/rbacContract.test.ts` cobre a existência do slug no catálogo, não o comportamento na tela.
+- **Dependências:** um segundo login. Criar um perfil restrito (ex.: só `clientes.ver`) e um usuário nele, e abrir a sessão em janela privada para não derrubar a do admin.
+- **Critério de aceite:** com um usuário que tem apenas `clientes.ver`: a Sidebar mostra **só** Dashboard e Clientes; digitar `/financeiro`, `/pedidos`, `/produtos`, `/fornecedores` e `/transporte` na URL redireciona em vez de renderizar; na tela de Clientes os botões **Importar** e **Novo Cliente** não aparecem; e o Dashboard não mostra "Novo Pedido" nem os blocos financeiros. Depois, conceder `clientes.criar` pela tela de Perfis e confirmar que os botões aparecem **sem** precisar de novo login além do refresh de `/auth/me`.
+- **Risco se ficar pendente:** um gate escrito errado fica invisível até um usuário restrito reclamar de tela que sumiu — e a suspeita natural vai recair sobre o backend, que estará certo.
+- **Evidência de fechamento (2026-08-26):** executado no Safari, com **duas sessões simultâneas**: o admin na janela normal e o usuário restrito numa **janela de navegação privada** (cookie jar separado — a sessão do admin não foi derrubada, e a autoria de cada janela foi confirmada por `/auth/me` antes de asserir qualquer coisa). Perfil `qa_restrito` criado com **um único slug**, `clientes.ver`, e um usuário nele. **25 asserções, todas verdes.**
+  - **Sidebar (9 asserções):** renderizou exatamente `['/dashboard', '/clientes']`. Pedidos, Produtos, Fornecedores, Transporte, Financeiro, Faturamento e SAC **ausentes** — não escondidos por CSS, ausentes do DOM.
+  - **URL digitada à mão (8 asserções):** `/financeiro`, `/pedidos`, `/produtos`, `/fornecedores`, `/transporte`, `/faturamento` e `/sac` **todas redirecionaram para `/dashboard`** em vez de renderizar; `/clientes` abriu normalmente. É o caminho que a Sidebar filtrada não cobre, e o `ProtectedRoute` cobriu.
+  - **Botões (3 asserções):** na tela de Clientes — a única que ele pode ver — **"Novo Cliente" e "Importar" não aparecem** (falta `clientes.criar`), enquanto a lista em si renderiza normalmente. O Dashboard não oferece "Novo Pedido".
+  - **Concessão em tempo real (1 asserção):** concedido `clientes.criar` ao perfil pela sessão do admin, os dois botões **passaram a aparecer na sessão restrita sem novo login** — só o recarregamento do contexto de auth. As permissões são resolvidas do banco a cada request, então não há janela de token velho para permissão **concedida**. A Sidebar seguiu com dois itens, correto: nenhum `*.ver` novo foi dado.
+  - **Acordo com o backend (4 asserções):** na mesma sessão, `GET /clientes` → 200, e `GET /pedidos`, `GET /fornecedores` e `GET /roles` → **403**. A tela esconde exatamente o que a API recusa; o gate de UI não está mais adiantado nem atrasado em relação à autoridade.
+  - Banco restaurado ao estado pré-teste (perfil, usuário, vínculos e refresh tokens removidos), resíduo zero conferido por consulta.
+- **Status:** CONCLUÍDO (2026-08-26)
+- **Relacionado:** BACKLOG-0081, FIX-0031, PROB-0084
