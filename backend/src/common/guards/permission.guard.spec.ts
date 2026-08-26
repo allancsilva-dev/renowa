@@ -54,6 +54,42 @@ describe('PermissionGuard', () => {
     ).resolves.toBe(true);
   });
 
+  // Revogação: o guard não sabe se o perfil ainda existe — quem sabe é
+  // `PermissionsService.listEffectiveForRole`, que passou a exigir role viva.
+  // Perfil excluído devolve zero slugs, e o guard tem de negar sem exceção.
+  it('denies when the role was deleted (listEffectiveForRole resolves empty)', async () => {
+    const listEffectiveForRole = jest.fn().mockResolvedValue([]);
+    const guard = guardFor('clientes.ver', listEffectiveForRole);
+    const localUser = { tenantId: 'tenant-a', roleId: 9, active: true };
+
+    await expect(
+      guard.canActivate(context({ tenantId: 'tenant-a', roles: ['vendas'] }, localUser)),
+    ).resolves.toBe(false);
+  });
+
+  // Usuário desativado carrega access token válido até expirar. Sem esta
+  // checagem, ele seguia autorizado durante toda a janela do token.
+  it('denies an inactive local user before touching permissions', async () => {
+    const listEffectiveForRole = jest.fn().mockResolvedValue(['clientes.ver']);
+    const guard = guardFor('clientes.ver', listEffectiveForRole);
+    const localUser = { tenantId: 'tenant-a', roleId: 5, active: false };
+
+    await expect(
+      guard.canActivate(context({ tenantId: 'tenant-a', roles: ['vendas'] }, localUser)),
+    ).resolves.toBe(false);
+    expect(listEffectiveForRole).not.toHaveBeenCalled();
+  });
+
+  it('still allows an active local user (active: true is not required to be absent)', async () => {
+    const listEffectiveForRole = jest.fn().mockResolvedValue(['clientes.ver']);
+    const guard = guardFor('clientes.ver', listEffectiveForRole);
+    const localUser = { tenantId: 'tenant-a', roleId: 5, active: true };
+
+    await expect(
+      guard.canActivate(context({ tenantId: 'tenant-a', roles: ['vendas'] }, localUser)),
+    ).resolves.toBe(true);
+  });
+
   it('allows any request when no permission metadata is declared', async () => {
     const guard = guardFor(undefined as never, jest.fn());
     await expect(guard.canActivate(context({ roles: [] }, undefined))).resolves.toBe(true);

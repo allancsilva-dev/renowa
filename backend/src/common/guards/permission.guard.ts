@@ -45,7 +45,9 @@ export class PermissionGuard implements CanActivate {
       throw new ForbiddenException('Local user context not found');
     }
 
-    if (!localUser.roleId) {
+    // Usuário desativado não é só "não pode logar de novo": o access token que
+    // ele já tem continua válido até expirar. Negar aqui fecha essa janela.
+    if (!localUser.roleId || localUser.active === false) {
       return false;
     }
 
