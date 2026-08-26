@@ -20,23 +20,26 @@ interface NavItem {
   to: string;
   label: string;
   icon: typeof LayoutDashboard;
-  /** Quando presente, o item só aparece se o usuário tiver essa permissão (ou for admin). */
+  /** Quando presente, o item só aparece se o usuário tiver essa permissão. */
   permission?: string;
 }
 
+// Todo item de módulo declara a permissão de leitura que a rota correspondente
+// exige em `App.tsx`. Dashboard fica sem: não há slug próprio para ele, e a
+// tela já esconde os blocos financeiros por `financeiro.ver`.
 const mainNavItems: NavItem[] = [
   { to: '/dashboard',     label: 'Dashboard',    icon: LayoutDashboard },
-  { to: '/clientes',      label: 'Clientes',     icon: Users },
-  { to: '/pedidos',       label: 'Pedidos',      icon: FileText },
-  { to: '/produtos',      label: 'Produtos',     icon: Package },
-  { to: '/fornecedores',  label: 'Fornecedores', icon: Building2 },
-  { to: '/transporte',    label: 'Transporte',   icon: Truck },
+  { to: '/clientes',      label: 'Clientes',     icon: Users,      permission: 'clientes.ver' },
+  { to: '/pedidos',       label: 'Pedidos',      icon: FileText,   permission: 'pedidos.ver' },
+  { to: '/produtos',      label: 'Produtos',     icon: Package,    permission: 'produtos.ver' },
+  { to: '/fornecedores',  label: 'Fornecedores', icon: Building2,  permission: 'fornecedores.ver' },
+  { to: '/transporte',    label: 'Transporte',   icon: Truck,      permission: 'transportadoras.ver' },
   // Faturamento antes de Financeiro: segue a ordem do ciclo comercial
   // (pedido -> faturamento -> caixa), não a ordem em que os módulos nasceram.
-  { to: '/faturamento',   label: 'Faturamento',  icon: Receipt, permission: 'faturamento.ver' },
-  { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign },
+  { to: '/faturamento',   label: 'Faturamento',  icon: Receipt,    permission: 'faturamento.ver' },
+  { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign, permission: 'financeiro.ver' },
   // SAC fecha a barra: é pós-venda, depois de todo o ciclo comercial.
-  { to: '/sac',           label: 'SAC',          icon: Headset, permission: 'sac.ver' },
+  { to: '/sac',           label: 'SAC',          icon: Headset,    permission: 'sac.ver' },
 ];
 
 function getInitials(email: string): string {

@@ -49,23 +49,26 @@ export default function App() {
             <Route index element={<Dashboard />} />
           </Route>
 
+          {/* Cada módulo declara a permissão de leitura que o backend exige, e
+              cada formulário a de escrita. A URL digitada à mão é o caminho que
+              a sidebar filtrada não cobre. */}
           <Route
             path='clientes'
             element={(
-              <ProtectedRoute>
+              <ProtectedRoute permission='clientes.ver'>
                 <AppShell />
               </ProtectedRoute>
             )}
           >
             <Route index element={<Clientes />} />
-            <Route path='novo' element={<ClienteForm />} />
-            <Route path=':uuid/editar' element={<ClienteForm />} />
+            <Route path='novo' element={<ProtectedRoute permission='clientes.criar'><ClienteForm /></ProtectedRoute>} />
+            <Route path=':uuid/editar' element={<ProtectedRoute permission='clientes.editar'><ClienteForm /></ProtectedRoute>} />
           </Route>
 
           <Route
             path='pedidos'
             element={(
-              <ProtectedRoute>
+              <ProtectedRoute permission='pedidos.ver'>
                 <AppShell />
               </ProtectedRoute>
             )}
@@ -105,33 +108,33 @@ export default function App() {
           <Route
             path='produtos'
             element={(
-              <ProtectedRoute>
+              <ProtectedRoute permission='produtos.ver'>
                 <AppShell />
               </ProtectedRoute>
             )}
           >
             <Route index element={<Produtos />} />
-            <Route path='novo' element={<ProdutoForm />} />
-            <Route path=':uuid/editar' element={<ProdutoForm />} />
+            <Route path='novo' element={<ProtectedRoute permission='produtos.criar'><ProdutoForm /></ProtectedRoute>} />
+            <Route path=':uuid/editar' element={<ProtectedRoute permission='produtos.editar'><ProdutoForm /></ProtectedRoute>} />
           </Route>
 
           <Route
             path='fornecedores'
             element={(
-              <ProtectedRoute>
+              <ProtectedRoute permission='fornecedores.ver'>
                 <AppShell />
               </ProtectedRoute>
             )}
           >
             <Route index element={<Fornecedores />} />
-            <Route path='novo' element={<FornecedorForm />} />
-            <Route path=':uuid/editar' element={<FornecedorForm />} />
+            <Route path='novo' element={<ProtectedRoute permission='fornecedores.criar'><FornecedorForm /></ProtectedRoute>} />
+            <Route path=':uuid/editar' element={<ProtectedRoute permission='fornecedores.editar'><FornecedorForm /></ProtectedRoute>} />
           </Route>
 
           <Route
             path='transporte'
             element={(
-              <ProtectedRoute>
+              <ProtectedRoute permission='transportadoras.ver'>
                 <AppShell />
               </ProtectedRoute>
             )}
@@ -142,7 +145,7 @@ export default function App() {
           <Route
             path='financeiro'
             element={(
-              <ProtectedRoute>
+              <ProtectedRoute permission='financeiro.ver'>
                 <AppShell />
               </ProtectedRoute>
             )}

@@ -12,6 +12,7 @@ import { getApiErrorMessage } from '@/lib/errors';
 import type { Product, Supplier } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
 import { CSV_TEMPLATE_HEADERS, downloadCsvTemplate } from '@/lib/csvTemplate';
+import { Can } from '@/components/Can';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -112,13 +113,15 @@ export default function Produtos() {
       key: 'acoes',
       header: 'Ações',
       cell: (row: Product) => (
-        <button
-          type='button'
-          onClick={() => navigate(`/produtos/${row.uuid}/editar`)}
-          className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
-        >
-          Editar
-        </button>
+        <Can permission='produtos.editar' fallback={<span className='text-xs text-slate-400'>—</span>}>
+          <button
+            type='button'
+            onClick={() => navigate(`/produtos/${row.uuid}/editar`)}
+            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
+          >
+            Editar
+          </button>
+        </Can>
       ),
     },
   ];
@@ -154,20 +157,24 @@ export default function Produtos() {
           </div>
         </div>
         <div className='flex items-center gap-2'>
-          <button
-            onClick={openImportDialog}
-            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
-          >
-            <Upload className='h-4 w-4' />
-            Importar produtos
-          </button>
-          <button
-            onClick={() => navigate('/produtos/novo')}
-            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
-          >
-            <Plus className='h-4 w-4' />
-            Novo Produto
-          </button>
+          <Can permission='produtos.criar'>
+            <button
+              onClick={openImportDialog}
+              className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+            >
+              <Upload className='h-4 w-4' />
+              Importar produtos
+            </button>
+          </Can>
+          <Can permission='produtos.criar'>
+            <button
+              onClick={() => navigate('/produtos/novo')}
+              className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
+            >
+              <Plus className='h-4 w-4' />
+              Novo Produto
+            </button>
+          </Can>
         </div>
       </div>
 

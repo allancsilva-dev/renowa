@@ -10,6 +10,7 @@ import {
 } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
 import { formatDate } from '@/lib/format';
+import { Can } from '@/components/Can';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -142,6 +143,9 @@ export default function Pedidos() {
           </select>
         </div>
 
+        {/* O menu inteiro some sem `pedidos.criar`: as duas opções levam a rotas
+            que exigem a mesma permissão. */}
+        <Can permission='pedidos.criar'>
         <div ref={novoMenuRef} className='relative'>
           <button
             type='button'
@@ -177,6 +181,7 @@ export default function Pedidos() {
             </div>
           )}
         </div>
+        </Can>
       </div>
 
       <DataTable

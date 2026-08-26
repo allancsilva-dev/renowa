@@ -9,6 +9,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import { fetchClients } from '@/services/clients.service';
 import { importClientes } from '@/services/import';
 import type { Client } from '@/types';
+import { Can } from '@/components/Can';
 
 export default function Clientes() {
   const navigate = useNavigate();
@@ -71,20 +72,25 @@ export default function Clientes() {
         </div>
 
         <div className='flex items-center gap-2'>
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
-          >
-            <Upload className='h-4 w-4' />
-            Importar
-          </button>
-          <button
-            onClick={() => navigate('/clientes/novo')}
-            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
-          >
-            <Plus className='h-4 w-4' />
-            Novo Cliente
-          </button>
+          {/* Importar grava em massa: exige a mesma permissão de criar. */}
+          <Can permission='clientes.criar'>
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+            >
+              <Upload className='h-4 w-4' />
+              Importar
+            </button>
+          </Can>
+          <Can permission='clientes.criar'>
+            <button
+              onClick={() => navigate('/clientes/novo')}
+              className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
+            >
+              <Plus className='h-4 w-4' />
+              Novo Cliente
+            </button>
+          </Can>
         </div>
       </div>
 

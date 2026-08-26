@@ -13,6 +13,7 @@ import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
 import { FotosDoPapelIndisponiveisError, fetchFotosPorProduto } from '@/services/productPhotos.service';
+import { Can } from '@/components/Can';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -153,7 +154,9 @@ export default function PedidoDetalhe() {
             </p>
           </div>
           <div className='flex flex-wrap items-center gap-2'>
-            <button type='button' onClick={() => navigate(editarPath)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button>
+            <Can permission='pedidos.editar'>
+              <button type='button' onClick={() => navigate(editarPath)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button>
+            </Can>
             <button type='button' onClick={generatePdf} disabled={pdfLoading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : order.status === 'em_aberto' || order.status === 'liberado' ? 'Gerar PDF para validação' : 'Baixar PDF do pedido'}</button>
             {canLiberar && (
               <button type='button' onClick={handleLiberar} disabled={statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>

@@ -10,6 +10,7 @@ import { fetchSuppliers, deleteSupplier } from '@/services/suppliers.service';
 import { importSuppliers } from '@/services/import';
 import { getApiErrorMessage } from '@/lib/errors';
 import type { Supplier } from '@/types';
+import { Can } from '@/components/Can';
 
 export default function Fornecedores() {
   const navigate = useNavigate();
@@ -69,6 +70,7 @@ export default function Fornecedores() {
       header: 'Ações',
       cell: (row: Supplier) => (
         <div className='flex items-center gap-2'>
+          <Can permission='fornecedores.editar'>
           <button
             type='button'
             onClick={() => navigate(`/fornecedores/${row.uuid}/editar`)}
@@ -76,6 +78,8 @@ export default function Fornecedores() {
           >
             Editar
           </button>
+          </Can>
+          <Can permission='fornecedores.deletar'>
           <button
             type='button'
             disabled={deletingUuid === row.uuid}
@@ -84,6 +88,7 @@ export default function Fornecedores() {
           >
             {deletingUuid === row.uuid ? 'Removendo...' : 'Remover'}
           </button>
+          </Can>
         </div>
       ),
     },
@@ -104,20 +109,24 @@ export default function Fornecedores() {
         </div>
 
         <div className='flex items-center gap-2'>
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
-          >
-            <Upload className='h-4 w-4' />
-            Importar
-          </button>
-          <button
-            onClick={() => navigate('/fornecedores/novo')}
-            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
-          >
-            <Plus className='h-4 w-4' />
-            Novo Fornecedor
-          </button>
+          <Can permission='fornecedores.criar'>
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+            >
+              <Upload className='h-4 w-4' />
+              Importar
+            </button>
+          </Can>
+          <Can permission='fornecedores.criar'>
+            <button
+              onClick={() => navigate('/fornecedores/novo')}
+              className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
+            >
+              <Plus className='h-4 w-4' />
+              Novo Fornecedor
+            </button>
+          </Can>
         </div>
       </div>
 

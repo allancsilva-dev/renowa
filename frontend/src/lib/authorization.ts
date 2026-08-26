@@ -49,10 +49,23 @@ export function isAdmin(roles: readonly string[] | undefined): boolean {
   return hasRole(roles, ADMIN_ROLE);
 }
 
+/**
+ * Autorização no frontend é decidida pelos slugs que `GET /auth/me` devolve —
+ * os mesmos que o `PermissionGuard` do backend consulta.
+ *
+ * Havia aqui um `isAdmin(roles) ||`: quem tivesse o **nome** de perfil `admin`
+ * passava em qualquer check. O backend removeu esse bypass no overhaul de RBAC
+ * (e tem teste travando a remoção), então a UI liberava botão que a API
+ * recusava com 403. Perfil sob medida chamado `admin`, sem permissão nenhuma,
+ * abria o produto inteiro na tela.
+ *
+ * O admin de sistema continua enxergando tudo porque tem os 32 vínculos reais
+ * em `tenant_role_permissions`, não porque se chama `admin`.
+ */
 export function hasPermission(
-  roles: readonly string[] | undefined,
+  _roles: readonly string[] | undefined,
   permissions: readonly string[],
   slug: string,
 ): boolean {
-  return isAdmin(roles) || permissions.includes(slug);
+  return permissions.includes(slug);
 }

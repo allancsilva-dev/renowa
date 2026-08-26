@@ -7,6 +7,7 @@ import DataTable from '@/components/tables/DataTable';
 import { moneyForDisplay, moneyString, percentageOf, sumMoney } from '@/lib/decimal';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
+import { Can } from '@/components/Can';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -234,7 +235,9 @@ function FluxoCaixa() {
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
-        <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
+        <Can permission='financeiro.editar'>
+          <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
+        </Can>
       </div>
       <WriteError message={error} />
 
@@ -329,20 +332,38 @@ function FluxoCaixa() {
 
 // ─── Tab: Empresas ────────────────────────────────────────────────────────────
 
+/**
+ * Lista de fornecedores para os filtros das abas do Financeiro.
+ *
+ * O template `financeiro` não tem `fornecedores.ver` — o fetch respondia 403 e
+ * o `.catch(() => {})` deixava o filtro vazio, sem nada explicando por quê.
+ * Agora nem sequer chamamos a API sem permissão, e a aba decide se monta o
+ * filtro. Falha por outro motivo vira mensagem, como nos fetches vizinhos.
+ */
+function useFornecedoresFiltro() {
+  const { hasPermission } = useAuth();
+  const podeVer = hasPermission('fornecedores.ver');
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
+  const [fornecedoresError, setFornecedoresError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!podeVer) return;
+    api.get('/fornecedores?limit=100').then((r) => {
+      setFornecedores((r.data as { data: Fornecedor[] }).data ?? r.data ?? []);
+    }).catch(() => setFornecedoresError('Não foi possível carregar os fornecedores do filtro.'));
+  }, [podeVer]);
+
+  return { fornecedores, fornecedoresError, podeVerFornecedores: podeVer };
+}
+
 function Empresas() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [ano, setAno] = useState(now.getFullYear());
   const [fornecedorId, setFornecedorId] = useState('');
-  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
+  const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
   const [grupos, setGrupos] = useState<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Comissao[] }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.get('/fornecedores?limit=100').then((r) => {
-      setFornecedores((r.data as { data: Fornecedor[] }).data ?? r.data ?? []);
-    }).catch(() => {});
-  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -364,16 +385,19 @@ function Empresas() {
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center gap-2'>
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
-        <select
-          value={fornecedorId}
-          onChange={(e) => setFornecedorId(e.target.value)}
-          aria-label='Filtrar por empresa'
-          className={sel}
-        >
-          <option value=''>Todas as empresas</option>
-          {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
-        </select>
+        {podeVerFornecedores && (
+          <select
+            value={fornecedorId}
+            onChange={(e) => setFornecedorId(e.target.value)}
+            aria-label='Filtrar por empresa'
+            className={sel}
+          >
+            <option value=''>Todas as empresas</option>
+            {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
+          </select>
+        )}
       </div>
+      <WriteError message={fornecedoresError} />
       <WriteError message={error} />
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
@@ -440,7 +464,7 @@ function ComissaoAlune() {
   const [fornecedorId, setFornecedorId] = useState('');
   const [comissoes, setComissoes] = useState<Comissao[]>([]);
   const [resumo, setResumo] = useState({ total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
-  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
+  const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -453,12 +477,6 @@ function ComissaoAlune() {
   const [pagamentoData, setPagamentoData] = useState('');
   const [savingPagamento, setSavingPagamento] = useState(false);
   const [pagamentoError, setPagamentoError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api.get('/fornecedores?limit=100').then((r) => {
-      setFornecedores((r.data as { data: Fornecedor[] }).data ?? r.data ?? []);
-    }).catch(() => {});
-  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -546,10 +564,12 @@ function ComissaoAlune() {
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div className='flex flex-wrap items-center gap-2'>
           <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
-          <select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} className={sel}>
-            <option value=''>Todos fornecedores</option>
-            {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
-          </select>
+          {podeVerFornecedores && (
+            <select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} aria-label='Filtrar por fornecedor' className={sel}>
+              <option value=''>Todos fornecedores</option>
+              {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
+            </select>
+          )}
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={sel}>
             <option value=''>Todos status</option>
             <option value='pendente'>Pendente</option>
@@ -558,6 +578,7 @@ function ComissaoAlune() {
           </select>
         </div>
       </div>
+      <WriteError message={fornecedoresError} />
       <WriteError message={error} />
 
       {/* Resumo */}
@@ -757,7 +778,9 @@ function Parceiros() {
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
-        <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
+        <Can permission='financeiro.editar'>
+          <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
+        </Can>
       </div>
       <WriteError message={error} />
 
@@ -972,7 +995,9 @@ function Custos() {
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
-        <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Custo</BtnPrimary>
+        <Can permission='financeiro.editar'>
+          <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Custo</BtnPrimary>
+        </Can>
       </div>
 
       <WriteError message={writeError} />

@@ -7,11 +7,10 @@ import ErrorState from '@/components/feedback/ErrorState';
 interface ProtectedRouteProps {
   children: ReactNode;
   permission?: string;
-  adminOnly?: boolean;
 }
 
-export function ProtectedRoute({ children, permission, adminOnly = false }: ProtectedRouteProps) {
-  const { user, loading, error, reload, hasPermission, isAdmin } = useAuth();
+export function ProtectedRoute({ children, permission }: ProtectedRouteProps) {
+  const { user, loading, error, reload, hasPermission } = useAuth();
 
   if (loading) {
     return <LoadingState />;
@@ -23,10 +22,6 @@ export function ProtectedRoute({ children, permission, adminOnly = false }: Prot
 
   if (!user) {
     return <Navigate to='/login' replace />;
-  }
-
-  if (adminOnly && !isAdmin()) {
-    return <Navigate to='/' replace />;
   }
 
   if (permission && !hasPermission(permission)) {

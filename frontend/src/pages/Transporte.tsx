@@ -9,6 +9,7 @@ import Dialog from '@/components/ui/Dialog';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { importTransportadoras } from '@/services/import';
 import type { PaginatedResponse, Transport } from '@/types';
+import { Can } from '@/components/Can';
 
 interface NovaTransportadoraForm {
   razao_social: string;
@@ -67,8 +68,12 @@ export default function Transporte() {
     { key: 'telefone', header: 'Telefone', cell: (row: Transport) => row.telefone ?? '—' },
     { key: 'endereco', header: 'Endereço', cell: (row: Transport) => row.endereco_completo ?? '—' },
     { key: 'acoes', header: 'Ações', cell: (row: Transport) => <div className='flex gap-1'>
-      <button type='button' aria-label={`Editar ${row.razao_social}`} onClick={() => { setEditingUuid(row.uuid); setForm({ razao_social: row.razao_social, cnpj: row.cnpj ?? '', telefone: row.telefone ?? '', endereco_completo: row.endereco_completo ?? '' }); setFormError(null); setIsOpen(true); }} className='rounded-md p-2 text-slate-600 hover:bg-slate-100'><Pencil className='h-4 w-4' /></button>
-      <button type='button' aria-label={`Excluir ${row.razao_social}`} onClick={() => void handleDelete(row)} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700'><Trash2 className='h-4 w-4' /></button>
+      <Can permission='transportadoras.editar'>
+        <button type='button' aria-label={`Editar ${row.razao_social}`} onClick={() => { setEditingUuid(row.uuid); setForm({ razao_social: row.razao_social, cnpj: row.cnpj ?? '', telefone: row.telefone ?? '', endereco_completo: row.endereco_completo ?? '' }); setFormError(null); setIsOpen(true); }} className='rounded-md p-2 text-slate-600 hover:bg-slate-100'><Pencil className='h-4 w-4' /></button>
+      </Can>
+      <Can permission='transportadoras.deletar'>
+        <button type='button' aria-label={`Excluir ${row.razao_social}`} onClick={() => void handleDelete(row)} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700'><Trash2 className='h-4 w-4' /></button>
+      </Can>
     </div> },
   ];
 
@@ -119,20 +124,24 @@ export default function Transporte() {
   return (
     <div className='space-y-4'>
       <div className='flex justify-end gap-2'>
-        <button
-          onClick={() => setIsImportOpen(true)}
-          className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
-        >
-          <Upload className='h-4 w-4' />
-          Importar
-        </button>
-        <button
-          onClick={() => { renovarUuidDeCriacao(); setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); }}
-          className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
-        >
-          <Plus className='h-4 w-4' />
-          Nova Transportadora
-        </button>
+        <Can permission='transportadoras.criar'>
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+          >
+            <Upload className='h-4 w-4' />
+            Importar
+          </button>
+        </Can>
+        <Can permission='transportadoras.criar'>
+          <button
+            onClick={() => { renovarUuidDeCriacao(); setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); }}
+            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
+          >
+            <Plus className='h-4 w-4' />
+            Nova Transportadora
+          </button>
+        </Can>
       </div>
 
       <DataTable

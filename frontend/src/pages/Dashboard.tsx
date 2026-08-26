@@ -29,6 +29,7 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
+import { Can } from '@/components/Can';
 
 interface DashboardData {
   totalVendas: string;
@@ -251,14 +252,16 @@ export default function Dashboard() {
             <Printer className='h-4 w-4' />
             Imprimir
           </button>
-          <button
-            type='button'
-            onClick={() => navigate('/pedidos/novo')}
-            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
-          >
-            <Plus className='h-4 w-4' />
-            Novo Pedido
-          </button>
+          <Can permission='pedidos.criar'>
+            <button
+              type='button'
+              onClick={() => navigate('/pedidos/novo')}
+              className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
+            >
+              <Plus className='h-4 w-4' />
+              Novo Pedido
+            </button>
+          </Can>
         </div>
       </div>
 
