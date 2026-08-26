@@ -299,7 +299,9 @@ export class UsersService {
       role = await repo.save(created);
     } catch (err: any) {
       if (err?.code === '23505') {
-        const concurrent = await repo.findOne({ where: { tenantId, name: roleName } });
+        // Sem `active: true` aqui, a corrida devolvia uma role soft-deleted —
+        // perfil morto voltando a ser atribuído a usuário novo.
+        const concurrent = await repo.findOne({ where: { tenantId, name: roleName, active: true } });
         if (concurrent) return concurrent;
       }
       throw err;

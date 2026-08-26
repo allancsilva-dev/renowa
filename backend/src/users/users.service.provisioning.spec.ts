@@ -168,6 +168,33 @@ describe('UsersService — provisionamento explícito de tenant_roles', () => {
   });
 });
 
+describe('UsersService — corrida de criação de role (23505)', () => {
+  it('não reaproveita uma role soft-deleted ao resolver a corrida', async () => {
+    // O catch de 23505 relê a role que o outro processo criou. Sem o filtro
+    // `active: true`, o UNIQUE parcial (que só vale para deleted_at IS NULL)
+    // deixava a releitura devolver um perfil já excluído — e o usuário novo
+    // nascia vinculado a ele.
+    const manager = fakeManager({
+      tenantRoleSave: jest.fn().mockRejectedValue({ code: '23505' }),
+      existingRole: { id: 99, name: 'vendedor', active: true },
+    });
+    const dataSource = { transaction: async (cb: any) => cb(manager) } as any;
+
+    const svc = new UsersService(
+      { findOne: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any, {} as any, {} as any,
+      new PasswordService(), dataSource, {} as any,
+    );
+
+    await svc.createTenantUser('t-1', {
+      email: 'a@b.c', nome: 'A', senha: 'senha1234', role: 'vendedor',
+    } as any);
+
+    const rereadCall = manager.tenantRoleRepo.findOne.mock.calls.at(-1)[0];
+    expect(rereadCall.where).toMatchObject({ tenantId: 't-1', name: 'vendedor', active: true });
+  });
+});
+
 describe('UsersService.getCurrentUserContext — só leitura (PROB-0057)', () => {
   it('recusa com 403 quando não existe local_user, em vez de criar um', async () => {
     const localUserRepo = {

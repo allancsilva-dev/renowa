@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -8,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { TenantRole } from '../rbac/entities/tenant-role.entity';
 import { TenantRolePermission } from '../rbac/entities/tenant-role-permission.entity';
+import { LocalUser } from '../rbac/entities/local-user.entity';
 import { Permission } from '../common/entities/permission.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
@@ -175,6 +177,7 @@ export class RolesService {
     permissions: string[];
   }> {
     const role = await this.findTenantRoleOrFail(tenantId, roleUuid);
+    let renamed = false;
 
     if (dto.name) {
       const nextName = this.normalizeName(dto.name);
@@ -193,6 +196,7 @@ export class RolesService {
         }
 
         role.name = nextName;
+        renamed = true;
       }
     }
 
@@ -200,7 +204,30 @@ export class RolesService {
       role.description = dto.description;
     }
 
-    const saved = await this.tenantRoleRepo.save(role);
+    const saved = await this.tenantRoleRepo.manager.transaction(async (manager) => {
+      const persisted = await manager.getRepository(TenantRole).save(role);
+
+      // `usuarios.roles` (jsonb, por nome) é a cópia que vai para o JWT; a
+      // associação de verdade é `local_users.role_id`. Renomear sem propagar
+      // deixava o token carregando um nome de perfil que não existe mais.
+      // O bump de `access_token_version` segue o mesmo padrão da troca de
+      // perfil em `users.service.ts`.
+      if (renamed) {
+        await manager.query(
+          `UPDATE usuarios
+              SET roles = to_jsonb(ARRAY[$3::text]),
+                  access_token_version = access_token_version + 1
+            WHERE tenant_id = $1
+              AND uuid IN (
+                SELECT auth_user_id FROM local_users
+                 WHERE tenant_id = $1 AND role_id = $2 AND deleted_at IS NULL
+              )`,
+          [tenantId, persisted.id, persisted.name],
+        );
+      }
+
+      return persisted;
+    });
 
     if (actor) {
       await this.audit.record({
@@ -219,6 +246,21 @@ export class RolesService {
     };
   }
 
+  /**
+   * Exclui um perfil — fail-closed em duas frentes.
+   *
+   * Antes, isto era cosmético do ponto de vista de autorização: só marcava
+   * `active = false` + soft-delete, deixando `local_users.role_id` apontando
+   * para a role morta e as linhas de `tenant_role_permissions` intactas (o
+   * `ON DELETE CASCADE` da FK só dispara em delete físico). Quem estava no
+   * perfil seguia autorizado para sempre.
+   *
+   * Agora: perfil em uso é recusado com 409 — mover os usuários é decisão de
+   * quem administra, não efeito colateral de um clique — e, quando ninguém
+   * está vinculado, os vínculos de permissão são apagados junto, na mesma
+   * transação. O filtro de role viva em `PermissionsService` é a segunda
+   * camada, para perfis já excluídos antes desta correção.
+   */
   async deleteRole(tenantId: string, roleUuid: string, actor?: RequestUser): Promise<void> {
     const role = await this.findTenantRoleOrFail(tenantId, roleUuid);
 
@@ -226,14 +268,34 @@ export class RolesService {
       throw new ForbiddenException('Role de sistema não pode ser excluída');
     }
 
-    role.active = false;
-    await this.tenantRoleRepo.save(role);
-    await this.tenantRoleRepo.softDelete({ id: role.id });
+    const revokedCount = await this.tenantRoleRepo.manager.transaction(async (manager) => {
+      const inUse = await manager.getRepository(LocalUser).count({
+        where: { tenantId, roleId: role.id, active: true },
+      });
+
+      if (inUse > 0) {
+        throw new ConflictException(
+          `Perfil em uso por ${inUse} usuário(s). Mova-os para outro perfil antes de excluir.`,
+        );
+      }
+
+      const permissionRepo = manager.getRepository(TenantRolePermission);
+      const revoked = await permissionRepo.count({ where: { tenantId, roleId: role.id } });
+      await permissionRepo.delete({ tenantId, roleId: role.id });
+
+      const roleRepo = manager.getRepository(TenantRole);
+      role.active = false;
+      await roleRepo.save(role);
+      await roleRepo.softDelete({ id: role.id });
+
+      return revoked;
+    });
 
     if (actor) {
       await this.audit.record({
         tenantId, actor, action: 'DELETE', resourceType: 'tenant_role', resourceUuid: role.uuid,
-        fields: ['active'], purpose: AUDIT_PURPOSE,
+        fields: ['active', 'permissions'], purpose: AUDIT_PURPOSE,
+        metadata: { revokedPermissionCount: revokedCount },
       });
     }
   }
