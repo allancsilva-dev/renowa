@@ -235,7 +235,7 @@ export default function PedidoDetalhe() {
           <p className='text-sm text-slate-500'>Nenhum item cadastrado neste pedido.</p>
         ) : (
           <div className='overflow-x-auto rounded-lg border'>
-            <table className='min-w-[640px] w-full text-sm'>
+            <table className='min-w-[720px] w-full text-sm'>
               <thead>
                 <tr className='border-b bg-primary text-white'>
                   <th className='px-4 py-2 text-left font-semibold'>Produto</th>
@@ -243,6 +243,7 @@ export default function PedidoDetalhe() {
                   <th className='px-4 py-2 text-right font-semibold'>Qtd. Unitária</th>
                   <th className='px-4 py-2 text-right font-semibold'>Qtd. total</th>
                   <th className='px-4 py-2 text-right font-semibold'>Preço</th>
+                  <th className='px-4 py-2 text-right font-semibold'>Vlr. c/ desc.</th>
                   <th className='px-4 py-2 text-right font-semibold'>Desconto</th>
                   <th className='px-4 py-2 text-right font-semibold'>IPI</th>
                   <th className='px-4 py-2 text-right font-semibold'>Total final</th>
@@ -256,6 +257,7 @@ export default function PedidoDetalhe() {
                     <td className='px-4 py-2 text-right'>{item.qtd_unitaria != null ? qtyForDisplay(item.qtd_unitaria) : '—'}</td>
                     <td className='px-4 py-2 text-right'>{item.qtd_total != null ? qtyForDisplay(item.qtd_total) : '—'}</td>
                     <td className='px-4 py-2 text-right'>{item.preco_unitario != null ? BRL.format(moneyForDisplay(item.preco_unitario)) : '—'}</td>
+                    <td className='px-4 py-2 text-right'>{item.valor_com_desconto != null ? BRL.format(moneyForDisplay(item.valor_com_desconto)) : '—'}</td>
                     <td className='px-4 py-2 text-right'>{item.desconto_perc != null ? `${item.desconto_perc}%` : '—'}</td>
                     <td className='px-4 py-2 text-right'>{item.ipi_perc != null ? `${item.ipi_perc}%` : '—'}</td>
                     <td className='px-4 py-2 text-right font-medium'>{item.total_com_imposto != null ? BRL.format(moneyForDisplay(item.total_com_imposto)) : '—'}</td>
