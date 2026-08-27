@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
+import { encontrarCodigosDuplicados, mensagemCodigosDuplicados } from '@/lib/orderItemCodes';
 import { deleteOrderItemPhoto, fetchOrderItemPhoto, fetchOrderItemPhotoDataUrl, uploadOrderItemPhoto } from '@/services/productPhotos.service';
 import OrderItemPhotoField from '@/components/orders/OrderItemPhotoField';
 
@@ -151,6 +152,11 @@ export default function PedidoForm() {
   // Pedido liberado (ou além) trava edição de dados comerciais e itens — o backend já bloqueia
   // com 409, aqui só refletimos a mesma regra na UI para não deixar o usuário preencher em vão.
   const locked = isEdit && isPedidoLocked(header.status);
+  // Repetir um código soma a mesma linha duas vezes no total do pedido, na fila
+  // de faturamento e na comissão. O backend recusa com 409 (guarda +
+  // `uq_itens_pedido_codigo_manual`), mas o banner de erro é global e não diz
+  // qual linha corrigir — aqui a linha repetida fica marcada enquanto digita.
+  const duplicados = useMemo(() => encontrarCodigosDuplicados(items), [items]);
   const canLiberar = isEdit && canLiberarPedido(hasPermission, header.status);
 
   function handleSelectClient(value: string | null, option: AsyncComboboxOption | null) {
@@ -263,6 +269,8 @@ export default function PedidoForm() {
     if (items.some((item) => !item.produto_uuid && !item.codigo_manual.trim() && !item.descricao_manual.trim())) {
       setError('Cada item precisa de um produto ou de código/descrição manual.'); return;
     }
+    const codigosRepetidos = mensagemCodigosDuplicados(duplicados);
+    if (codigosRepetidos) { setError(codigosRepetidos); return; }
     setLoading(true);
     // `status` fica fora do payload: o backend não aceita mais status no corpo
     // de create/update (é derivado — liberação/cancelamento/faturamento têm
@@ -378,12 +386,15 @@ export default function PedidoForm() {
             O fornecedor mudou: {itensSemProduto === 1 ? '1 item precisa' : `${itensSemProduto} itens precisam`} de um novo produto. Quantidades e percentuais foram preservados.
           </div>
         )}
-        <div className='space-y-4'>{items.map((item, index) => { const calculated = previewItem(item); return <div key={item.uuid} className={`rounded-lg border p-4 ${item.precisa_produto ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
+        <div className='space-y-4'>{items.map((item, index) => { const calculated = previewItem(item); return <div key={item.uuid} className={`rounded-lg border p-4 ${duplicados.uuids.has(item.uuid) ? 'border-red-300 bg-red-50/40' : item.precisa_produto ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
           <div className='mb-3 flex justify-between'><strong className='text-sm text-slate-800'>Item {index + 1}</strong><button type='button' aria-label={`Remover item ${index + 1}`} disabled={items.length === 1 || locked}
             onClick={() => setItems((current) => current.filter((entry) => entry.uuid !== item.uuid))} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-40'><Trash2 className='h-4 w-4' /></button></div>
           <div className='grid gap-3 md:grid-cols-4'>
             <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><select disabled={locked} value={item.produto_uuid} aria-invalid={item.precisa_produto || undefined} onChange={(e) => chooseProduct(item.uuid, e.target.value)} className={`${inputClass}${item.precisa_produto ? ' border-amber-400' : ''}`}><option value=''></option>{products.map((product) => <option key={product.uuid} value={product.uuid}>{product.codigo ? `${product.codigo} — ` : ''}{product.descricao}</option>)}</select></label>
-            <label className='flex flex-col gap-1'><span className={labelClass}>Código</span><input disabled={locked} value={item.codigo_manual} onChange={(e) => updateItem(item.uuid, { codigo_manual: e.target.value })} className={inputClass} /></label>
+            <div className='flex flex-col gap-1'>
+              <label className='flex flex-col gap-1'><span className={labelClass}>Código</span><input disabled={locked} value={item.codigo_manual} aria-invalid={duplicados.uuids.has(item.uuid) || undefined} aria-describedby={duplicados.uuids.has(item.uuid) ? `item-${item.uuid}-codigo-erro` : undefined} onChange={(e) => updateItem(item.uuid, { codigo_manual: e.target.value })} className={`${inputClass}${duplicados.uuids.has(item.uuid) ? ' border-red-400' : ''}`} /></label>
+              {duplicados.uuids.has(item.uuid) && <span id={`item-${item.uuid}-codigo-erro`} className='text-xs text-red-700'>Este item já está no pedido. Cada código só pode aparecer uma vez.</span>}
+            </div>
             <label className='flex flex-col gap-1'><span className={labelClass}>Descrição</span><input disabled={locked} value={item.descricao_manual} onChange={(e) => updateItem(item.uuid, { descricao_manual: e.target.value })} className={inputClass} /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Caixas</span><input disabled={locked} type='number' min='0' step='0.001' value={item.qtd_caixas} onChange={(e) => updateItem(item.uuid, { qtd_caixas: e.target.value })} className={inputClass} required /></label>
             <label className='flex flex-col gap-1'><span className={labelClass}>Unidades por caixa</span><input disabled={locked} type='number' min='0' step='0.001' value={item.qtd_unitaria} onChange={(e) => updateItem(item.uuid, { qtd_unitaria: e.target.value })} className={inputClass} required /></label>
@@ -403,7 +414,7 @@ export default function PedidoForm() {
         {items.length > 1 && <div className='mt-4 flex justify-end'><AddItemButton disabled={locked} onClick={addItem} /></div>}
       </section>
 
-      <div className='flex justify-end gap-3'><button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button><button type='submit' disabled={loading || locked || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button></div>
+      <div className='flex justify-end gap-3'><button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button><button type='submit' disabled={loading || locked || duplicados.uuids.size > 0 || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button></div>
     </form>
   );
 }

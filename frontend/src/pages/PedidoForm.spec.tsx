@@ -177,3 +177,122 @@ describe('PedidoForm — troca de fornecedor', () => {
     expect(campos.produto()).not.toHaveAttribute('aria-invalid');
   });
 });
+
+/**
+ * Código repetido entre itens do mesmo pedido. O backend recusa com 409
+ * (`assertCodigosItensUnicos` + `uq_itens_pedido_codigo_manual`), mas o banner
+ * de erro do form é global e não diz QUAL linha corrigir — daí a marcação por
+ * item aqui. Dava para digitar 22 linhas com o mesmo código antes disso.
+ */
+describe('PedidoForm — código duplicado entre itens', () => {
+  const codigos = () => screen.getAllByLabelText('Código') as HTMLInputElement[];
+  const salvar = () => screen.getByRole('button', { name: 'Salvar pedido' });
+  const erroInline = /Este item já está no pedido/;
+
+  async function comDoisItens() {
+    const campos = await montar();
+    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar item' }));
+    return campos;
+  }
+
+  async function escolherCliente() {
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Cliente Um' }));
+  }
+
+  it('marca só a repetição e desabilita o save', async () => {
+    await comDoisItens();
+
+    fireEvent.change(codigos()[0], { target: { value: 'ABC' } });
+    fireEvent.change(codigos()[1], { target: { value: 'ABC' } });
+
+    // A primeira ocorrência fica limpa: marcar as duas deixaria o usuário sem
+    // saber qual é a linha "certa".
+    expect(codigos()[0]).not.toHaveAttribute('aria-invalid');
+    expect(codigos()[1]).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getAllByText(erroInline)).toHaveLength(1);
+    expect(salvar()).toBeDisabled();
+  });
+
+  it('libera o save assim que o código repetido muda', async () => {
+    await comDoisItens();
+
+    fireEvent.change(codigos()[0], { target: { value: 'ABC' } });
+    fireEvent.change(codigos()[1], { target: { value: 'ABC' } });
+    expect(salvar()).toBeDisabled();
+
+    fireEvent.change(codigos()[1], { target: { value: 'XYZ' } });
+
+    expect(codigos()[1]).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText(erroInline)).not.toBeInTheDocument();
+    expect(salvar()).toBeEnabled();
+  });
+
+  it('espaço em volta não escapa da regra', async () => {
+    await comDoisItens();
+
+    fireEvent.change(codigos()[0], { target: { value: 'ABC' } });
+    fireEvent.change(codigos()[1], { target: { value: '  ABC  ' } });
+
+    expect(codigos()[1]).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  /**
+   * `chooseProduct` copia `product.codigo` para o campo Código, então escolher o
+   * mesmo produto duas vezes cai na mesma regra sem tratamento especial.
+   */
+  it('pega o mesmo produto cadastrado escolhido em dois itens', async () => {
+    await comDoisItens();
+    await waitFor(() => expect(screen.getAllByRole('option', { name: /AAA-1/ })).toHaveLength(2));
+
+    const produtos = screen.getAllByLabelText('Produto cadastrado') as HTMLSelectElement[];
+    fireEvent.change(produtos[0], { target: { value: 'prod-a' } });
+    fireEvent.change(produtos[1], { target: { value: 'prod-a' } });
+
+    expect(codigos()[1]).toHaveValue('AAA-1');
+    expect(codigos()[1]).toHaveAttribute('aria-invalid', 'true');
+    expect(salvar()).toBeDisabled();
+  });
+
+  it('remover a linha repetida reabilita o save', async () => {
+    await comDoisItens();
+
+    fireEvent.change(codigos()[0], { target: { value: 'ABC' } });
+    fireEvent.change(codigos()[1], { target: { value: 'ABC' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remover item 2' }));
+
+    expect(salvar()).toBeEnabled();
+  });
+
+  it('descrição repetida é legítima e não bloqueia', async () => {
+    saveOrder.mockResolvedValue({ uuid: 'ped-1', version: 1 });
+    await comDoisItens();
+    await escolherCliente();
+
+    const descricoes = screen.getAllByLabelText('Descrição') as HTMLInputElement[];
+    fireEvent.change(descricoes[0], { target: { value: 'Peça avulsa' } });
+    fireEvent.change(descricoes[1], { target: { value: 'Peça avulsa' } });
+
+    expect(salvar()).toBeEnabled();
+    fireEvent.submit(salvar().closest('form')!);
+    await waitFor(() => expect(saveOrder).toHaveBeenCalled());
+  });
+
+  it('submit forçado com duplicata para no banner e não chama a API', async () => {
+    await comDoisItens();
+    await escolherCliente();
+
+    fireEvent.change(codigos()[0], { target: { value: 'ABC' } });
+    fireEvent.change(codigos()[1], { target: { value: 'ABC' } });
+
+    // O botão está desabilitado; o submit direto no form prova que a guarda não
+    // depende só do estado visual do botão.
+    fireEvent.submit(salvar().closest('form')!);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Há itens com o mesmo código: ABC. Cada código só pode aparecer uma vez no pedido.',
+    );
+    expect(saveOrder).not.toHaveBeenCalled();
+  });
+});
