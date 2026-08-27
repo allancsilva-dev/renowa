@@ -39,7 +39,15 @@ export default function OrderItemPhotoField({ index, fotoPreview, locked, onChoo
           <p className='text-xs text-slate-600'>Substitui a foto do produto somente neste pedido. Ao remover, o PDF volta a usar a foto do catálogo.</p>
           {!locked && <p className='text-xs text-slate-500'>Arraste uma imagem para cá ou escolha um arquivo.</p>}
         </div>
-        <label className={`cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 ${locked ? 'pointer-events-none opacity-40' : ''}`}>
+        {/*
+          `relative` não é decoração: `.sr-only` é `position: absolute`, e sem um
+          ancestral posicionado o input resolve contra o initial containing block.
+          Aí ele escapa do `overflow-hidden` do AppShell, entra no scrollable
+          overflow do `<html>` (um input por item, cada vez mais abaixo) e o scroll
+          do `<main>` passa a encadear pro documento: o shell `h-dvh` sobe e deixa
+          uma faixa cinza morta no rodapé. Reproduzido no Safari.
+        */}
+        <label className={`relative cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 ${locked ? 'pointer-events-none opacity-40' : ''}`}>
           {fotoPreview ? 'Trocar foto' : 'Escolher foto'}
           <input
             className='sr-only'
