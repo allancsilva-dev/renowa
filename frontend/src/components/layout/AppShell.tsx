@@ -24,7 +24,7 @@ export default function AppShell() {
       <div className='flex flex-1 flex-col overflow-hidden min-w-0'>
         <Header sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((prev) => !prev)} />
 
-        <main id='main-content' className='flex-1 overflow-y-auto bg-background p-4 sm:p-6'>
+        <main id='main-content' className='relative flex-1 overflow-y-auto bg-background p-4 sm:p-6'>
           <Suspense fallback={<LoadingState />}>
             <Outlet />
           </Suspense>
