@@ -133,8 +133,8 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
         <View style={styles.totals} wrap={false}><View style={styles.finalLine}><Text>Valor do pedido</Text><Text>{brl(withTax)}</Text></View></View>
       ) : (<>
       <View style={styles.tableHeader} fixed>
-        <Text style={[styles.colFoto, styles.headerDivider]}>FOTO</Text>
         <Text style={[styles.colItem, styles.headerDivider]}>ITEM</Text>
+        <Text style={[styles.colFoto, styles.headerDivider]}>FOTO</Text>
         <Text style={[styles.colCode, styles.headerDivider]}>CÓDIGO</Text>
         <Text style={[styles.colDescription, styles.headerDivider]}>DESCRIÇÃO</Text>
         <Text style={[styles.colQtdCx, styles.headerDivider]}>QTD CX</Text>
@@ -148,6 +148,7 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
         <Text style={styles.colTotalSemImp}>TOTAL S/IMP</Text>
       </View>
       {order.itens.map((item, index) => <View key={item.uuid} style={styles.row} wrap={false}>
+        <Text style={styles.colItem}>{index + 1}</Text>
         {/* Código repetido acima da foto de propósito: quem confere a mercadoria
             olha a foto e o código juntos, sem varrer a linha até a coluna CÓDIGO.
             Item manual (sem produto cadastrado) não tem foto: célula vazia. */}
@@ -157,7 +158,6 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
             <Image src={fotosPorProduto[item.uuid]} style={styles.rowPhotoImage} />
           </>}
         </View>
-        <Text style={styles.colItem}>{index + 1}</Text>
         <Text style={styles.colCode}>{text(item.codigo_manual ?? item.produto?.codigo)}</Text>
         <Text style={styles.colDescription}>{text(item.descricao_manual ?? item.produto?.descricao)}</Text>
         <Text style={styles.colQtdCx}>{qtyForDisplay(item.qtd_caixas)}</Text>
