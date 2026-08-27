@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PedidoDetalhe from './PedidoDetalhe';
 import type { Order } from '@/types';
 
@@ -60,6 +60,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
@@ -115,5 +116,24 @@ describe('PedidoDetalhe — geração do PDF', () => {
     await waitFor(() => expect(preview.close).toHaveBeenCalledOnce());
     expect(anchorClick).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('fecha a aba provisória e informa quando o renderer fica pendente', async () => {
+    const preview = {
+      document: { write: vi.fn() },
+      location: { href: '' },
+      close: vi.fn(),
+    };
+    vi.spyOn(window, 'open').mockReturnValue(preview as unknown as Window);
+    mocks.toBlob.mockReturnValueOnce(new Promise<Blob>(() => {}));
+    const button = await abrirTela();
+    vi.useFakeTimers();
+
+    fireEvent.click(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+
+    expect(preview.close).toHaveBeenCalledOnce();
+    expect(anchorClick).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/demorou mais de um minuto/i);
   });
 });

@@ -15,6 +15,7 @@ import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
 import { FotosDoPapelIndisponiveisError, fetchFotosPorProduto } from '@/services/productPhotos.service';
 import { Can } from '@/components/Can';
 import { orderTotalsBreakdown } from '@/lib/orderCalculation';
+import { PdfRenderTimeoutError, renderPdfBlobWithTimeout } from '@/lib/pdfRender';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -95,7 +96,8 @@ export default function PedidoDetalhe() {
       // fallback. O mapa fica indexado pelo uuid do item para que duas linhas do
       // mesmo produto possam ter imagens diferentes.
       const fotosPorProduto = await fetchFotosPorProduto(uuid, persisted.itens ?? []);
-      const blob = await pdf(<OrderValidationPdf order={persisted} fotosPorProduto={fotosPorProduto} />).toBlob();
+      const blob = await renderPdfBlobWithTimeout(() =>
+        pdf(<OrderValidationPdf order={persisted} fotosPorProduto={fotosPorProduto} />).toBlob());
       const url = URL.createObjectURL(blob);
       if (previewWindow) previewWindow.location.href = url;
       const filePrefix = persisted.status === 'em_aberto' || persisted.status === 'liberado' ? 'pedido-validacao-renowa' : 'pedido-renowa';
@@ -114,7 +116,9 @@ export default function PedidoDetalhe() {
       // A falta de foto já vem com o texto pronto, contando quantas faltaram —
       // `getApiErrorMessage` a reduziria a "Erro inesperado".
       setStatusError(
-        err instanceof FotosDoPapelIndisponiveisError ? err.message : getApiErrorMessage(err),
+        err instanceof FotosDoPapelIndisponiveisError || err instanceof PdfRenderTimeoutError
+          ? err.message
+          : getApiErrorMessage(err),
       );
     } finally {
       setPdfLoading(false);

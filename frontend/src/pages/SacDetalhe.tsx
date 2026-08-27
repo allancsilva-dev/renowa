@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
 import { SacTicketPdf } from '@/components/sac/SacTicketPdf';
+import { PdfRenderTimeoutError, renderPdfBlobWithTimeout } from '@/lib/pdfRender';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -71,7 +72,8 @@ export default function SacDetalhe() {
       // não o que a tela carregou minutos atrás.
       const persisted = await fetchSacTicket(uuid);
       setTicket(persisted);
-      const blob = await pdf(<SacTicketPdf ticket={persisted} />).toBlob();
+      const blob = await renderPdfBlobWithTimeout(() =>
+        pdf(<SacTicketPdf ticket={persisted} />).toBlob());
       const url = URL.createObjectURL(blob);
       if (previewWindow) previewWindow.location.href = url;
       const link = document.createElement('a');
@@ -81,7 +83,7 @@ export default function SacDetalhe() {
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
       previewWindow?.close();
-      setStatusError(getApiErrorMessage(err));
+      setStatusError(err instanceof PdfRenderTimeoutError ? err.message : getApiErrorMessage(err));
     } finally {
       setPdfLoading(false);
     }
