@@ -102,3 +102,51 @@ describe('ClientsService#importFromFile', () => {
     expect(saved[0].razao_social).toBe('Nome Atualizado');
   });
 });
+
+describe('ClientsService#update', () => {
+  it('edita cliente sem transportadora sem salvar a relação composta', async () => {
+    const current = {
+      id: 42,
+      uuid: 'd9899703-7679-4c58-ac64-9fe028caafbd',
+      tenant_id: 'tenant-a',
+      razao_social: 'Cliente legado',
+      transportadora_id: null,
+      transportadora: null,
+    };
+    const updated = { ...current, contato: 'Contato atualizado', version: 2 };
+    const txRepo = {
+      update: jest.fn(async () => ({ affected: 1 })),
+      findOne: jest.fn(async () => updated),
+      save: jest.fn(),
+    };
+    const manager = {
+      getRepository: jest.fn(() => txRepo),
+      query: jest.fn(),
+    };
+    const clientRepo = { findOne: jest.fn(async () => current) };
+    const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) };
+    const audit = { record: jest.fn(async () => undefined) };
+    const service = new ClientsService(clientRepo as any, dataSource as any, audit as any);
+
+    await expect(service.update(current.uuid, {
+      contato: 'Contato atualizado',
+      transportadora_uuid: null,
+    } as any, {
+      tenantId: 'tenant-a', sub: 'user-a', roles: ['admin'],
+    } as any)).resolves.toBe(updated);
+
+    expect(txRepo.update).toHaveBeenCalledWith(
+      { id: 42, tenant_id: 'tenant-a' },
+      { contato: 'Contato atualizado', transportadora_id: null },
+    );
+    expect(txRepo.save).not.toHaveBeenCalled();
+    expect(txRepo.findOne).toHaveBeenCalledWith({
+      where: { id: 42, tenant_id: 'tenant-a' },
+      relations: ['transportadora'],
+    });
+    expect(manager.query).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'UPDATE', resourceUuid: current.uuid, tenantId: 'tenant-a',
+    }), manager);
+  });
+});

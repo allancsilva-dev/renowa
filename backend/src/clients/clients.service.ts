@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Client } from './entities/client.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -102,22 +102,32 @@ export class ClientsService {
     const tenantId = user.tenantId;
     const client = await this.findOne(uuid, tenantId);
     const { transportadora_uuid: _t, uuid: _u, ...rest } = dto;
-    Object.assign(client, rest);
-    if (Object.prototype.hasOwnProperty.call(dto, 'transportadora_uuid')) {
-      client.transportadora_id = dto.transportadora_uuid
-        ? await this.resolveTransport(dto.transportadora_uuid, tenantId)
-        : null;
-    }
+    const changes: Partial<Client> = { ...rest };
+    const changesTransport = Object.prototype.hasOwnProperty.call(dto, 'transportadora_uuid');
+
     return this.dataSource.transaction(async (manager) => {
-      const saved = await manager.getRepository(Client).save(client);
+      if (changesTransport) {
+        changes.transportadora_id = dto.transportadora_uuid
+          ? await this.resolveTransport(manager, dto.transportadora_uuid, tenantId)
+          : null;
+      }
+
+      const repo = manager.getRepository(Client);
+      await repo.update({ id: client.id, tenant_id: tenantId }, changes);
+      const saved = await repo.findOne({
+        where: { id: client.id, tenant_id: tenantId },
+        relations: ['transportadora'],
+      });
+      if (!saved) throw new NotFoundException(`Cliente ${uuid} não encontrado.`);
+
       await this.audit.record({ tenantId, actor: user, action: 'UPDATE', resourceType: 'cliente',
         resourceUuid: uuid, fields: Object.keys(rest), purpose: 'Atualização operacional de cliente' }, manager);
       return saved;
     });
   }
 
-  private async resolveTransport(uuid: string, tenantId: string): Promise<number> {
-    const result = await this.dataSource.query(
+  private async resolveTransport(manager: EntityManager, uuid: string, tenantId: string): Promise<number> {
+    const result = await manager.query(
       `SELECT id FROM transportadoras WHERE uuid = $1 AND tenant_id = $2 AND deleted_at IS NULL`,
       [uuid, tenantId],
     ) as Array<{ id: number }>;

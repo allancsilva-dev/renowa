@@ -6,6 +6,7 @@ import type { ApiResponse, Client, Transport } from '@/types';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { maskCnpj, maskCep, maskTel } from '@/lib/format';
 import { lookupCnpj } from '@/services/consultas.service';
+import { getApiErrorMessage } from '@/lib/errors';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -222,8 +223,8 @@ export default function ClienteForm() {
         await api.post('/clientes', { ...payload, uuid: uuidDeCriacao });
       }
       navigate('/clientes');
-    } catch {
-      setError('Erro ao salvar cliente. Tente novamente.');
+    } catch (err) {
+      setError(getApiErrorMessage(err));
     } finally {
       setLoading(false);
     }

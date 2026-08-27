@@ -289,6 +289,39 @@
     return { uuid: st.ids.cliente, campos: rep.length, vazios: vazios };
   };
 
+  /* ---------------- P4b — edição real do cliente ---------------- */
+  P.p4b = async function () {
+    if (!ok('cliente da p4 disponível para editar', !!st.ids.cliente, st.ids.cliente || '')) return 'sem cliente';
+    await screen('/clientes/' + st.ids.cliente + '/editar', 'Cliente — remover transportadora');
+    var transportadora = document.querySelector('[name="transportadora_uuid"]');
+    if (!ok('campo Transportadora encontrado na edição', !!transportadora)) return 'sem transportadora';
+    Q.nativeSet(transportadora, '');
+    var semTransporte = await Q.submitForm(document);
+    ok('submit sem transportadora clicou', semTransporte.ok, semTransporte.why || '');
+    await waitFor(function () { return location.pathname === '/clientes'; }, 9000);
+    var removido = await api('GET', '/clientes/' + st.ids.cliente);
+    var clienteSemTransporte = removido.body && removido.body.data;
+    ok('cliente ficou sem transportadora',
+      removido.status === 200 && clienteSemTransporte && !clienteSemTransporte.transportadora_id && !clienteSemTransporte.transportadora,
+      removido.status + ' ' + JSON.stringify(clienteSemTransporte && clienteSemTransporte.transportadora));
+
+    await screen('/clientes/' + st.ids.cliente + '/editar', 'Cliente — editar sem transportadora');
+    var contato = document.querySelector('input[name="contato"]');
+    if (!ok('campo Contato encontrado na edição', !!contato)) return 'sem contato';
+    var novoContato = 'Contato editado ' + S;
+    Q.nativeSet(contato, novoContato);
+    var s = await Q.submitForm(document);
+    ok('submit da edição do cliente clicou', s.ok, s.why || '');
+    await waitFor(function () { return location.pathname === '/clientes'; }, 9000);
+    ok('voltou para lista após editar cliente', location.pathname === '/clientes', location.pathname);
+    var salvo = await api('GET', '/clientes/' + st.ids.cliente);
+    var row = salvo.body && salvo.body.data;
+    ok('alteração do cliente sem transportadora persistiu',
+      salvo.status === 200 && row && row.contato === novoContato && !row.transportadora_id && !row.transportadora,
+      salvo.status + ' ' + (row && row.contato) + ' ' + JSON.stringify(row && row.transportadora));
+    return { uuid: st.ids.cliente, contato: row && row.contato };
+  };
+
   /* ---------------- P5 — pedido interno ----------------
      A ordem importa: mudar o fornecedor reseta a lista de itens (PedidoForm
      linha 264) e a lista de produtos só chega depois. Então: passe 1 completo,
