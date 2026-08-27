@@ -1,21 +1,27 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Upload } from 'lucide-react';
+import { Eye, Pencil, Plus, Trash2, Upload, Search } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
-import { fetchClients } from '@/services/clients.service';
+import { fetchClients, deleteClient } from '@/services/clients.service';
 import { importClientes } from '@/services/import';
 import type { Client } from '@/types';
 import { Can } from '@/components/Can';
+import { RowAction, RowActions } from '@/components/tables/RowActions';
+import DetailDialog from '@/components/ui/DetailDialog';
+import { getApiErrorMessage } from '@/lib/errors';
 
 export default function Clientes() {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [viewing, setViewing] = useState<Client | null>(null);
+  const [deletingUuid, setDeletingUuid] = useState<string | null>(null);
+  const [rowActionError, setRowActionError] = useState<string | null>(null);
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
@@ -24,6 +30,21 @@ export default function Clientes() {
   );
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<Client>({ fetcher });
+
+  async function handleDelete(client: Client) {
+    if (deletingUuid) return;
+    if (!window.confirm(`Remover o cliente "${client.razao_social}"?`)) return;
+    setDeletingUuid(client.uuid);
+    setRowActionError(null);
+    try {
+      await deleteClient(client.uuid);
+      reload();
+    } catch (err) {
+      setRowActionError(getApiErrorMessage(err));
+    } finally {
+      setDeletingUuid(null);
+    }
+  }
 
   const columns = [
     {
@@ -53,6 +74,31 @@ export default function Clientes() {
       header: 'Cidade / UF',
       cell: (row: Client) =>
         row.cidade ? `${row.cidade}${row.uf ? ` / ${row.uf}` : ''}` : '—',
+    },
+    {
+      key: 'acoes',
+      header: 'Ações',
+      cell: (row: Client) => (
+        <RowActions>
+          <RowAction icon={Eye} label={`Ver ${row.razao_social}`} onClick={() => setViewing(row)} />
+          <Can permission='clientes.editar'>
+            <RowAction
+              icon={Pencil}
+              label={`Editar ${row.razao_social}`}
+              onClick={() => navigate(`/clientes/${row.uuid}/editar`)}
+            />
+          </Can>
+          <Can permission='clientes.deletar'>
+            <RowAction
+              icon={Trash2}
+              danger
+              label={`Remover ${row.razao_social}`}
+              disabled={deletingUuid === row.uuid}
+              onClick={() => handleDelete(row)}
+            />
+          </Can>
+        </RowActions>
+      ),
     },
   ];
 
@@ -94,6 +140,12 @@ export default function Clientes() {
         </div>
       </div>
 
+      {rowActionError && (
+        <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>
+          {rowActionError}
+        </div>
+      )}
+
       {/* Conteúdo */}
       <DataTable
         columns={columns}
@@ -106,6 +158,44 @@ export default function Clientes() {
         emptyTitle='Nenhum cliente cadastrado'
         emptyDescription='Clique em "Novo Cliente" para começar.'
       />
+
+      {viewing && (
+        <DetailDialog
+          title='Cliente'
+          onClose={() => setViewing(null)}
+          fields={[
+            { label: 'Razão Social', value: viewing.razao_social },
+            { label: 'CNPJ', value: viewing.cnpj },
+            { label: 'E-mail', value: viewing.email },
+            { label: 'Telefone', value: viewing.tel },
+            { label: 'Contato', value: viewing.contato },
+            { label: 'Endereço', value: viewing.endereco },
+            { label: 'Número', value: viewing.numero },
+            { label: 'Complemento', value: viewing.complemento },
+            { label: 'Bairro', value: viewing.bairro },
+            { label: 'Cidade / UF', value: viewing.cidade ? `${viewing.cidade}${viewing.uf ? ` / ${viewing.uf}` : ''}` : null },
+            { label: 'CEP', value: viewing.cep },
+            { label: 'Inscrição Estadual', value: viewing.inscricao_estadual },
+            { label: 'Suframa', value: viewing.suframa },
+            { label: 'Pagamento padrão', value: viewing.pgt_padrao },
+            { label: 'Prazo', value: viewing.prazo },
+            { label: 'Local de entrega', value: viewing.local_entrega },
+            { label: 'Transportadora', value: viewing.transportadora?.razao_social ?? null },
+            { label: 'Observação', value: viewing.observacao },
+          ]}
+          footer={
+            <Can permission='clientes.editar'>
+              <button
+                type='button'
+                onClick={() => navigate(`/clientes/${viewing.uuid}/editar`)}
+                className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 transition-colors'
+              >
+                Editar
+              </button>
+            </Can>
+          }
+        />
+      )}
 
       {isImportOpen && (
         <ImportCsvDialog
