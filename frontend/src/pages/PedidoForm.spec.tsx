@@ -69,6 +69,17 @@ async function montar() {
 }
 
 describe('PedidoForm — troca de fornecedor', () => {
+  it('mostra o valor unitário com desconto durante o preenchimento', async () => {
+    const campos = await montar();
+
+    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await waitFor(() => expect(screen.getByRole('option', { name: /AAA-1/ })).toBeInTheDocument());
+    fireEvent.change(campos.produto(), { target: { value: 'prod-a' } });
+    fireEvent.change(campos.desconto(), { target: { value: '10' } });
+
+    expect(screen.getByText('Valor unitário com desconto:').parentElement).toHaveTextContent('R$ 22,95');
+  });
+
   it('preserva as linhas e só desvincula o produto', async () => {
     const campos = await montar();
 
