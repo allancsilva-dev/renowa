@@ -2,6 +2,7 @@ import { Document, Image, Page, StyleSheet, Text, View } from '@react-pdf/render
 import Decimal from 'decimal.js';
 import type { Order, OrderStatus } from '@/types';
 import { qtyForDisplay } from '@/lib/decimal';
+import { orderTotalsBreakdown } from '@/lib/orderCalculation';
 import logoRenowa from '@/assets/logo-renowa.png';
 
 // Só sobrevive como metadado do arquivo (<Document title>): a faixa do topo não
@@ -94,9 +95,11 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
   // informado direto. A tabela de itens e o quadro de totais analíticos dão
   // lugar ao bloco de origem e a um total único.
   const isExterno = (order.origem ?? 'interno') === 'externo';
-  const gross = order.itens.reduce((sum, item) => sum.plus(new Decimal(item.qtd_total ?? 0).mul(item.preco_unitario ?? 0)), new Decimal(0));
-  const withoutTax = new Decimal(order.total_sem_imposto ?? 0);
-  const withTax = new Decimal(order.total_com_imposto ?? 0);
+  // Mesmo helper que a tela de detalhe usa: papel e tela não podem divergir.
+  const breakdown = orderTotalsBreakdown(order, order.itens);
+  const gross = new Decimal(breakdown.bruto);
+  const withoutTax = new Decimal(breakdown.semImposto);
+  const withTax = new Decimal(breakdown.comImposto);
   const transport = order.transportadora ?? order.cliente?.transportadora;
   const title = TITLE_BY_STATUS[order.status];
   return <Document title={`${title} ${order.numero_pedido ?? ''}`} author='Renowa Representações'>

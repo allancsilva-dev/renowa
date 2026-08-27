@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ORDER_ITEM_CASES, ORDER_TOTALS_CASES } from '@renowa/shared';
-import { previewItem, previewOrder } from './orderCalculation';
+import { orderTotalsBreakdown, previewItem, previewOrder } from './orderCalculation';
 
 /**
  * Esta é a prévia da tela; o contrato autoritativo é
@@ -40,5 +40,39 @@ describe('prévia de cálculo do pedido — bordas da tela', () => {
         qtd_total: '0.000', valor_com_desconto: '0.00', valor_com_imposto: '0.00',
         total_sem_imposto: '0.00', total_com_imposto: '0.00',
       });
+  });
+});
+
+describe('orderTotalsBreakdown', () => {
+  it('deriva desconto e IPI por diferença, como o papel', () => {
+    // Pedido nº 1 de produção: 72 × 48,00 = 3.456,00 bruto, 5% de desconto.
+    expect(orderTotalsBreakdown(
+      { total_sem_imposto: '3283.20', total_com_imposto: '3283.20' },
+      [{ qtd_total: '72.000', preco_unitario: '48.00' }],
+    )).toEqual({
+      bruto: '3456.00',
+      descontoTotal: '172.80',
+      semImposto: '3283.20',
+      ipiTotal: '0.00',
+      comImposto: '3283.20',
+    });
+  });
+
+  it('separa IPI do desconto quando os dois incidem', () => {
+    expect(orderTotalsBreakdown(
+      { total_sem_imposto: '183.60', total_com_imposto: '201.96' },
+      [{ qtd_total: '4.000', preco_unitario: '25.50' }, { qtd_total: '4.000', preco_unitario: '25.50' }],
+    )).toEqual({
+      bruto: '204.00',
+      descontoTotal: '20.40',
+      semImposto: '183.60',
+      ipiTotal: '18.36',
+      comImposto: '201.96',
+    });
+  });
+
+  it('devolve zeros para pedido sem itens (externo)', () => {
+    expect(orderTotalsBreakdown({ total_sem_imposto: null, total_com_imposto: '900.00' }, []))
+      .toEqual({ bruto: '0.00', descontoTotal: '0.00', semImposto: '0.00', ipiTotal: '900.00', comImposto: '900.00' });
   });
 });

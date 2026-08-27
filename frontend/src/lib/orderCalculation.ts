@@ -50,3 +50,39 @@ export function previewOrder(items: ItemInput[]) {
     { semImposto: '0.00', comImposto: '0.00' },
   );
 }
+
+export interface PersistedItemTotals {
+  qtd_total?: string | number | null;
+  preco_unitario?: string | number | null;
+}
+
+export interface PersistedOrderTotals {
+  total_sem_imposto?: string | number | null;
+  total_com_imposto?: string | number | null;
+}
+
+/**
+ * Decomposição dos totais de um pedido JÁ GRAVADO — o que a tela e o papel
+ * mostram no quadro de totais.
+ *
+ * Desconto e IPI não são colunas do pedido: saem por diferença entre o valor
+ * bruto (soma de quantidade × preço de tabela) e os totais persistidos. Mora
+ * aqui, e não no componente de PDF, porque tela e papel precisam do MESMO
+ * número — se cada um recalcular por conta própria, os dois divergem em
+ * silêncio.
+ */
+export function orderTotalsBreakdown(order: PersistedOrderTotals, itens: PersistedItemTotals[]) {
+  const bruto = itens.reduce(
+    (sum, item) => sum.plus(value(item.qtd_total).mul(value(item.preco_unitario))),
+    new Decimal(0),
+  );
+  const semImposto = value(order.total_sem_imposto);
+  const comImposto = value(order.total_com_imposto);
+  return {
+    bruto: m(bruto).toFixed(2),
+    descontoTotal: m(bruto.minus(semImposto)).toFixed(2),
+    semImposto: m(semImposto).toFixed(2),
+    ipiTotal: m(comImposto.minus(semImposto)).toFixed(2),
+    comImposto: m(comImposto).toFixed(2),
+  };
+}

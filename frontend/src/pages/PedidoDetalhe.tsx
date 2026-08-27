@@ -14,6 +14,7 @@ import ErrorState from '@/components/feedback/ErrorState';
 import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
 import { FotosDoPapelIndisponiveisError, fetchFotosPorProduto } from '@/services/productPhotos.service';
 import { Can } from '@/components/Can';
+import { orderTotalsBreakdown } from '@/lib/orderCalculation';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -128,6 +129,7 @@ export default function PedidoDetalhe() {
   const canLiberar = canLiberarPedido(hasPermission, order.status);
   const canCancelar = canCancelarPedido(hasPermission, order.status);
   const isExterno = (order.origem ?? 'interno') === 'externo';
+  const breakdown = orderTotalsBreakdown(order, order.itens ?? []);
   const editarPath = isExterno ? `/pedidos/externo/${order.uuid}/editar` : `/pedidos/${order.uuid}/editar`;
   const notas = order.notas ?? [];
   const divergencia = moneyForDisplay(order.divergencia ?? '0');
@@ -198,6 +200,25 @@ export default function PedidoDetalhe() {
             <p className='text-slate-800'>{order.total_com_imposto != null ? BRL.format(moneyForDisplay(order.total_com_imposto)) : '—'}</p>
           </div>
         </div>
+
+        {/* Mesma decomposição do papel — pedido externo não tem itens e,
+            portanto, não tem desconto nem IPI para decompor. */}
+        {!isExterno && (order.itens?.length ?? 0) > 0 && (
+          <div className='grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-lg bg-slate-50 p-4 text-sm'>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Valor bruto</p>
+              <p className='text-slate-800'>{BRL.format(moneyForDisplay(breakdown.bruto))}</p>
+            </div>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Desconto total</p>
+              <p className='font-medium text-red-700'>{BRL.format(moneyForDisplay(breakdown.descontoTotal))}</p>
+            </div>
+            <div>
+              <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>IPI total</p>
+              <p className='text-slate-800'>{BRL.format(moneyForDisplay(breakdown.ipiTotal))}</p>
+            </div>
+          </div>
+        )}
 
         {isExterno && (
           <div className='grid grid-cols-1 gap-4 sm:grid-cols-3 rounded-lg bg-violet-50 p-4 text-sm'>
