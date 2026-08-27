@@ -43,6 +43,21 @@ describe('OrderItemPhotoField', () => {
     expect(onChoose).not.toHaveBeenCalled();
   });
 
+  /**
+   * A tela do pedido se partia ao meio (faixa cinza morta no rodapé) porque o
+   * input `.sr-only` — `position: absolute` — não tinha ancestral posicionado:
+   * resolvia contra o initial containing block, escapava do `overflow-hidden`
+   * do AppShell e inflava `documentElement.scrollHeight` a cada item. jsdom não
+   * calcula layout, então o que dá para travar aqui é o containing block local.
+   */
+  it('mantém o input sr-only dentro de um containing block local', () => {
+    render(<OrderItemPhotoField index={0} fotoPreview={null} locked={false} onChoose={vi.fn()} onRemove={vi.fn()} />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(input).toHaveClass('sr-only');
+    expect(input.closest('label')).toHaveClass('relative');
+  });
+
   it('zera o input após escolher, para reescolher o mesmo arquivo', () => {
     const onChoose = vi.fn();
     render(<OrderItemPhotoField index={0} fotoPreview={null} locked={false} onChoose={onChoose} onRemove={vi.fn()} />);
