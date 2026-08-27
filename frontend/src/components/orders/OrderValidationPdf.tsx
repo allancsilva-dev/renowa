@@ -41,8 +41,8 @@ const styles = StyleSheet.create({
   // As larguras somam exatamente 100%: mexer numa exige devolver a diferença em
   // outra. A coluna FOTO abriu 11% tirando a folga das colunas numéricas, e
   // CÓDIGO subiu de 7% para 10% porque em 7% código de item transbordava.
+  colItem: { width: '4%', paddingLeft: 3, paddingRight: 3 },
   colFoto: { width: '11%', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
-  colItem: { width: '4%', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colCode: { width: '10%', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colDescription: { width: '15%', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colQtdCx: { width: '5%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
@@ -133,7 +133,7 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
         <View style={styles.totals} wrap={false}><View style={styles.finalLine}><Text>Valor do pedido</Text><Text>{brl(withTax)}</Text></View></View>
       ) : (<>
       <View style={styles.tableHeader} fixed>
-        <Text style={[styles.colItem, styles.headerDivider]}>ITEM</Text>
+        <Text style={styles.colItem}>ITEM</Text>
         <Text style={[styles.colFoto, styles.headerDivider]}>FOTO</Text>
         <Text style={[styles.colCode, styles.headerDivider]}>CÓDIGO</Text>
         <Text style={[styles.colDescription, styles.headerDivider]}>DESCRIÇÃO</Text>
