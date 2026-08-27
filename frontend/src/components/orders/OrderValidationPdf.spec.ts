@@ -7,4 +7,11 @@ describe('OrderValidationPdf — pesos das colunas', () => {
     expect(orderValidationPdfStyles.colVlrComDesc.fontFamily).toBe('Helvetica-Bold');
     expect(orderValidationPdfStyles.colDescPerc).not.toHaveProperty('fontFamily');
   });
+
+  it('mantém o fornecedor em negrito sem dominar o cabeçalho', () => {
+    expect(orderValidationPdfStyles.headerSupplier.fontFamily).toBe('Helvetica-Bold');
+    expect(orderValidationPdfStyles.headerSupplier.fontSize).toBeLessThan(
+      orderValidationPdfStyles.headerRef.fontSize,
+    );
+  });
 });

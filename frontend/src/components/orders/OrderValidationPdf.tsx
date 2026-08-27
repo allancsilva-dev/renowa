@@ -17,10 +17,12 @@ const TITLE_BY_STATUS: Record<OrderStatus, string> = {
 };
 
 const styles = StyleSheet.create({
-  page: { paddingTop: 72, paddingBottom: 38, paddingHorizontal: 20, fontFamily: 'Helvetica', fontSize: 7.5, color: '#1f2937' },
-  header: { position: 'absolute', top: 20, left: 20, right: 20, height: 46, borderBottomWidth: 1.5, borderBottomColor: '#2A9D8F', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  page: { paddingTop: 80, paddingBottom: 38, paddingHorizontal: 20, fontFamily: 'Helvetica', fontSize: 7.5, color: '#1f2937' },
+  header: { position: 'absolute', top: 20, left: 20, right: 20, height: 54, borderBottomWidth: 1.5, borderBottomColor: '#2A9D8F', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   logo: { width: 104, height: 40, objectFit: 'contain', objectPosition: 'left center' },
+  headerInfo: { flex: 1, marginLeft: 16, alignItems: 'flex-end' },
   headerRef: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: '#0D2B2B' },
+  headerSupplier: { marginTop: 3, fontSize: 8.5, fontFamily: 'Helvetica-Bold', color: '#0D2B2B', textAlign: 'right' },
   footer: { position: 'absolute', bottom: 16, left: 20, right: 20, paddingTop: 5, borderTopWidth: 0.5, borderTopColor: '#cbd5e1', flexDirection: 'row', justifyContent: 'space-between', color: '#64748b', fontSize: 6 },
   section: { marginBottom: 10 }, sectionTitle: { marginBottom: 5, fontSize: 9, fontFamily: 'Helvetica-Bold', color: '#0D2B2B' },
   infoGrid: { flexDirection: 'row', flexWrap: 'wrap', borderWidth: 0.5, borderColor: '#94a3b8' },
@@ -106,7 +108,13 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
     <Page size='A4' orientation='portrait' style={styles.page} wrap>
       {/* Pedido nº e data vivem aqui, não na grade: a faixa é fixa e repete em
           toda página, então quem folheia o papel sempre sabe de que pedido é. */}
-      <View style={styles.header} fixed><Image src={logoRenowa} style={styles.logo} /><Text style={styles.headerRef}>PEDIDO Nº {order.numero_pedido ?? '—'} · {ptBrDate(order.data)}</Text></View>
+      <View style={styles.header} fixed>
+        <Image src={logoRenowa} style={styles.logo} />
+        <View style={styles.headerInfo}>
+          <Text style={styles.headerRef}>PEDIDO Nº {order.numero_pedido ?? '—'} · {ptBrDate(order.data)}</Text>
+          <Text style={styles.headerSupplier}>{text(order.fornecedor?.razao_social)}</Text>
+        </View>
+      </View>
       <Footer order={order} />
       <View style={styles.section}><View style={styles.infoGrid}>
         <Field span={4} label='RAZÃO SOCIAL' value={text(order.cliente?.razao_social)} />
@@ -116,9 +124,8 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
         {/* E-mail em meia largura: em 25% um endereço corporativo hifeniza em três linhas e estica a linha inteira da grade. */}
         <Field label='CONTATO' value={text(order.cliente?.contato)} /><Field label='TELEFONE' value={text(order.cliente?.tel)} /><Field span={2} label='E-MAIL' value={text(order.cliente?.email)} />
         <Field label='PAGAMENTO' value={text(order.pgt)} /><Field label='PRAZO' value={text(order.prazo)} /><Field span={2} label='TIPO FAT.' value={text(order.tipo_faturamento)} />
-        <Field span={2} label='TRANSPORTADORA' value={text(transport?.razao_social)} /><Field span={2} label='TEL. TRANSP.' value={text(transport?.telefone)} />
+        <Field span={2} label='TRANSPORTADORA' value={text(transport?.razao_social)} /><Field label='CNPJ TRANSP.' value={text(transport?.cnpj)} /><Field label='TEL. TRANSP.' value={text(transport?.telefone)} />
         <Field span={4} label='END. TRANSP.' value={text(transport?.endereco_completo)} />
-        <Field span={4} label='FORNECEDOR' value={text(order.fornecedor?.razao_social)} />
         <Field span={4} label='LOCAL ENTREGA' value={text(order.local_entrega)} />
         {isExterno && <><Field span={2} label='SIST. ORIGEM' value={text(order.sistema_origem)} /><Field span={2} label='Nº ORIGEM' value={text(order.numero_pedido_externo)} /></>}
       </View></View>
