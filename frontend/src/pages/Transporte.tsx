@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { Eye, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
@@ -10,6 +10,11 @@ import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { importTransportadoras } from '@/services/import';
 import type { PaginatedResponse, Transport } from '@/types';
 import { Can } from '@/components/Can';
+import { RowAction, RowActions } from '@/components/tables/RowActions';
+import DetailDialog from '@/components/ui/DetailDialog';
+import { lookupCnpj } from '@/services/consultas.service';
+import { maskCnpj, maskTel, formatEnderecoCompleto } from '@/lib/format';
+import { getApiErrorMessage } from '@/lib/errors';
 
 interface NovaTransportadoraForm {
   razao_social: string;
@@ -25,20 +30,6 @@ const emptyForm: NovaTransportadoraForm = {
   endereco_completo: '',
 };
 
-function maskCnpj(v: string): string {
-  const d = v.replace(/\D/g, '').slice(0, 14);
-  return d
-    .replace(/^(\d{2})(\d)/, '$1.$2')
-    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
-}
-
-function maskTel(v: string): string {
-  const d = v.replace(/\D/g, '').slice(0, 11);
-  if (d.length <= 10) return d.replace(/^(\d{2})(\d{4})(\d)/, '($1) $2-$3').replace(/^(\d{2})(\d)/, '($1) $2');
-  return d.replace(/^(\d{2})(\d{5})(\d)/, '($1) $2-$3');
-}
 
 const inputClass =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2A9D8F] focus:ring-1 focus:ring-[#2A9D8F]/40 w-full';
@@ -50,6 +41,12 @@ export default function Transporte() {
   const [formError, setFormError] = useState<string | null>(null);
   const [editingUuid, setEditingUuid] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [viewing, setViewing] = useState<Transport | null>(null);
+  const [deletingUuid, setDeletingUuid] = useState<string | null>(null);
+  const [rowActionError, setRowActionError] = useState<string | null>(null);
+  const [cnpjLoading, setCnpjLoading] = useState(false);
+  const [cnpjMessage, setCnpjMessage] = useState<string | null>(null);
+  const cnpjAbortRef = useRef<AbortController | null>(null);
   // Modal reaproveitado: a identidade da criação renova a cada abertura de
   // "Nova", e sobrevive a quantas tentativas o mesmo cadastro precisar.
   const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
@@ -62,19 +59,44 @@ export default function Transporte() {
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<Transport>({ fetcher });
 
+  useEffect(() => () => cnpjAbortRef.current?.abort(), []);
+
+  function openEdit(row: Transport) {
+    setViewing(null);
+    setEditingUuid(row.uuid);
+    setForm({
+      razao_social: row.razao_social,
+      cnpj: row.cnpj ?? '',
+      telefone: row.telefone ?? '',
+      endereco_completo: row.endereco_completo ?? '',
+    });
+    setFormError(null);
+    setCnpjMessage(null);
+    setIsOpen(true);
+  }
+
   const columns = [
     { key: 'razao_social', header: 'Razão Social', cell: (row: Transport) => row.razao_social },
     { key: 'cnpj', header: 'CNPJ', cell: (row: Transport) => row.cnpj ?? '—' },
     { key: 'telefone', header: 'Telefone', cell: (row: Transport) => row.telefone ?? '—' },
     { key: 'endereco', header: 'Endereço', cell: (row: Transport) => row.endereco_completo ?? '—' },
-    { key: 'acoes', header: 'Ações', cell: (row: Transport) => <div className='flex gap-1'>
-      <Can permission='transportadoras.editar'>
-        <button type='button' aria-label={`Editar ${row.razao_social}`} onClick={() => { setEditingUuid(row.uuid); setForm({ razao_social: row.razao_social, cnpj: row.cnpj ?? '', telefone: row.telefone ?? '', endereco_completo: row.endereco_completo ?? '' }); setFormError(null); setIsOpen(true); }} className='rounded-md p-2 text-slate-600 hover:bg-slate-100'><Pencil className='h-4 w-4' /></button>
-      </Can>
-      <Can permission='transportadoras.deletar'>
-        <button type='button' aria-label={`Excluir ${row.razao_social}`} onClick={() => void handleDelete(row)} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700'><Trash2 className='h-4 w-4' /></button>
-      </Can>
-    </div> },
+    { key: 'acoes', header: 'Ações', cell: (row: Transport) => (
+      <RowActions>
+        <RowAction icon={Eye} label={`Ver ${row.razao_social}`} onClick={() => setViewing(row)} />
+        <Can permission='transportadoras.editar'>
+          <RowAction icon={Pencil} label={`Editar ${row.razao_social}`} onClick={() => openEdit(row)} />
+        </Can>
+        <Can permission='transportadoras.deletar'>
+          <RowAction
+            icon={Trash2}
+            danger
+            label={`Excluir ${row.razao_social}`}
+            disabled={deletingUuid === row.uuid}
+            onClick={() => void handleDelete(row)}
+          />
+        </Can>
+      </RowActions>
+    ) },
   ];
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -116,9 +138,53 @@ export default function Transporte() {
   }
 
   async function handleDelete(transport: Transport) {
+    if (deletingUuid) return;
     if (!window.confirm(`Excluir a transportadora “${transport.razao_social}”?`)) return;
-    try { await api.delete(`/transportadoras/${transport.uuid}`); reload(); }
-    catch { setFormError('Não foi possível excluir a transportadora.'); }
+    setDeletingUuid(transport.uuid);
+    setRowActionError(null);
+    try {
+      await api.delete(`/transportadoras/${transport.uuid}`);
+      reload();
+    } catch (err) {
+      setRowActionError(getApiErrorMessage(err));
+    } finally {
+      setDeletingUuid(null);
+    }
+  }
+
+  async function handleConsultarCnpj() {
+    const cnpjLimpo = form.cnpj.replace(/\D/g, '');
+    if (cnpjLimpo.length !== 14) {
+      setCnpjMessage('Informe um CNPJ completo (14 dígitos) para consultar.');
+      return;
+    }
+
+    cnpjAbortRef.current?.abort();
+    const controller = new AbortController();
+    cnpjAbortRef.current = controller;
+
+    setCnpjLoading(true);
+    setCnpjMessage(null);
+    try {
+      const data = await lookupCnpj(cnpjLimpo, { signal: controller.signal });
+      // A transportadora guarda o endereço num campo só; a consulta devolve as
+      // partes separadas. Compor aqui evita mexer no schema — e nunca
+      // sobrescrever com string vazia se a consulta vier sem endereço.
+      const endereco = formatEnderecoCompleto(data);
+      setForm((prev) => ({
+        ...prev,
+        razao_social: data.razao_social ?? prev.razao_social,
+        telefone: data.telefone ? maskTel(data.telefone) : prev.telefone,
+        endereco_completo: endereco || prev.endereco_completo,
+      }));
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404) setCnpjMessage('CNPJ não encontrado. Preencha os dados manualmente.');
+      else if (status === 503) setCnpjMessage('Serviço de consulta de CNPJ indisponível no momento. Preencha os dados manualmente.');
+      else if ((err as { name?: string })?.name !== 'AbortError') setCnpjMessage('Não foi possível consultar o CNPJ. Preencha os dados manualmente.');
+    } finally {
+      setCnpjLoading(false);
+    }
   }
 
   return (
@@ -135,7 +201,7 @@ export default function Transporte() {
         </Can>
         <Can permission='transportadoras.criar'>
           <button
-            onClick={() => { renovarUuidDeCriacao(); setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); }}
+            onClick={() => { renovarUuidDeCriacao(); setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); setCnpjMessage(null); }}
             className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
           >
             <Plus className='h-4 w-4' />
@@ -143,6 +209,12 @@ export default function Transporte() {
           </button>
         </Can>
       </div>
+
+      {rowActionError && (
+        <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>
+          {rowActionError}
+        </div>
+      )}
 
       <DataTable
         columns={columns}
@@ -174,6 +246,30 @@ export default function Transporte() {
         />
       )}
 
+      {viewing && (
+        <DetailDialog
+          title='Transportadora'
+          onClose={() => setViewing(null)}
+          fields={[
+            { label: 'Razão Social', value: viewing.razao_social },
+            { label: 'CNPJ', value: viewing.cnpj },
+            { label: 'Telefone', value: viewing.telefone },
+            { label: 'Endereço', value: viewing.endereco_completo },
+          ]}
+          footer={
+            <Can permission='transportadoras.editar'>
+              <button
+                type='button'
+                onClick={() => openEdit(viewing)}
+                className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
+              >
+                Editar
+              </button>
+            </Can>
+          }
+        />
+      )}
+
       {/* Modal */}
       {isOpen && (
         <Dialog open title={editingUuid ? 'Editar Transportadora' : 'Nova Transportadora'} onClose={() => setIsOpen(false)} className='max-w-md'>
@@ -201,16 +297,27 @@ export default function Transporte() {
 
               <div className='flex flex-col gap-1'>
                 <label htmlFor='transportadora-cnpj' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>CNPJ</label>
-                <input
-                  type='text'
-                  id='transportadora-cnpj'
-                  name='cnpj'
-                  value={form.cnpj}
-                  onChange={handleChange}
-                  placeholder='00.000.000/0001-00'
-                  inputMode='numeric'
-                  className={inputClass}
-                />
+                <div className='flex gap-2'>
+                  <input
+                    type='text'
+                    id='transportadora-cnpj'
+                    name='cnpj'
+                    value={form.cnpj}
+                    onChange={handleChange}
+                    placeholder='00.000.000/0001-00'
+                    inputMode='numeric'
+                    className={`${inputClass} flex-1`}
+                  />
+                  <button
+                    type='button'
+                    onClick={handleConsultarCnpj}
+                    disabled={cnpjLoading}
+                    className='min-h-11 shrink-0 rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-60'
+                  >
+                    {cnpjLoading ? 'Consultando...' : 'Consultar CNPJ'}
+                  </button>
+                </div>
+                {cnpjMessage && <p className='text-xs text-amber-700'>{cnpjMessage}</p>}
               </div>
 
               <div className='flex flex-col gap-1'>
