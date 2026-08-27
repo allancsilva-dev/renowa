@@ -4,6 +4,7 @@ import { Order } from '../../orders/entities/order.entity';
 import { OrderItem } from '../../orders/entities/order-item.entity';
 import {
   assertSemNotasAtivas,
+  assertCodigosItensUnicos,
   buildItemValues,
   loadOrderForWrite,
   recomputeOrderTotals,
@@ -148,6 +149,13 @@ export class OrdersSyncWriter {
       order.id,
       order.fornecedor_id,
     );
+
+    // Um item por vez: os irmãos vivos do pedido é que precisam ser comparados.
+    // Vale também para o UPDATE, que RESSUSCITA item soft-deletado logo abaixo —
+    // o revivido pode colidir com um vivo de mesmo código.
+    await assertCodigosItensUnicos(manager, tenantId, order.id, [{ ...values, uuid }], {
+      substituiTodos: false,
+    });
 
     const salvo = atual
       ? await itemRepo.save(Object.assign(atual, values, { deleted_at: null }))

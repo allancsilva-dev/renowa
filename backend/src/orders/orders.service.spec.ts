@@ -669,3 +669,105 @@ describe('OrdersService.remove — atomicidade', () => {
     await expect(service.remove(orderUuid2, 1, admin)).rejects.toBeInstanceOf(ConflictException);
   });
 });
+
+/**
+ * Código repetido dentro do mesmo pedido. Antes desta guarda o form aceitava 22
+ * linhas com o mesmo código, cada uma somando de novo no total do cabeçalho, na
+ * fila de faturamento e na comissão. Espelha `uq_itens_pedido_codigo_manual`
+ * (0044) — ver `assertCodigosItensUnicos` em `order-write.ts`.
+ */
+describe('OrdersService — código duplicado entre itens do pedido', () => {
+  const orderUuid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  const item = (uuid: string, codigo_manual: string) => ({
+    uuid, codigo_manual, qtd_caixas: 1, qtd_unitaria: 1, preco_unitario: 10,
+  });
+
+  const dtoBase = {
+    uuid: orderUuid,
+    cliente_uuid: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    fornecedor_uuid: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  };
+
+  const itensDuplicados = [
+    item('eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01', 'ABC'),
+    item('eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02', 'ABC'),
+  ];
+
+  it('create recusa (409) e não grava item nenhum', async () => {
+    const manager = {
+      query: jest.fn(async (sql: string) => {
+        if (sql.includes('SELECT 1 FROM pedidos')) return [];
+        if (sql.includes('nextval')) return [{ numero: 4321 }];
+        return [{ id: 10 }];
+      }),
+      create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
+      save: jest.fn(async (value: any) => Object.assign(value, { id: 1, uuid: orderUuid })),
+    };
+    const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+    const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+
+    await expect(service.create({ ...dtoBase, itens: itensDuplicados } as any, admin))
+      .rejects.toBeInstanceOf(ConflictException);
+
+    // O único `save` que chegou a acontecer é o do cabeçalho, antes dos itens.
+    expect(manager.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('update recusa (409) antes de gravar qualquer linha', async () => {
+    const order = {
+      id: 1, uuid: orderUuid, tenant_id: 'tenant-a', version: 1,
+      status: 'em_aberto', origem: 'interno', vendedor_id: null,
+    };
+    const orderRepo = { findOne: jest.fn().mockResolvedValue(order), save: jest.fn() };
+    const itemRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((values: unknown) => values),
+      save: jest.fn(),
+      softRemove: jest.fn(),
+    };
+    const manager = {
+      getRepository: jest.fn((entity: { name: string }) => (
+        entity.name === 'Order' ? orderRepo : itemRepo
+      )),
+      query: jest.fn(async (sql: string) => (
+        sql.includes('FROM itens_pedido') || sql.includes('FROM produtos') ? [] : [{ id: 10 }]
+      )),
+    };
+    const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+    const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+
+    await expect(service.update(orderUuid, {
+      ...dtoBase, version: 1, itens: itensDuplicados,
+    } as any, admin)).rejects.toBeInstanceOf(ConflictException);
+
+    // A guarda roda entre as duas passadas: nada de item foi escrito, e o
+    // cabeçalho também não.
+    expect(itemRepo.save).not.toHaveBeenCalled();
+    expect(itemRepo.softRemove).not.toHaveBeenCalled();
+    expect(orderRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('aceita códigos distintos', async () => {
+    const manager = {
+      query: jest.fn(async (sql: string) => {
+        if (sql.includes('SELECT 1 FROM pedidos')) return [];
+        if (sql.includes('nextval')) return [{ numero: 4321 }];
+        return [{ id: 10 }];
+      }),
+      create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
+      save: jest.fn(async (value: any) => Object.assign(value, { id: 1, uuid: orderUuid })),
+    };
+    const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
+    const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+    jest.spyOn(service, 'findOne').mockResolvedValue({ uuid: orderUuid } as any);
+
+    await expect(service.create({
+      ...dtoBase,
+      itens: [
+        item('eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01', 'ABC'),
+        item('eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02', 'XYZ'),
+      ],
+    } as any, admin)).resolves.toEqual({ uuid: orderUuid });
+  });
+});

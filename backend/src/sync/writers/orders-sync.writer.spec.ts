@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { SyncOperation } from '../dto/sync.dto';
 import { OrdersSyncWriter } from './orders-sync.writer';
 
@@ -185,6 +185,65 @@ describe('OrdersSyncWriter — item de pedido', () => {
     expect(del).toBeDefined();
     expect(del?.sql).toContain('version = version + 1');
     expect(h.itemRepo.find).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Duplicidade de código dentro do pedido, pela porta do sync. Aqui o payload é
+ * UM item, então o que precisa ser comparado são os IRMÃOS já gravados — a porta
+ * REST, que manda a lista inteira, resolve tudo dentro do array.
+ */
+describe('OrdersSyncWriter — código duplicado no pedido', () => {
+  const irmaoComCodigoABC = {
+    produto_id: null, codigo_manual: 'ABC', produto_codigo: null, produto_descricao: null,
+  };
+
+  it('recusa (409) CREATE de item cujo código já está em outro item do pedido', async () => {
+    const h = harness({
+      queryPorSql: (sql) => (sql.includes('FROM itens_pedido') ? [irmaoComCodigoABC] : []),
+    });
+
+    await expect(h.writer.writeItem(
+      h.manager, SyncOperation.CREATE, 'i-2',
+      { pedido_uuid: 'p-1', codigo_manual: 'ABC', qtd_caixas: 1, qtd_unitaria: 1, preco_unitario: 10 },
+      't-1',
+    )).rejects.toBeInstanceOf(ConflictException);
+
+    expect(h.salvosItem).toEqual([]);
+  });
+
+  /**
+   * `writeItem` ressuscita item soft-deletado (`deleted_at: null`). Sem a guarda
+   * a ressurreição colidia com o vivo de mesmo código — e o índice parcial de
+   * 0044, que só enxerga linha viva, deixaria passar até o momento do UPDATE.
+   */
+  it('recusa (409) a ressurreição de item deletado que colide com um vivo', async () => {
+    const h = harness({
+      itemAtual: { id: 9, uuid: 'i-2', tenant_id: 't-1', pedido_id: 1, deleted_at: new Date(), codigo_manual: 'ABC' },
+      queryPorSql: (sql) => {
+        if (sql.includes('JOIN pedidos')) return [{ uuid: 'p-1' }];
+        return sql.includes('LEFT JOIN produtos') ? [irmaoComCodigoABC] : [];
+      },
+    });
+
+    await expect(h.writer.writeItem(
+      h.manager, SyncOperation.UPDATE, 'i-2', { qtd_caixas: 2 }, 't-1',
+    )).rejects.toBeInstanceOf(ConflictException);
+
+    expect(h.salvosItem).toEqual([]);
+  });
+
+  it('não compara o item consigo mesmo', async () => {
+    const h = harness({
+      itemAtual: { id: 9, uuid: 'i-2', tenant_id: 't-1', pedido_id: 1, deleted_at: null, codigo_manual: 'ABC' },
+      queryPorSql: (sql) => (sql.includes('JOIN pedidos') ? [{ uuid: 'p-1' }] : []),
+    });
+
+    await h.writer.writeItem(h.manager, SyncOperation.UPDATE, 'i-2', { qtd_caixas: 2 }, 't-1');
+
+    const irmaos = h.queries.find(({ sql }) => sql.includes('LEFT JOIN produtos'));
+    expect(irmaos?.params).toEqual(['t-1', 1, ['i-2']]);
+    expect(h.salvosItem).toHaveLength(1);
   });
 });
 

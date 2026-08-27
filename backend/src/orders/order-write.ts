@@ -94,6 +94,145 @@ export async function buildItemValues(
   };
 }
 
+/**
+ * Um item, reduzido ao que decide duplicidade. Aceita a forma que
+ * `buildItemValues` devolve (`Partial<OrderItem>`) sem conversão.
+ */
+export interface ItemCodigoInput {
+  uuid?: string;
+  produto_id?: number | null;
+  codigo_manual?: string | null;
+}
+
+/** Item já gravado ou candidato, com o código do catálogo já resolvido. */
+interface ItemComCodigo {
+  produto_id: number | null;
+  codigo: string | null;
+  rotulo: string | null;
+  /** Decide o fecho da mensagem: item sem código é identificado pelo produto. */
+  tipo: 'codigo' | 'produto';
+  /** Posição 1-based no payload; `null` para irmão já gravado. */
+  posicao: number | null;
+}
+
+/**
+ * Código do item é a chave de negócio DENTRO do pedido: repetir uma linha infla
+ * o total do cabeçalho, a fila de faturamento e a comissão. Até aqui nenhuma das
+ * três portas de escrita checava, e o banco também não — deu para gravar 22
+ * linhas com o mesmo código num pedido só.
+ *
+ * Espelha `uq_itens_pedido_codigo_manual` / `uq_itens_pedido_produto` (0044): a
+ * guarda dá a mensagem de negócio (com a posição da linha, que o 23505 não tem),
+ * o índice garante sob concorrência.
+ *
+ * O código efetivo é `codigo_manual` OU, na falta dele, `produtos.codigo`. A
+ * resolução do catálogo é o que o índice NÃO consegue fazer — índice não cruza
+ * tabela —, então é aqui que o manual digitado igual ao código de um produto
+ * irmão é pego.
+ *
+ * `substituiTodos` distingue as duas portas: a REST manda a lista COMPLETA e
+ * apaga os itens omitidos, então o array já é o pedido inteiro e consultar
+ * irmãos daria falso positivo com a própria linha que vai sumir. O sync manda um
+ * item por vez, e aí os irmãos vivos são justamente o que falta comparar.
+ */
+export async function assertCodigosItensUnicos(
+  manager: EntityManager,
+  tenantId: string,
+  orderId: number,
+  itens: ItemCodigoInput[],
+  opts: { substituiTodos: boolean },
+): Promise<void> {
+  const produtoIds = [...new Set(
+    itens.map((item) => item.produto_id).filter((id): id is number => id != null),
+  )];
+
+  const catalogo = new Map<number, { codigo: string | null; descricao: string }>();
+  if (produtoIds.length) {
+    const rows = await manager.query(
+      `SELECT id, codigo, descricao FROM produtos WHERE tenant_id = $1 AND id = ANY($2::int[])`,
+      [tenantId, produtoIds],
+    ) as Array<{ id: number; codigo: string | null; descricao: string }>;
+    for (const row of rows) catalogo.set(row.id, { codigo: row.codigo, descricao: row.descricao });
+  }
+
+  const candidatos: ItemComCodigo[] = itens.map((item, indice) => {
+    const doCatalogo = item.produto_id != null ? catalogo.get(item.produto_id) : undefined;
+    const codigo = item.codigo_manual?.toString().trim() || doCatalogo?.codigo?.trim() || null;
+    return {
+      produto_id: item.produto_id ?? null,
+      codigo,
+      rotulo: codigo ? `Código ${codigo}` : doCatalogo ? `O produto "${doCatalogo.descricao}"` : null,
+      tipo: codigo ? 'codigo' : 'produto',
+      posicao: indice + 1,
+    };
+  });
+
+  const irmaos: ItemComCodigo[] = [];
+  if (!opts.substituiTodos) {
+    const uuids = itens.map((item) => item.uuid).filter((uuid): uuid is string => !!uuid);
+    const rows = await manager.query(
+      `SELECT i.produto_id, i.codigo_manual, p.codigo AS produto_codigo, p.descricao AS produto_descricao
+         FROM itens_pedido i
+         LEFT JOIN produtos p ON p.tenant_id = i.tenant_id AND p.id = i.produto_id
+        WHERE i.tenant_id = $1 AND i.pedido_id = $2 AND i.deleted_at IS NULL
+          AND i.uuid <> ALL($3::uuid[])`,
+      [tenantId, orderId, uuids],
+    ) as Array<{
+      produto_id: number | null;
+      codigo_manual: string | null;
+      produto_codigo: string | null;
+      produto_descricao: string | null;
+    }>;
+    for (const row of rows) {
+      const codigo = row.codigo_manual?.trim() || row.produto_codigo?.trim() || null;
+      irmaos.push({
+        produto_id: row.produto_id,
+        codigo,
+        rotulo: codigo
+          ? `Código ${codigo}`
+          : row.produto_descricao ? `O produto "${row.produto_descricao}"` : null,
+        tipo: codigo ? 'codigo' : 'produto',
+        posicao: null,
+      });
+    }
+  }
+
+  // Irmãos primeiro: quem já está gravado é sempre o "anterior", e o item que
+  // chega é o que a mensagem manda corrigir.
+  const porCodigo = new Map<string, ItemComCodigo>();
+  const porProduto = new Map<number, ItemComCodigo>();
+
+  for (const entrada of [...irmaos, ...candidatos]) {
+    if (entrada.codigo) {
+      const anterior = porCodigo.get(entrada.codigo);
+      if (anterior) recusar(entrada, anterior);
+      porCodigo.set(entrada.codigo, entrada);
+    }
+    if (entrada.produto_id != null) {
+      const anterior = porProduto.get(entrada.produto_id);
+      if (anterior) recusar(entrada, anterior);
+      porProduto.set(entrada.produto_id, entrada);
+    }
+  }
+}
+
+/**
+ * A posição só existe para item que veio no payload. Item já gravado não tem
+ * número que faça sentido para quem está olhando a tela, então a mensagem cai
+ * para a forma sem posição.
+ */
+function recusar(entrada: ItemComCodigo, anterior: ItemComCodigo): never {
+  const rotulo = entrada.rotulo ?? anterior.rotulo ?? 'Este item';
+  const regra = entrada.tipo === 'codigo' ? 'Cada código' : 'Cada produto';
+  if (entrada.posicao != null && anterior.posicao != null) {
+    throw new ConflictException(
+      `${rotulo} está repetido nos itens ${anterior.posicao} e ${entrada.posicao} do pedido. `
+      + `${regra} só pode aparecer uma vez no mesmo pedido.`,
+    );
+  }
+  throw new ConflictException(`${rotulo} já está em outro item deste pedido.`);
+}
+
 /** Totais do cabeçalho a partir de itens já derivados. */
 export function totalsFromItems(items: Array<Partial<OrderItem>>) {
   return calculateOrderTotals(items.map((item) => ({

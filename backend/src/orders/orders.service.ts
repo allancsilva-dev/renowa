@@ -9,7 +9,12 @@ import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-ext
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { optimisticSoftDelete, optimisticUpdate } from '../common/persistence/optimistic-concurrency';
-import { buildItemValues, countNotasAtivas, totalsFromItems } from './order-write';
+import {
+  assertCodigosItensUnicos,
+  buildItemValues,
+  countNotasAtivas,
+  totalsFromItems,
+} from './order-write';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { decimal, money } from '../common/decimal/decimal';
 import { isVendorOnly, vendorOwnershipWhere } from './order-ownership';
@@ -133,6 +138,7 @@ export class OrdersService {
       const items = await Promise.all(dto.itens.map((item) =>
         this.buildItem(manager, item, user.tenantId, saved.id, refs.fornecedor_id!),
       ));
+      await assertCodigosItensUnicos(manager, user.tenantId, saved.id, items, { substituiTodos: true });
       const totals = this.totalsFromItems(items);
       await manager.save(items.map((item) => manager.create(OrderItem, item)));
       saved.total_sem_imposto = totals.total_sem_imposto;
@@ -306,6 +312,9 @@ export class OrdersService {
       const requested = new Set(dto.itens.map((item) => item.uuid));
       const calculatedItems: Array<Partial<OrderItem>> = [];
 
+      // Duas passadas de propósito: a guarda de código duplicado só decide com o
+      // conjunto inteiro na mão, e gravar antes de saber deixaria metade das
+      // linhas escritas para a transação desfazer logo em seguida.
       for (const itemDto of dto.itens) {
         const collisions = await manager.query(
           'SELECT tenant_id, pedido_id FROM itens_pedido WHERE uuid = $1 LIMIT 1',
@@ -314,9 +323,19 @@ export class OrdersService {
         if (collisions[0] && (collisions[0].tenant_id !== user.tenantId || collisions[0].pedido_id !== order.id)) {
           throw new BadRequestException('UUID de item já pertence a outro pedido ou tenant.');
         }
-        const values = await this.buildItem(manager, itemDto, user.tenantId, order.id, refs.fornecedor_id!);
-        calculatedItems.push(values);
-        const existing = byUuid.get(itemDto.uuid);
+        calculatedItems.push(
+          await this.buildItem(manager, itemDto, user.tenantId, order.id, refs.fornecedor_id!),
+        );
+      }
+
+      // `substituiTodos`: o PUT manda a lista COMPLETA e os omitidos são
+      // soft-deletados logo abaixo, então o array já é o pedido inteiro.
+      await assertCodigosItensUnicos(manager, user.tenantId, order.id, calculatedItems, {
+        substituiTodos: true,
+      });
+
+      for (const values of calculatedItems) {
+        const existing = byUuid.get(values.uuid!);
         if (existing) {
           Object.assign(existing, values, { deleted_at: null });
           await itemRepo.save(existing);

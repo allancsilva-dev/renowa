@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { ORDER_ITEM_CASES } from '@renowa/shared';
 import {
+  assertCodigosItensUnicos,
   assertSemNotasAtivas,
   buildItemValues,
   loadOrderForWrite,
@@ -286,4 +287,112 @@ describe('recomputeOrderTotals — a derivação é do servidor, sempre', () => 
       expect(totals.total_com_imposto).toBe(caso.esperado.total_com_imposto);
     },
   );
+});
+
+/**
+ * Duplicidade de código dentro do pedido. O `fakeManager` acima devolve `[]` por
+ * padrão em `query`, então cada caso descreve só as duas consultas que a guarda
+ * faz: catálogo de produtos e irmãos vivos do pedido.
+ */
+describe('assertCodigosItensUnicos — código repetido no mesmo pedido', () => {
+  function managerCom(opts: { catalogo?: Linha[]; irmaos?: Linha[] } = {}) {
+    return fakeManager({
+      queryRows: (sql) => (sql.includes('FROM produtos') ? opts.catalogo ?? [] : opts.irmaos ?? []),
+    });
+  }
+
+  it('recusa dois códigos manuais iguais no lote, apontando as duas posições', async () => {
+    const { manager } = managerCom();
+
+    await expect(assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-1', produto_id: null, codigo_manual: 'ABC' },
+      { uuid: 'i-2', produto_id: null, codigo_manual: 'XYZ' },
+      { uuid: 'i-3', produto_id: null, codigo_manual: 'ABC' },
+    ], { substituiTodos: true })).rejects.toThrow(
+      /Código ABC está repetido nos itens 1 e 3 do pedido/,
+    );
+  });
+
+  it('recusa o mesmo produto duas vezes mesmo sem código manual', async () => {
+    const { manager } = managerCom({
+      catalogo: [{ id: 7, codigo: null, descricao: 'Cadeira' }],
+    });
+
+    await expect(assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-1', produto_id: 7, codigo_manual: null },
+      { uuid: 'i-2', produto_id: 7, codigo_manual: null },
+    ], { substituiTodos: true })).rejects.toThrow(ConflictException);
+  });
+
+  /**
+   * O caso que índice nenhum pega: o código do produto vive em `produtos`, e
+   * índice não cruza tabela. Só a resolução do catálogo aqui enxerga.
+   */
+  it('recusa código manual igual ao código de um produto do catálogo no mesmo pedido', async () => {
+    const { manager } = managerCom({
+      catalogo: [{ id: 7, codigo: 'ABC', descricao: 'Cadeira' }],
+    });
+
+    await expect(assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-1', produto_id: 7, codigo_manual: null },
+      { uuid: 'i-2', produto_id: null, codigo_manual: 'ABC' },
+    ], { substituiTodos: true })).rejects.toThrow(/Código ABC/);
+  });
+
+  it('aceita vários itens sem código, só com descrição manual', async () => {
+    const { manager } = managerCom();
+
+    await expect(assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-1', produto_id: null, codigo_manual: null },
+      { uuid: 'i-2', produto_id: null, codigo_manual: '' },
+    ], { substituiTodos: true })).resolves.toBeUndefined();
+  });
+
+  /**
+   * `substituiTodos: true` é a porta REST, que manda a lista completa e apaga os
+   * omitidos: consultar irmãos ali acusaria colisão com a própria linha que vai
+   * sumir.
+   */
+  it('com substituiTodos não consulta irmãos gravados', async () => {
+    const { manager, queries } = managerCom();
+
+    await assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-1', produto_id: null, codigo_manual: 'ABC' },
+    ], { substituiTodos: true });
+
+    expect(queries.filter(({ sql }) => sql.includes('FROM itens_pedido'))).toEqual([]);
+  });
+
+  it('sem substituiTodos recusa colisão com irmão já gravado, sem citar posição', async () => {
+    const { manager } = managerCom({
+      irmaos: [{ produto_id: null, codigo_manual: 'ABC', produto_codigo: null, produto_descricao: null }],
+    });
+
+    await expect(assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-2', produto_id: null, codigo_manual: 'ABC' },
+    ], { substituiTodos: false })).rejects.toThrow(
+      'Código ABC já está em outro item deste pedido.',
+    );
+  });
+
+  it('sem substituiTodos ignora o próprio item na consulta de irmãos', async () => {
+    const { manager, queries } = managerCom();
+
+    await assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-2', produto_id: null, codigo_manual: 'ABC' },
+    ], { substituiTodos: false });
+
+    const irmaos = queries.find(({ sql }) => sql.includes('FROM itens_pedido'));
+    expect(irmaos?.sql).toContain('i.deleted_at IS NULL');
+    expect(irmaos?.params).toEqual([TENANT, 10, ['i-2']]);
+  });
+
+  it('compara com trim: espaço em volta não cria código novo', async () => {
+    const { manager } = managerCom();
+
+    await expect(assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-1', produto_id: null, codigo_manual: 'ABC' },
+      { uuid: 'i-2', produto_id: null, codigo_manual: '  ABC  ' },
+    ], { substituiTodos: true })).rejects.toThrow(ConflictException);
+  });
 });
