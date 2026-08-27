@@ -69,6 +69,30 @@ async function montar() {
 }
 
 describe('PedidoForm — troca de fornecedor', () => {
+  it('move a ação de adicionar para o fim quando há vários itens', async () => {
+    await montar();
+
+    const section = screen.getByRole('heading', { name: 'Itens' }).closest('section')!;
+    const topAction = screen.getByRole('button', { name: 'Adicionar item' });
+    expect(topAction.parentElement).toContainElement(screen.getByRole('heading', { name: 'Itens' }));
+
+    fireEvent.click(topAction);
+
+    expect(screen.getByText('Item 2')).toBeInTheDocument();
+    const bottomAction = screen.getByRole('button', { name: 'Adicionar item' });
+    expect(section.lastElementChild).toContainElement(bottomAction);
+
+    fireEvent.click(bottomAction);
+    expect(screen.getByText('Item 3')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Adicionar item' })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remover item 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover item 2' }));
+
+    const restoredTopAction = screen.getByRole('button', { name: 'Adicionar item' });
+    expect(restoredTopAction.parentElement).toContainElement(screen.getByRole('heading', { name: 'Itens' }));
+  });
+
   it('mostra o valor unitário com desconto durante o preenchimento', async () => {
     const campos = await montar();
 

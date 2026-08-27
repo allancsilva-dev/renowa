@@ -195,6 +195,10 @@ export default function PedidoForm() {
     } : item));
   }
 
+  function addItem() {
+    setItems((current) => [...current, newItem()]);
+  }
+
   function updateItem(itemUuid: string, patch: Partial<ItemForm>) {
     setItems((current) => current.map((item) => {
       if (item.uuid !== itemUuid) return item;
@@ -368,7 +372,7 @@ export default function PedidoForm() {
 
       <section className='rounded-lg border border-slate-200 bg-white p-5 shadow-sm'>
         <div className='mb-4 flex items-center justify-between'><h2 className='text-lg font-semibold text-slate-900'>Itens</h2>
-          <button type='button' disabled={locked} onClick={() => setItems((current) => [...current, newItem()])} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40'><Plus className='h-4 w-4' />Adicionar item</button></div>
+          {items.length === 1 && <AddItemButton disabled={locked} onClick={addItem} />}</div>
         {itensSemProduto > 0 && (
           <div role='status' className='mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'>
             O fornecedor mudou: {itensSemProduto === 1 ? '1 item precisa' : `${itensSemProduto} itens precisam`} de um novo produto. Quantidades e percentuais foram preservados.
@@ -396,9 +400,14 @@ export default function PedidoForm() {
             <div className='md:col-span-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700'><span>{qtyForDisplay(item.qtd_caixas || 0)} cx × {qtyForDisplay(item.qtd_unitaria || 0)} un = <strong>{qtyForDisplay(calculated.qtd_total)}</strong></span><span>Valor unitário com desconto: <strong>{BRL.format(moneyForDisplay(calculated.valor_com_desconto))}</strong></span><span>Sem IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_sem_imposto))}</strong></span><span>Com IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_com_imposto))}</strong></span></div>
           </div></div>; })}</div>
         <div className='mt-5 flex justify-end gap-8 border-t border-slate-200 pt-4 text-right'><div><span className='block text-xs text-slate-600'>Total sem imposto</span><strong>{BRL.format(moneyForDisplay(totals.semImposto))}</strong></div><div><span className='block text-xs text-slate-600'>Total com imposto</span><strong className='text-lg text-slate-900'>{BRL.format(moneyForDisplay(totals.comImposto))}</strong></div></div>
+        {items.length > 1 && <div className='mt-4 flex justify-end'><AddItemButton disabled={locked} onClick={addItem} /></div>}
       </section>
 
       <div className='flex justify-end gap-3'><button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button><button type='submit' disabled={loading || locked || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button></div>
     </form>
   );
+}
+
+function AddItemButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return <button type='button' disabled={disabled} onClick={onClick} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40'><Plus className='h-4 w-4' />Adicionar item</button>;
 }
