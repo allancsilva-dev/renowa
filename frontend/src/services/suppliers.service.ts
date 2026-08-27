@@ -1,5 +1,5 @@
 import api from '@/lib/apiClient';
-import type { Supplier, PaginatedResponse, ApiResponse, CnpjLookupResult } from '@/types';
+import type { Supplier, PaginatedResponse, ApiResponse } from '@/types';
 
 export type SupplierFormData = {
   uuid?: string;
@@ -44,8 +44,3 @@ export async function deleteSupplier(uuid: string): Promise<void> {
   await api.delete(`/fornecedores/${uuid}`);
 }
 
-/** Consulta de apoio ao preenchimento do formulário — ver clients.service.ts#lookupCnpj para detalhes de contrato. */
-export async function lookupCnpj(cnpj: string, options?: { signal?: AbortSignal }): Promise<CnpjLookupResult> {
-  const { data } = await api.get<ApiResponse<CnpjLookupResult>>(`/consultas/cnpj/${cnpj}`, { signal: options?.signal });
-  return data.data;
-}

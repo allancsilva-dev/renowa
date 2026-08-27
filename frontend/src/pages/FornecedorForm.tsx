@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { fetchSupplier, createSupplier, updateSupplier, lookupCnpj, type SupplierFormData } from '@/services/suppliers.service';
+import { fetchSupplier, createSupplier, updateSupplier, type SupplierFormData } from '@/services/suppliers.service';
+import { lookupCnpj } from '@/services/consultas.service';
 import type { Supplier } from '@/types';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
-import { maskCnpj } from '@/lib/format';
+import { maskCnpj, maskCep, maskTel } from '@/lib/format';
 import { getApiErrorMessage } from '@/lib/errors';
 
 const UFS = [
@@ -47,18 +48,6 @@ function toFields(s: Supplier): FormFields {
   };
 }
 
-function maskCep(value: string): string {
-  const d = value.replace(/\D/g, '').slice(0, 8);
-  return d.replace(/^(\d{5})(\d)/, '$1-$2');
-}
-
-function maskTel(value: string): string {
-  const d = value.replace(/\D/g, '').slice(0, 11);
-  if (d.length <= 10) {
-    return d.replace(/^(\d{2})(\d{4})(\d)/, '($1) $2-$3').replace(/^(\d{2})(\d)/, '($1) $2');
-  }
-  return d.replace(/^(\d{2})(\d{5})(\d)/, '($1) $2-$3');
-}
 
 export default function FornecedorForm() {
   const { uuid } = useParams<{ uuid: string }>();

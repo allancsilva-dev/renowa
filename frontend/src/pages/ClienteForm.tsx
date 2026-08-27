@@ -4,8 +4,8 @@ import api from '@/lib/apiClient';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import type { ApiResponse, Client, Transport } from '@/types';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
-import { maskCnpj } from '@/lib/format';
-import { lookupCnpj } from '@/services/clients.service';
+import { maskCnpj, maskCep, maskTel } from '@/lib/format';
+import { lookupCnpj } from '@/services/consultas.service';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -79,21 +79,6 @@ function toFields(c: Client): FormFields {
     local_entrega: c.local_entrega ?? '',
     observacao: c.observacao ?? '',
   };
-}
-
-// ─── Funções de máscara ─────────────────────────────────────────────────────
-
-function maskCep(value: string): string {
-  const d = value.replace(/\D/g, '').slice(0, 8);
-  return d.replace(/^(\d{5})(\d)/, '$1-$2');
-}
-
-function maskTel(value: string): string {
-  const d = value.replace(/\D/g, '').slice(0, 11);
-  if (d.length <= 10) {
-    return d.replace(/^(\d{2})(\d{4})(\d)/, '($1) $2-$3').replace(/^(\d{2})(\d)/, '($1) $2');
-  }
-  return d.replace(/^(\d{2})(\d{5})(\d)/, '($1) $2-$3');
 }
 
 // ─── Componente ─────────────────────────────────────────────────────────────
