@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Upload } from 'lucide-react';
+import { Eye, Pencil, Plus, Trash2, Upload, Search } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
@@ -11,6 +11,8 @@ import { importSuppliers } from '@/services/import';
 import { getApiErrorMessage } from '@/lib/errors';
 import type { Supplier } from '@/types';
 import { Can } from '@/components/Can';
+import { RowAction, RowActions } from '@/components/tables/RowActions';
+import DetailDialog from '@/components/ui/DetailDialog';
 
 export default function Fornecedores() {
   const navigate = useNavigate();
@@ -20,6 +22,7 @@ export default function Fornecedores() {
   const [rowActionError, setRowActionError] = useState<string | null>(null);
   const [deletingUuid, setDeletingUuid] = useState<string | null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [viewing, setViewing] = useState<Supplier | null>(null);
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
@@ -69,27 +72,25 @@ export default function Fornecedores() {
       key: 'acoes',
       header: 'Ações',
       cell: (row: Supplier) => (
-        <div className='flex items-center gap-2'>
+        <RowActions>
+          <RowAction icon={Eye} label={`Ver ${row.razao_social}`} onClick={() => setViewing(row)} />
           <Can permission='fornecedores.editar'>
-          <button
-            type='button'
-            onClick={() => navigate(`/fornecedores/${row.uuid}/editar`)}
-            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
-          >
-            Editar
-          </button>
+            <RowAction
+              icon={Pencil}
+              label={`Editar ${row.razao_social}`}
+              onClick={() => navigate(`/fornecedores/${row.uuid}/editar`)}
+            />
           </Can>
           <Can permission='fornecedores.deletar'>
-          <button
-            type='button'
-            disabled={deletingUuid === row.uuid}
-            onClick={() => handleDelete(row)}
-            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60'
-          >
-            {deletingUuid === row.uuid ? 'Removendo...' : 'Remover'}
-          </button>
+            <RowAction
+              icon={Trash2}
+              danger
+              label={`Remover ${row.razao_social}`}
+              disabled={deletingUuid === row.uuid}
+              onClick={() => handleDelete(row)}
+            />
           </Can>
-        </div>
+        </RowActions>
       ),
     },
   ];
@@ -147,6 +148,36 @@ export default function Fornecedores() {
         emptyTitle='Nenhum fornecedor cadastrado'
         emptyDescription='Clique em "Novo Fornecedor" para começar.'
       />
+
+      {viewing && (
+        <DetailDialog
+          title='Fornecedor'
+          onClose={() => setViewing(null)}
+          fields={[
+            { label: 'Razão Social', value: viewing.razao_social },
+            { label: 'CNPJ', value: viewing.cnpj },
+            { label: 'Inscrição Estadual', value: viewing.inscricao_estadual },
+            { label: 'Telefone', value: viewing.telefone },
+            { label: 'Endereço', value: viewing.endereco },
+            { label: 'Número', value: viewing.numero },
+            { label: 'Complemento', value: viewing.complemento },
+            { label: 'Bairro', value: viewing.bairro },
+            { label: 'Cidade / UF', value: viewing.cidade ? `${viewing.cidade}${viewing.uf ? ` / ${viewing.uf}` : ''}` : null },
+            { label: 'CEP', value: viewing.cep },
+          ]}
+          footer={
+            <Can permission='fornecedores.editar'>
+              <button
+                type='button'
+                onClick={() => navigate(`/fornecedores/${viewing.uuid}/editar`)}
+                className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
+              >
+                Editar
+              </button>
+            </Can>
+          }
+        />
+      )}
 
       {isImportOpen && (
         <ImportCsvDialog
