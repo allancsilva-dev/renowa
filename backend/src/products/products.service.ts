@@ -25,6 +25,7 @@ interface ImportedRow {
   descricao?: string;
   preco_base?: string;
   ipi_perc?: string;
+  quantidade?: string;
 }
 
 type ParsedImport = { rows: Record<string, unknown>[]; images: Map<number, { buffer: Buffer; name: string }>; xlsx: boolean };
@@ -132,6 +133,7 @@ function normalizeImportRow(row: Record<string, unknown>): ImportedRow {
     descricao: pick(normalized, 'descricao', 'descrição'),
     preco_base: pick(normalized, 'preco_base', 'preço_base', 'preco', 'preço'),
     ipi_perc: pick(normalized, 'ipi_perc'),
+    quantidade: normalized['quantidade'],
   };
 }
 
@@ -152,10 +154,11 @@ export class ProductsService {
       { header: 'descricao', key: 'descricao', width: 42 },
       { header: 'preco_base', key: 'preco_base', width: 16 },
       { header: 'ipi_perc', key: 'ipi_perc', width: 14 },
+      { header: 'quantidade', key: 'quantidade', width: 14 },
       { header: 'foto', key: 'foto', width: 22 },
     ];
     sheet.getRow(1).font = { bold: true };
-    sheet.addRow({ codigo: 'PROD-001', descricao: 'Produto de exemplo', preco_base: 10.5, ipi_perc: 5, foto: 'Ancore uma imagem flutuante nesta célula' });
+    sheet.addRow({ codigo: 'PROD-001', descricao: 'Produto de exemplo', preco_base: 10.5, ipi_perc: 5, quantidade: 1, foto: 'Ancore uma imagem flutuante nesta célula' });
     sheet.getRow(2).height = 72;
     const output = await workbook.xlsx.writeBuffer();
     return Buffer.from(output);
@@ -230,6 +233,7 @@ export class ProductsService {
           ...rest,
           preco_base: rest.preco_base === undefined ? null : money(rest.preco_base),
           ipi_perc: rest.ipi_perc === undefined ? null : money(rest.ipi_perc),
+          quantidade: rest.quantidade ?? 1,
           uuid,
           fornecedor_id,
           tenant_id: tenantId,
@@ -359,7 +363,7 @@ export class ProductsService {
 
       for (const [index, rawRow] of rows.entries()) {
         const linha = index + 2; // linha 1 = cabeçalho
-        const { codigo, descricao, preco_base, ipi_perc } = normalizeImportRow(rawRow);
+        const { codigo, descricao, preco_base, ipi_perc, quantidade } = normalizeImportRow(rawRow);
         const importedPhoto = parsedFile.images.get(linha);
 
         if (!codigo) {
@@ -402,6 +406,17 @@ export class ProductsService {
           ipiValue = money(parsed);
         }
 
+        let quantidadeValue: number | undefined;
+        if (quantidade !== undefined) {
+          const parsed = Number(quantidade);
+          if (!Number.isInteger(parsed) || parsed < 0) {
+            erros.push({ linha, codigo, erro: 'Quantidade inválida.' });
+            rejeitados++;
+            continue;
+          }
+          quantidadeValue = parsed;
+        }
+
         const existing = await productRepo.findOne({
           where: { codigo, fornecedor_id: fornecedorId, tenant_id: tenantId, deleted_at: IsNull() },
         });
@@ -424,6 +439,7 @@ export class ProductsService {
           existing.descricao = descricao;
           if (precoValue !== null) existing.preco_base = precoValue;
           if (ipiValue !== null) existing.ipi_perc = ipiValue;
+          if (quantidadeValue !== undefined) existing.quantidade = quantidadeValue;
           await productRepo.save(existing);
           atualizados++;
           if (importedPhoto && hasPhoto) fotosIgnoradas++;
@@ -442,6 +458,7 @@ export class ProductsService {
             descricao,
             preco_base: precoValue,
             ipi_perc: ipiValue,
+            quantidade: quantidadeValue ?? 1,
           });
           await productRepo.save(created);
           criados++;

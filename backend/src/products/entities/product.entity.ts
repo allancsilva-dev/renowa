@@ -29,4 +29,7 @@ export class Product extends VersionedBaseEntity {
 
   @Column({ name: 'ipi_perc', type: 'decimal', precision: 5, scale: 2, nullable: true })
   ipi_perc: string | null;
+
+  @Column({ name: 'quantidade', type: 'int', default: 1 })
+  quantidade: number;
 }

@@ -222,8 +222,46 @@ describe('ProductsService#importFromFile', () => {
     await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
 
     expect(workbook.worksheets[0].getRow(1).values).toEqual([
-      undefined, 'codigo', 'descricao', 'preco_base', 'ipi_perc', 'foto',
+      undefined, 'codigo', 'descricao', 'preco_base', 'ipi_perc', 'quantidade', 'foto',
     ]);
+  });
+
+  it('importa quantidade inteira e não negativa', async () => {
+    const { manager, saved } = makeManager();
+    const result = await buildService(manager).importFromFile(buildCsvFile([
+      'codigo;descricao;quantidade',
+      'C1;Produto 1;12',
+    ]), 'fornecedor-uuid', 'tenant-a');
+
+    expect(result).toMatchObject({ criados: 1, rejeitados: 0 });
+    expect(saved[0].quantidade).toBe(12);
+  });
+
+  it.each(['-1', '1.5', 'texto'])('rejeita quantidade inválida "%s"', async (quantidade) => {
+    const { manager } = makeManager();
+    const result = await buildService(manager).importFromFile(buildCsvFile([
+      'codigo;descricao;quantidade',
+      `C1;Produto 1;${quantidade}`,
+    ]), 'fornecedor-uuid', 'tenant-a');
+
+    expect(result).toMatchObject({ criados: 0, rejeitados: 1 });
+    expect(result.erros[0].erro).toBe('Quantidade inválida.');
+  });
+
+  it('usa 1 em produto novo e mantém valor existente quando quantidade está vazia', async () => {
+    const novo = makeManager();
+    await buildService(novo.manager).importFromFile(buildCsvFile([
+      'codigo;descricao;quantidade',
+      'NOVO;Produto novo;',
+    ]), 'fornecedor-uuid', 'tenant-a');
+    expect(novo.saved[0].quantidade).toBe(1);
+
+    const existente = makeManager([{ codigo: 'EXISTE', fornecedor_id: 42, quantidade: 8 }]);
+    await buildService(existente.manager).importFromFile(buildCsvFile([
+      'codigo;descricao;quantidade',
+      'EXISTE;Produto atualizado;',
+    ]), 'fornecedor-uuid', 'tenant-a');
+    expect(existente.saved[0].quantidade).toBe(8);
   });
 });
 
@@ -412,6 +450,34 @@ describe('ProductsService#create/#update — ipi_perc', () => {
     });
     await service.update('p1', { ipi_perc: 18.5 } as any, 'tenant1');
     expect(saved[0].ipi_perc).toBe('18.50');
+  });
+});
+
+describe('ProductsService#create/#update — quantidade', () => {
+  it('usa quantidade 1 quando omitida na criação', async () => {
+    const { service, saved } = buildServiceWithRepo();
+    await service.create(
+      { uuid: 'p1', fornecedor_uuid: 'f1', descricao: 'Produto' } as any,
+      'tenant1',
+    );
+    expect(saved[0].quantidade).toBe(1);
+  });
+
+  it('grava quantidade informada na criação', async () => {
+    const { service, saved } = buildServiceWithRepo();
+    await service.create(
+      { uuid: 'p1', fornecedor_uuid: 'f1', descricao: 'Produto', quantidade: 7 } as any,
+      'tenant1',
+    );
+    expect(saved[0].quantidade).toBe(7);
+  });
+
+  it('atualiza quantidade de produto existente', async () => {
+    const { service, saved } = buildServiceWithRepo({
+      existing: { id: 7, uuid: 'p1', tenant_id: 'tenant1', quantidade: 3 },
+    });
+    await service.update('p1', { quantidade: 9 } as any, 'tenant1');
+    expect(saved[0].quantidade).toBe(9);
   });
 });
 
