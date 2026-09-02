@@ -15,6 +15,7 @@ type FormFields = {
   descricao: string;
   preco_base: string;
   ipi_perc: string;
+  quantidade: string;
   fornecedor_uuid: string;
   fornecedor_label: string;
 };
@@ -24,6 +25,7 @@ const empty: FormFields = {
   descricao: '',
   preco_base: '',
   ipi_perc: '',
+  quantidade: '1',
   fornecedor_uuid: '',
   fornecedor_label: '',
 };
@@ -34,6 +36,7 @@ function toFields(p: Product): FormFields {
     descricao: p.descricao,
     preco_base: p.preco_base != null ? String(p.preco_base) : '',
     ipi_perc: p.ipi_perc != null ? String(p.ipi_perc) : '',
+    quantidade: String(p.quantidade ?? 1),
     fornecedor_uuid: p.fornecedor?.uuid ?? '',
     fornecedor_label: p.fornecedor?.razao_social ?? '',
   };
@@ -114,6 +117,7 @@ export default function ProdutoForm() {
       descricao: form.descricao.trim(),
       preco_base: form.preco_base !== '' ? Number(form.preco_base) : null,
       ipi_perc: form.ipi_perc !== '' ? Number(form.ipi_perc) : null,
+      quantidade: Number(form.quantidade),
       fornecedor_uuid: form.fornecedor_uuid,
     };
 
@@ -222,6 +226,23 @@ export default function ProdutoForm() {
               value={form.descricao}
               onChange={handleChange}
               placeholder='Descrição do produto'
+              required
+              className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+            />
+          </div>
+
+          <div className='flex flex-col gap-1'>
+            <label htmlFor='produto-quantidade' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+              Quantidade <span className='text-red-500'>*</span>
+            </label>
+            <input
+              type='number'
+              id='produto-quantidade'
+              name='quantidade'
+              value={form.quantidade}
+              onChange={handleChange}
+              min={0}
+              step={1}
               required
               className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
             />

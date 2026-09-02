@@ -99,6 +99,11 @@ export default function Produtos() {
       cell: (row: Product) => row.fornecedor?.razao_social ?? '—',
     },
     {
+      key: 'quantidade',
+      header: 'Quantidade',
+      cell: (row: Product) => row.quantidade,
+    },
+    {
       key: 'preco_base',
       header: 'Preço Base',
       // preco_base é nullable no modelo de dados

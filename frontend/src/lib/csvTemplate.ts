@@ -9,7 +9,7 @@ export const CSV_TEMPLATE_HEADERS = {
   transporte: 'razao_social;cnpj;telefone;endereco_completo',
   clientes:
     'razao_social;cnpj;email;tel;endereco;numero;complemento;bairro;cidade;uf;cep;contato;inscricao_estadual;pgt_padrao;prazo;local_entrega;observacao;transportadora_cnpj',
-  produtos: 'codigo;descricao;preco_base;ipi_perc;foto',
+  produtos: 'codigo;descricao;preco_base;ipi_perc;quantidade;foto',
 } as const;
 
 /**

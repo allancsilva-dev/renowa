@@ -200,6 +200,7 @@ export interface Product {
   descricao: string;
   preco_base: string | null;
   ipi_perc: string | null;
+  quantidade: number;
   fornecedor?: Supplier | null;
 }
 

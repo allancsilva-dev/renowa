@@ -85,6 +85,17 @@ describe('ProdutoForm — criação com foto', () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/produtos'));
     expect(chamada(0)).toMatchObject({ jaCriado: false });
     expect(chamada(0).uuid).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(chamada(0).payload.quantidade).toBe(1);
+  });
+
+  it('permite alterar quantidade enviada no cadastro', async () => {
+    const salvar = await preencher();
+    fireEvent.change(screen.getByLabelText(/Quantidade/), { target: { value: '6' } });
+
+    fireEvent.click(salvar);
+
+    await waitFor(() => expect(salvarProdutoNovo).toHaveBeenCalledTimes(1));
+    expect(chamada(0).payload.quantidade).toBe(6);
   });
 
   it('foto falhando: avisa que o produto foi salvo e não navega', async () => {
