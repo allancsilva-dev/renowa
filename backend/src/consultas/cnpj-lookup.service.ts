@@ -9,7 +9,7 @@ const BRASIL_API_TIMEOUT_MS = 5_000;
 // isso a mesma URL devolve 200 no curl e 403 na aplicação, e a consulta nunca
 // funcionou até esta correção. Não remover estes headers.
 const BRASIL_API_HEADERS = {
-  'User-Agent': 'Renowa/1.0 (+https://renowa.zonadev.tech)',
+  'User-Agent': 'Renowa/1.0 (+https://renowa.nexostech.com.br)',
   Accept: 'application/json',
 } as const;
 
