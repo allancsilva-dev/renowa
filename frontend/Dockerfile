@@ -23,6 +23,7 @@ RUN npm run build --workspace=shared && npm run build --workspace=frontend
 FROM nginx:alpine AS production
 
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 
 EXPOSE 80
