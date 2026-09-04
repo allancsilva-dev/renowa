@@ -36,7 +36,7 @@ NODE_ENV=production
 PORT=3000
 TRUST_PROXY=172.30.0.2/32
 DATABASE_URL=postgresql://renowa:<senha-forte-nova>@db:5432/renowa
-CORS_ORIGIN=https://renowa.zonadev.tech
+CORS_ORIGIN=https://renowa.nexostech.com.br
 RENOWA_AT_SECRET=<openssl rand -base64 48>
 RENOWA_JWT_SECRET=<outro openssl rand -base64 48>
 ```
@@ -102,7 +102,7 @@ O banco novo sobe vazio e **nao ha cadastro publico** — nenhuma rota cria tena
 
 ## Nginx Proxy Manager
 
-- Proxy Host: `renowa.zonadev.tech`
+- Proxy Host: `renowa.nexostech.com.br`
 - Forward Hostname/IP: `Renowa-Web`
 - Forward Port: `80`
 - Websockets: off
@@ -116,11 +116,25 @@ O container do NPM deve participar da rede externa `proxy`. Nao publicar nem cri
 
 ```bash
 docker exec Renowa-API wget -qO- http://localhost:3000/api/health/ready   # toca o banco
-docker exec Renowa-Web wget -qO- --header='X-Real-IP: 127.0.0.1' --header='X-Forwarded-Proto: https' http://localhost/api/health
-curl -fsS https://renowa.zonadev.tech/api/health
+docker exec Renowa-Web wget -qO- --header='X-Real-IP: 127.0.0.1' --header='X-Forwarded-Proto: https' http://127.0.0.1/api/health
+curl -fsS https://renowa.nexostech.com.br/api/health
 ```
 
 `/api/health` responde mesmo com o banco fora; `/api/health/ready` e o que prova a conexao. O healthcheck do compose usa `ready`.
+
+Dentro do `Renowa-Web`, use `127.0.0.1` e nao `localhost`: o nginx escuta so em IPv4 (`listen 80`), o `localhost` da imagem alpine resolve `::1` primeiro e o wget devolve `can't connect to remote host: Connection refused` — falha de resolucao, nao de saude.
+
+## Cache do frontend
+
+O `index.html` sai com `Cache-Control: no-cache` (revalida via ETag, 304 barato) e `/assets/` com `public, immutable` por 1 ano. A combinacao e obrigatoria: os assets tem hash de conteudo no nome, entao o `index.html` e a unica coisa que aponta para o build novo. Se ele for cacheado sem revalidar, o browser continua servindo o bundle antigo do cache imutavel e **o deploy nao aparece, mesmo com os containers corretos no ar**.
+
+Imagens construidas antes de 2026-09-04 nao tinham o `no-cache` no `index.html`. Quem acessou o sistema antes dessa data pode ter uma copia velha presa no cache e precisa de um hard reload (Ctrl+Shift+R) uma unica vez; depois disso a revalidacao passa a funcionar sozinha.
+
+Verificacao apos o deploy — o `last-modified` tem que bater com o horario do build:
+
+```bash
+curl -sSI https://renowa.nexostech.com.br/ | grep -iE 'cache-control|last-modified'
+```
 
 ## Rollback
 
@@ -159,3 +173,4 @@ cd backups && sha256sum -c renowa-<timestamp>.dump.sha256 && cd ..
 - A API falha no bootstrap de producao se `TRUST_PROXY` estiver ausente ou amplo, e se `CORS_ORIGIN` ou `REDIS_URL` faltarem. Isso e proposital.
 - **Migrations rodam no boot**, e `restart: unless-stopped` esta ligado: migration que falha vira crash loop. Se o container reiniciar em loop, leia `docker logs Renowa-API` antes de qualquer outra coisa — a causa costuma estar na primeira falha, nao na ultima.
 - **Paridade de versao do Postgres:** dev roda 15, producao fixa `postgres:16-alpine` (BACKLOG-0036). O ensaio de banco vazio desta rodada foi feito contra a 16.
+- **`RENOWA_VERSION` nao esta no `.env` da producao (estado em 2026-09-04).** Sem ela o compose cai no default `latest` e todo deploy sobrescreve a mesma tag: as imagens no ar sao `renowa-api:latest` e `renowa-web:latest`, e **nao existe artefato da versao anterior para voltar**. O rollback documentado acima so passa a funcionar depois de um deploy que exporte a variavel. Faca isso no proximo: `export RENOWA_VERSION=$(git rev-parse --short HEAD)` antes do `build`.

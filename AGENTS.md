@@ -89,6 +89,6 @@ Toda execução **termina em `p14`** e depois confirma que não sobrou nada, bus
 
 ### Limites
 
-- **Nunca rode contra o sistema publicado sem autorização explícita do usuário na tarefa.** Preenchimento de todos os campos cria registros reais no tenant alugado. Hoje `renowa.zonadev.tech` é inalcançável de qualquer forma: a porta 443 aceita conexão e o TLS recusa o nome (`tlsv1 unrecognized name`).
+- **Nunca rode contra o sistema publicado sem autorização explícita do usuário na tarefa.** Preenchimento de todos os campos cria registros reais no tenant alugado. O domínio publicado é `renowa.nexostech.com.br` e ele **está no ar** (verificado em 2026-09-04) — a barreira é só a autorização, não a rede. `renowa.zonadev.tech` é um nome antigo: resolve para o mesmo IP, mas o Nginx Proxy Manager não tem proxy host para ele e devolve a página `Default Site` em HTTP e `tlsv1 unrecognized name` em HTTPS.
 - **Não teste `/login`**: derruba a sessão que a suíte usa.
 - A suíte prova conteúdo, número e comportamento. Layout, espaçamento e legibilidade continuam sendo inspeção humana — não afirme julgamento visual a partir dela.
