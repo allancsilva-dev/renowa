@@ -111,6 +111,8 @@ export interface OrderItem {
   produto_id: number | null;
   /** Presente somente quando a API resolve o join (ex.: GET /pedidos/:uuid). */
   produto?: Product | null;
+  /** Metadados da foto específica; bytes nunca fazem parte deste payload. */
+  foto_especifica?: ProductPhoto | null;
   codigo_manual: string | null;
   descricao_manual: string | null;
   qtd_caixas: string | null;

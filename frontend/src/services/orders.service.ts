@@ -36,6 +36,12 @@ export async function saveOrder(payload: Record<string, unknown>, uuid?: string)
   return response.data.data;
 }
 
+/** Cria novo pedido interno e copia, no servidor, fotos específicas do pedido fonte. */
+export async function duplicateOrder(sourceUuid: string, payload: Record<string, unknown>): Promise<Order> {
+  const { data } = await api.post<ApiResponse<Order>>(`/pedidos/${sourceUuid}/duplicar`, payload);
+  return data.data;
+}
+
 /**
  * Pedido externo tem rota própria: o corpo é outro (sem itens, com número de
  * origem, sistema e valor). O backend recusa com 409 se a rota não bater com a

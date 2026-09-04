@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
-import { fetchOrder, liberarOrder, saveOrder } from '@/services/orders.service';
+import { duplicateOrder, fetchOrder, liberarOrder, saveOrder } from '@/services/orders.service';
 import { fetchClients } from '@/services/clients.service';
 import { orderStatusLabel, orderStatusColor, type Order, type OrderStatus, type Product, type Supplier, type Transport } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
@@ -35,6 +35,7 @@ type ItemForm = {
    */
   precisa_produto: boolean;
   foto: File | null; fotoPreview: string | null; fotoVersion: number | null;
+  fotoOrigemItemUuid: string | null;
 };
 
 type TenantUser = { authUserId: string; name: string; active: boolean };
@@ -50,27 +51,30 @@ const newItem = (): ItemForm => ({
   qtd_caixas: '1', qtd_unitaria: '1', preco_unitario: null, desconto_perc: '0', ipi_perc: '0',
   precisa_produto: false,
   foto: null, fotoPreview: null, fotoVersion: null,
+  fotoOrigemItemUuid: null,
 });
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const inputClass = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 disabled:bg-slate-50 disabled:text-slate-400';
 const labelClass = 'text-xs font-semibold text-slate-600';
 
-function orderToForm(order: Order): { header: HeaderForm; items: ItemForm[] } {
+function orderToForm(order: Order, duplicating = false): { header: HeaderForm; items: ItemForm[] } {
   return {
     header: {
-      data: order.data ?? '', cliente_uuid: order.cliente?.uuid ?? '', vendedor_uuid: order.vendedor?.uuid ?? '',
-      fornecedor_uuid: order.fornecedor?.uuid ?? '', transportadora_uuid: order.transportadora?.uuid ?? '',
-      status: order.status, pgt: order.pgt ?? '', prazo: order.prazo ?? '', local_entrega: order.local_entrega ?? '',
+      data: duplicating ? new Date().toISOString().slice(0, 10) : order.data ?? '',
+      cliente_uuid: duplicating ? '' : order.cliente?.uuid ?? '', vendedor_uuid: order.vendedor?.uuid ?? '',
+      fornecedor_uuid: order.fornecedor?.uuid ?? '', transportadora_uuid: duplicating ? '' : order.transportadora?.uuid ?? '',
+      status: duplicating ? 'em_aberto' : order.status, pgt: duplicating ? '' : order.pgt ?? '', prazo: order.prazo ?? '', local_entrega: duplicating ? '' : order.local_entrega ?? '',
       tipo_faturamento: order.tipo_faturamento ?? '', observacao: order.observacao ?? '',
     },
     items: order.itens.map((item) => ({
-      uuid: item.uuid, produto_uuid: item.produto?.uuid ?? '', codigo_manual: item.codigo_manual ?? item.produto?.codigo ?? '',
+      uuid: duplicating ? crypto.randomUUID() : item.uuid, produto_uuid: item.produto?.uuid ?? '', codigo_manual: item.codigo_manual ?? item.produto?.codigo ?? '',
       descricao_manual: item.descricao_manual ?? item.produto?.descricao ?? '', qtd_caixas: item.qtd_caixas ?? '0',
       qtd_unitaria: item.qtd_unitaria ?? '0', preco_unitario: item.preco_unitario == null ? null : Number(item.preco_unitario),
       desconto_perc: item.desconto_perc ?? '0', ipi_perc: item.ipi_perc ?? '0',
       precisa_produto: false,
       foto: null, fotoPreview: null, fotoVersion: null,
+      fotoOrigemItemUuid: duplicating && item.foto_especifica ? item.uuid : null,
     })),
   };
 }
@@ -89,6 +93,8 @@ function clientFetcher(search: string, page: number): Promise<AsyncComboboxFetch
 
 export default function PedidoForm() {
   const { uuid } = useParams<{ uuid: string }>();
+  const [searchParams] = useSearchParams();
+  const duplicateSourceUuid = uuid ? null : searchParams.get('duplicar');
   const navigate = useNavigate();
   const { hasAnyRole, hasPermission } = useAuth();
   const canChooseVendor = hasAnyRole(['ADMIN', 'GESTAO']);
@@ -114,25 +120,31 @@ export default function PedidoForm() {
       fetchAllPages<Supplier>('/fornecedores'),
       fetchAllPages<Transport>('/transportadoras'),
       canChooseVendor ? fetchAllPages<TenantUser>('/users').catch(() => null) : Promise.resolve(null),
-      uuid ? fetchOrder(uuid) : Promise.resolve(null),
+      (uuid ?? duplicateSourceUuid) ? fetchOrder((uuid ?? duplicateSourceUuid)!) : Promise.resolve(null),
     ]).then(([suppliers, transports, vendorUsers, order]) => {
       if (!active) return;
       setSuppliers(suppliers); setTransports(transports);
       setUsers(vendorUsers?.filter((entry) => entry.active) ?? []);
       if (order) {
-        const mapped = orderToForm(order); setHeader(mapped.header); setItems(mapped.items.length ? mapped.items : [newItem()]);
-        setVersion(order.version); setClienteLabel(order.cliente?.razao_social ?? '');
-        void Promise.all(mapped.items.map(async (item) => {
-          const metadata = await fetchOrderItemPhoto(order.uuid, item.uuid);
-          if (!metadata) return;
-          const preview = await fetchOrderItemPhotoDataUrl(order.uuid, item.uuid);
-          if (active) updateItemPhotoState(item.uuid, { fotoPreview: preview, fotoVersion: metadata.version });
-        })).catch(() => undefined);
+        if (duplicateSourceUuid && (order.origem ?? 'interno') !== 'interno') {
+          setError('Somente pedido interno pode ser duplicado nesta tela.');
+          return;
+        }
+        const mapped = orderToForm(order, Boolean(duplicateSourceUuid)); setHeader(mapped.header); setItems(mapped.items.length ? mapped.items : [newItem()]);
+        setVersion(duplicateSourceUuid ? null : order.version); setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
+        if (!duplicateSourceUuid) {
+          void Promise.all(mapped.items.map(async (item) => {
+            const metadata = await fetchOrderItemPhoto(order.uuid, item.uuid);
+            if (!metadata) return;
+            const preview = await fetchOrderItemPhotoDataUrl(order.uuid, item.uuid);
+            if (active) updateItemPhotoState(item.uuid, { fotoPreview: preview, fotoVersion: metadata.version });
+          })).catch(() => undefined);
+        }
       }
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
       .finally(() => { if (active) setFetching(false); });
     return () => { active = false; };
-  }, [canChooseVendor, uuid]);
+  }, [canChooseVendor, duplicateSourceUuid, uuid]);
 
   useEffect(() => {
     if (!header.fornecedor_uuid) { setProducts([]); return; }
@@ -202,6 +214,10 @@ export default function PedidoForm() {
   }
 
   function addItem() {
+    if (items.length >= 200) {
+      setError('O pedido permite no máximo 200 itens.');
+      return;
+    }
     setItems((current) => [...current, newItem()]);
   }
 
@@ -243,7 +259,7 @@ export default function PedidoForm() {
       if ((uuid ?? persistedUuid) && item.fotoVersion != null) {
         await deleteOrderItemPhoto((uuid ?? persistedUuid)!, item.uuid, item.fotoVersion);
       }
-      updateItemPhotoState(item.uuid, { foto: null, fotoPreview: null, fotoVersion: null });
+      updateItemPhotoState(item.uuid, { foto: null, fotoPreview: null, fotoVersion: null, fotoOrigemItemUuid: null });
     } catch (reason) { setError(getApiErrorMessage(reason)); }
   }
 
@@ -290,12 +306,16 @@ export default function PedidoForm() {
         qtd_unitaria: Number(item.qtd_unitaria || 0), preco_unitario: item.preco_unitario ?? 0,
         desconto_perc: Number(item.desconto_perc || 0),
         ipi_perc: Number(item.ipi_perc || 0),
+        ...(item.fotoOrigemItemUuid ? { foto_origem_item_uuid: item.fotoOrigemItemUuid } : {}),
       })),
       ...((isEdit || persistedUuid) ? { version } : {}),
     };
     try {
-      const saved = await saveOrder(payload, uuid ?? persistedUuid ?? undefined);
+      const saved = duplicateSourceUuid && !persistedUuid
+        ? await duplicateOrder(duplicateSourceUuid, payload)
+        : await saveOrder(payload, uuid ?? persistedUuid ?? undefined);
       setPersistedUuid(saved.uuid); setVersion(saved.version);
+      setItems((current) => current.map((item) => ({ ...item, fotoOrigemItemUuid: null })));
       const uploads = await Promise.allSettled(items.filter((item) => item.foto).map(async (item) => {
         const metadata = await uploadOrderItemPhoto(saved.uuid, item.uuid, item.foto!);
         updateItemPhotoState(item.uuid, { foto: null, fotoVersion: metadata.version });
@@ -315,7 +335,7 @@ export default function PedidoForm() {
   return (
     <form onSubmit={submit} className='mx-auto max-w-6xl space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
-        <div><h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido' : 'Novo pedido'}</h1>
+        <div><h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido' : duplicateSourceUuid ? 'Duplicar pedido' : 'Novo pedido'}</h1>
           <p className='mt-1 text-sm text-slate-600'>O servidor recalcula quantidades, descontos, IPI e totais ao salvar.</p></div>
         {isEdit && (
           <div className='flex items-center gap-2'>
@@ -404,6 +424,7 @@ export default function PedidoForm() {
             <OrderItemPhotoField
               index={index}
               fotoPreview={item.fotoPreview}
+              willCopy={Boolean(item.fotoOrigemItemUuid)}
               locked={locked}
               onChoose={(file) => chooseItemPhoto(item.uuid, file)}
               onRemove={() => void removeItemPhoto(item)}

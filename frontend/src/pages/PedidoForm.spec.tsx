@@ -12,12 +12,15 @@ import PedidoForm from './PedidoForm';
  */
 
 const saveOrder = vi.fn();
+const duplicateOrder = vi.fn();
 const fetchOrder = vi.fn();
 const fetchAllPages = vi.fn();
+const routerSearch = vi.hoisted(() => ({ value: '' }));
 
 vi.mock('@/services/orders.service', () => ({
   fetchOrder: (...args: unknown[]) => fetchOrder(...args),
   saveOrder: (...args: unknown[]) => saveOrder(...args),
+  duplicateOrder: (...args: unknown[]) => duplicateOrder(...args),
   liberarOrder: vi.fn(),
 }));
 vi.mock('@/services/clients.service', () => ({
@@ -33,6 +36,7 @@ vi.mock('@/hooks/useAuth', () => ({
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useParams: () => ({}),
+  useSearchParams: () => [new URLSearchParams(routerSearch.value)],
 }));
 
 const FORNECEDOR_A = { uuid: 'forn-a', razao_social: 'Fornecedor A' };
@@ -41,11 +45,49 @@ const PRODUTO_A = { uuid: 'prod-a', codigo: 'AAA-1', descricao: 'Produto A', pre
 const PRODUTO_B = { uuid: 'prod-b', codigo: 'BBB-1', descricao: 'Produto B', preco_base: '30.00', ipi_perc: '5' };
 
 beforeEach(() => {
+  routerSearch.value = '';
   // `products` é recarregado por fornecedor; os demais recursos são fixos.
   fetchAllPages.mockImplementation(async (path: string, params?: { fornecedor_uuid?: string }) => {
     if (path === '/fornecedores') return [FORNECEDOR_A, FORNECEDOR_B];
     if (path === '/produtos') return params?.fornecedor_uuid === 'forn-b' ? [PRODUTO_B] : [PRODUTO_A];
     return [];
+  });
+});
+
+describe('PedidoForm — duplicação', () => {
+  it('limpa cliente, cria UUID novo e envia vínculo seguro da foto fonte', async () => {
+    routerSearch.value = 'duplicar=pedido-fonte';
+    fetchOrder.mockResolvedValue({
+      uuid: 'pedido-fonte', version: 7, origem: 'interno', status: 'faturado', data: '2025-01-01',
+      cliente: { uuid: 'cliente-antigo', razao_social: 'Cliente Antigo' },
+      vendedor: null, fornecedor: FORNECEDOR_A, transportadora: { uuid: 'transporte-antigo' },
+      pgt: 'ANTIGO', prazo: '30 dias', local_entrega: 'Endereço antigo', tipo_faturamento: 'Total', observacao: 'Copiar',
+      itens: [{
+        uuid: '11111111-1111-4111-8111-111111111111', produto: PRODUTO_A,
+        foto_especifica: { uuid: 'foto-1', version: 1 },
+        codigo_manual: 'AAA-1', descricao_manual: 'Produto A', qtd_caixas: '2', qtd_unitaria: '3',
+        preco_unitario: '25.50', desconto_perc: '5', ipi_perc: '10',
+      }],
+    });
+    duplicateOrder.mockResolvedValue({ uuid: 'pedido-novo', version: 1 });
+
+    await montar();
+
+    expect(screen.getByRole('heading', { name: 'Duplicar pedido' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Cliente' })).toHaveValue('');
+    expect(screen.getByLabelText(/Transportadora/)).toHaveValue('');
+    expect(screen.getByText('Foto do pedido original será copiada')).toBeInTheDocument();
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Cliente Um' }));
+    fireEvent.submit(screen.getByRole('button', { name: 'Salvar pedido' }).closest('form')!);
+
+    await waitFor(() => expect(duplicateOrder).toHaveBeenCalled());
+    const [sourceUuid, payload] = duplicateOrder.mock.calls[0];
+    expect(sourceUuid).toBe('pedido-fonte');
+    expect(payload).toMatchObject({ cliente_uuid: 'cli-1', pgt: null, local_entrega: null, transportadora_uuid: null });
+    expect(payload.itens[0]).toMatchObject({ foto_origem_item_uuid: '11111111-1111-4111-8111-111111111111' });
+    expect(payload.itens[0].uuid).not.toBe('11111111-1111-4111-8111-111111111111');
   });
 });
 

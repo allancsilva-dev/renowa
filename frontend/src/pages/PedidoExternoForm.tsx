@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchOrder, liberarOrder, saveExternalOrder } from '@/services/orders.service';
@@ -39,14 +39,15 @@ const emptyForm: ExternalForm = {
 const inputClass = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 disabled:bg-slate-50 disabled:text-slate-400';
 const labelClass = 'text-xs font-semibold text-slate-600';
 
-function orderToForm(order: Order): ExternalForm {
+function orderToForm(order: Order, duplicating = false): ExternalForm {
   return {
-    data: order.data ?? '', cliente_uuid: order.cliente?.uuid ?? '', vendedor_uuid: order.vendedor?.uuid ?? '',
-    fornecedor_uuid: order.fornecedor?.uuid ?? '', transportadora_uuid: order.transportadora?.uuid ?? '',
-    status: order.status, numero_pedido_externo: order.numero_pedido_externo ?? '',
+    data: duplicating ? new Date().toISOString().slice(0, 10) : order.data ?? '',
+    cliente_uuid: duplicating ? '' : order.cliente?.uuid ?? '', vendedor_uuid: order.vendedor?.uuid ?? '',
+    fornecedor_uuid: order.fornecedor?.uuid ?? '', transportadora_uuid: duplicating ? '' : order.transportadora?.uuid ?? '',
+    status: duplicating ? 'em_aberto' : order.status, numero_pedido_externo: duplicating ? '' : order.numero_pedido_externo ?? '',
     sistema_origem: order.sistema_origem ?? '',
     valor: order.total_com_imposto == null ? null : Number(order.total_com_imposto),
-    pgt: order.pgt ?? '', prazo: order.prazo ?? '', local_entrega: order.local_entrega ?? '',
+    pgt: duplicating ? '' : order.pgt ?? '', prazo: order.prazo ?? '', local_entrega: duplicating ? '' : order.local_entrega ?? '',
     tipo_faturamento: order.tipo_faturamento ?? '', observacao: order.observacao ?? '',
   };
 }
@@ -65,6 +66,8 @@ function clientFetcher(search: string, page: number): Promise<AsyncComboboxFetch
 
 export default function PedidoExternoForm() {
   const { uuid } = useParams<{ uuid: string }>();
+  const [searchParams] = useSearchParams();
+  const duplicateSourceUuid = uuid ? null : searchParams.get('duplicar');
   const navigate = useNavigate();
   const { hasAnyRole, hasPermission } = useAuth();
   const canChooseVendor = hasAnyRole(['ADMIN', 'GESTAO']);
@@ -87,20 +90,24 @@ export default function PedidoExternoForm() {
       fetchAllPages<Supplier>('/fornecedores'),
       fetchAllPages<Transport>('/transportadoras'),
       canChooseVendor ? fetchAllPages<TenantUser>('/users').catch(() => null) : Promise.resolve(null),
-      uuid ? fetchOrder(uuid) : Promise.resolve(null),
+      (uuid ?? duplicateSourceUuid) ? fetchOrder((uuid ?? duplicateSourceUuid)!) : Promise.resolve(null),
     ]).then(([suppliers, transports, vendorUsers, order]) => {
       if (!active) return;
       setSuppliers(suppliers); setTransports(transports);
       setUsers(vendorUsers?.filter((entry) => entry.active) ?? []);
       if (order) {
-        setForm(orderToForm(order));
-        setVersion(order.version);
-        setClienteLabel(order.cliente?.razao_social ?? '');
+        if (duplicateSourceUuid && (order.origem ?? 'interno') !== 'externo') {
+          setError('Somente pedido externo pode ser duplicado nesta tela.');
+          return;
+        }
+        setForm(orderToForm(order, Boolean(duplicateSourceUuid)));
+        setVersion(duplicateSourceUuid ? null : order.version);
+        setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
       }
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
       .finally(() => { if (active) setFetching(false); });
     return () => { active = false; };
-  }, [canChooseVendor, uuid]);
+  }, [canChooseVendor, duplicateSourceUuid, uuid]);
 
   // Mesma regra do pedido interno: liberado (ou além) trava a edição. O backend
   // já devolve 409; aqui só evitamos que o usuário preencha em vão.
@@ -170,7 +177,7 @@ export default function PedidoExternoForm() {
     <form onSubmit={submit} className='mx-auto max-w-4xl space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div>
-          <h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido externo' : 'Novo pedido externo'}</h1>
+          <h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido externo' : duplicateSourceUuid ? 'Duplicar pedido externo' : 'Novo pedido externo'}</h1>
           <p className='mt-1 text-sm text-slate-600'>
             Pedido digitado em outro sistema. Liberação, faturamento e comissão seguem o mesmo fluxo do pedido interno.
           </p>
