@@ -123,6 +123,10 @@ export default function SacForm() {
     setClienteLabel(option?.label ?? '');
   }
 
+  function addItem() {
+    setItems((current) => [...current, newItem()]);
+  }
+
   function updateItem(itemUuid: string, patch: Partial<ItemForm>) {
     setItems((current) => current.map((item) => item.uuid === itemUuid ? { ...item, ...patch } : item));
   }
@@ -223,9 +227,7 @@ export default function SacForm() {
       <section className='rounded-lg border border-slate-200 bg-white p-5 shadow-sm'>
         <div className='mb-4 flex items-center justify-between'>
           <h2 className='text-lg font-semibold text-slate-900'>Itens</h2>
-          <button type='button' disabled={locked} onClick={() => setItems((current) => [...current, newItem()])} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40'>
-            <Plus className='h-4 w-4' />Adicionar linha
-          </button>
+          {items.length === 1 && <AddItemButton disabled={locked} onClick={addItem} />}
         </div>
         <div className='space-y-4'>
           {items.map((item, index) => {
@@ -270,6 +272,7 @@ export default function SacForm() {
             <strong className='text-lg text-slate-900'>{BRL.format(moneyForDisplay(total))}</strong>
           </div>
         </div>
+        {items.length > 1 && <div className='mt-4 flex justify-end'><AddItemButton disabled={locked} onClick={addItem} /></div>}
       </section>
 
       <div className='flex justify-end gap-3'>
@@ -278,4 +281,10 @@ export default function SacForm() {
       </div>
     </form>
   );
+}
+
+function AddItemButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+  return <button type='button' disabled={disabled} onClick={onClick} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40'>
+    <Plus className='h-4 w-4' />Adicionar linha
+  </button>;
 }
