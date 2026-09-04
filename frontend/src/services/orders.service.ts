@@ -42,6 +42,10 @@ export async function duplicateOrder(sourceUuid: string, payload: Record<string,
   return data.data;
 }
 
+export async function deleteOrder(uuid: string, version: number): Promise<void> {
+  await api.delete(`/pedidos/${uuid}`, { params: { version } });
+}
+
 /**
  * Pedido externo tem rota própria: o corpo é outro (sem itens, com número de
  * origem, sistema e valor). O backend recusa com 409 se a rota não bater com a

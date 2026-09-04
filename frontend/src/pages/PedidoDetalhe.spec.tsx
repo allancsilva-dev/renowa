@@ -9,12 +9,16 @@ const mocks = vi.hoisted(() => ({
   fetchOrder: vi.fn(),
   fetchFotos: vi.fn(),
   toBlob: vi.fn(),
+  deleteOrder: vi.fn(),
+  navigate: vi.fn(),
+  permissions: new Set<string>(),
 }));
 
 vi.mock('@/services/orders.service', () => ({
   fetchOrder: mocks.fetchOrder,
   liberarOrder: vi.fn(),
   updateOrderStatus: vi.fn(),
+  deleteOrder: (...args: unknown[]) => mocks.deleteOrder(...args),
 }));
 vi.mock('@/services/productPhotos.service', async () => {
   const real = await vi.importActual<typeof import('@/services/productPhotos.service')>(
@@ -26,9 +30,9 @@ vi.mock('@react-pdf/renderer', async (importOriginal) => ({
   ...await importOriginal<typeof import('@react-pdf/renderer')>(),
   pdf: () => ({ toBlob: mocks.toBlob }),
 }));
-vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ hasPermission: () => false }) }));
+vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ hasPermission: (permission: string) => mocks.permissions.has(permission) }) }));
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mocks.navigate,
   useParams: () => ({ uuid: 'pedido-uuid' }),
 }));
 
@@ -51,6 +55,8 @@ beforeEach(() => {
   mocks.fetchOrder.mockResolvedValue(pedido);
   mocks.fetchFotos.mockResolvedValue({});
   mocks.toBlob.mockResolvedValue(new Blob(['%PDF teste'], { type: 'application/pdf' }));
+  mocks.deleteOrder.mockResolvedValue(undefined);
+  mocks.permissions.clear();
   vi.stubGlobal('URL', {
     ...URL,
     createObjectURL: vi.fn(() => 'blob:pedido-pdf'),
@@ -63,6 +69,7 @@ afterEach(() => {
   vi.useRealTimers();
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -135,5 +142,49 @@ describe('PedidoDetalhe — geração do PDF', () => {
     expect(preview.close).toHaveBeenCalledOnce();
     expect(anchorClick).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent(/demorou mais de um minuto/i);
+  });
+});
+
+describe('PedidoDetalhe — exclusão', () => {
+  it('exige permissão, confirma e envia a versão atual', async () => {
+    mocks.permissions.add('pedidos.deletar');
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await abrirTela();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir pedido' }));
+
+    await waitFor(() => expect(mocks.deleteOrder).toHaveBeenCalledWith('pedido-uuid', 1));
+    expect(mocks.navigate).toHaveBeenCalledWith('/pedidos', { replace: true });
+  });
+
+  it('não mostra exclusão sem pedidos.deletar', async () => {
+    await abrirTela();
+    expect(screen.queryByRole('button', { name: 'Excluir pedido' })).not.toBeInTheDocument();
+  });
+
+  it('não envia request quando confirmação é recusada', async () => {
+    mocks.permissions.add('pedidos.deletar');
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await abrirTela();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir pedido' }));
+
+    expect(mocks.deleteOrder).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('mantém pedido na tela e mostra bloqueio por nota fiscal ativa', async () => {
+    mocks.permissions.add('pedidos.deletar');
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mocks.deleteOrder.mockRejectedValueOnce({
+      response: { status: 409, data: { error: { message: 'Pedido possui notas fiscais ativas e não pode ser excluído.' } } },
+    });
+    await abrirTela();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Excluir pedido' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pedido possui notas fiscais ativas e não pode ser excluído.');
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Excluir pedido' })).toBeEnabled();
   });
 });

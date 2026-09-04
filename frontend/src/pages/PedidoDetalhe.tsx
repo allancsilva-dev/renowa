@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, FileDown, Pencil, Unlock, XCircle } from 'lucide-react';
+import { ArrowLeft, FileDown, Pencil, Trash2, Unlock, XCircle } from 'lucide-react';
 import { pdf } from '@react-pdf/renderer';
-import { fetchOrder, liberarOrder, updateOrderStatus } from '@/services/orders.service';
+import { deleteOrder, fetchOrder, liberarOrder, updateOrderStatus } from '@/services/orders.service';
 import { orderStatusLabel, orderStatusColor, type Order } from '@/types';
 import { moneyForDisplay, qtyForDisplay } from '@/lib/decimal';
 import { getApiErrorMessage } from '@/lib/errors';
@@ -32,6 +32,7 @@ export default function PedidoDetalhe() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [pdfWarning, setPdfWarning] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(() => {
     if (!uuid) return;
@@ -46,7 +47,7 @@ export default function PedidoDetalhe() {
   useEffect(() => { load(); }, [load]);
 
   async function handleLiberar() {
-    if (!order || !uuid) return;
+    if (!order || !uuid || deleting) return;
     setStatusSaving(true);
     setStatusError(null);
     try {
@@ -60,7 +61,7 @@ export default function PedidoDetalhe() {
   }
 
   async function handleCancelar() {
-    if (!order || !uuid) return;
+    if (!order || !uuid || deleting) return;
     if (!window.confirm('Cancelar este pedido? Essa ação não pode ser desfeita.')) return;
     setStatusSaving(true);
     setStatusError(null);
@@ -74,8 +75,22 @@ export default function PedidoDetalhe() {
     }
   }
 
+  async function handleExcluir() {
+    if (!order || !uuid) return;
+    if (!window.confirm('Excluir este pedido? Ele deixará de existir no sistema. Essa ação não pode ser desfeita.')) return;
+    setDeleting(true);
+    setStatusError(null);
+    try {
+      await deleteOrder(uuid, order.version);
+      navigate('/pedidos', { replace: true });
+    } catch (err) {
+      setStatusError(getApiErrorMessage(err));
+      setDeleting(false);
+    }
+  }
+
   async function generatePdf() {
-    if (!uuid) return;
+    if (!uuid || deleting) return;
     // Abrir aqui, dentro do gesto do usuário: depois de um `await` o bloqueador de
     // popup mata a janela. O aviso evita a aba em branco enquanto o PDF monta —
     // com fotos, montar leva um download por imagem.
@@ -161,19 +176,24 @@ export default function PedidoDetalhe() {
           </div>
           <div className='flex flex-wrap items-center gap-2'>
             <Can permission='pedidos.editar'>
-              <button type='button' onClick={() => navigate(editarPath)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'><Pencil className='h-4 w-4' />Editar</button>
+              <button type='button' disabled={deleting} onClick={() => navigate(editarPath)} className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60'><Pencil className='h-4 w-4' />Editar</button>
             </Can>
-            <button type='button' onClick={generatePdf} disabled={pdfLoading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : order.status === 'em_aberto' || order.status === 'liberado' ? 'Gerar PDF para validação' : 'Baixar PDF do pedido'}</button>
+            <button type='button' onClick={generatePdf} disabled={pdfLoading || deleting} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'><FileDown className='h-4 w-4' />{pdfLoading ? 'Gerando...' : order.status === 'em_aberto' || order.status === 'liberado' ? 'Gerar PDF para validação' : 'Baixar PDF do pedido'}</button>
             {canLiberar && (
-              <button type='button' onClick={handleLiberar} disabled={statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
+              <button type='button' onClick={handleLiberar} disabled={statusSaving || deleting} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
                 <Unlock className='h-4 w-4' />{statusSaving ? 'Liberando...' : 'Liberar pedido'}
               </button>
             )}
             {canCancelar && (
-              <button type='button' onClick={handleCancelar} disabled={statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg border border-red-300 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60'>
+              <button type='button' onClick={handleCancelar} disabled={statusSaving || deleting} className='flex min-h-11 items-center gap-2 rounded-lg border border-red-300 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60'>
                 <XCircle className='h-4 w-4' />{statusSaving ? 'Cancelando...' : 'Cancelar pedido'}
               </button>
             )}
+            <Can permission='pedidos.deletar'>
+              <button type='button' onClick={handleExcluir} disabled={deleting || statusSaving} className='flex min-h-11 items-center gap-2 rounded-lg border border-red-300 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60'>
+                <Trash2 className='h-4 w-4' />{deleting ? 'Excluindo...' : 'Excluir pedido'}
+              </button>
+            </Can>
             <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${orderStatusColor[order.status]}`}>{orderStatusLabel[order.status]}</span>
           </div>
         </div>
