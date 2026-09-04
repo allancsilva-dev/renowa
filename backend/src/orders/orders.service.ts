@@ -4,7 +4,9 @@ import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { Order, ORDER_ORIGENS, ORDER_STATUSES } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
-import { CreateOrderDto, CreateOrderItemDto, UpdateOrderDto } from './dto/create-order.dto';
+import {
+  CreateOrderDto, CreateOrderItemDto, DuplicateOrderDto, UpdateOrderDto,
+} from './dto/create-order.dto';
 import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-external-order.dto';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -114,8 +116,28 @@ export class OrdersService {
     }
   }
 
-  async create(dto: CreateOrderDto, user: RequestUser): Promise<Order> {
+  private async createInternal(
+    dto: CreateOrderDto | DuplicateOrderDto,
+    user: RequestUser,
+    sourceUuid?: string,
+  ): Promise<Order> {
     const uuid = await this.dataSource.transaction(async (manager) => {
+      let source: Order | null = null;
+      if (sourceUuid) {
+        const sourceQuery = manager.getRepository(Order).createQueryBuilder('o')
+          .where('o.uuid = :sourceUuid', { sourceUuid })
+          .andWhere('o.tenant_id = :tenantId', { tenantId: user.tenantId })
+          .andWhere('o.deleted_at IS NULL')
+          .setLock('pessimistic_read');
+        if (this.isVendorOnly(user)) {
+          const ownership = vendorOwnershipWhere(user, 'o');
+          sourceQuery.andWhere(ownership.sql, ownership.params);
+        }
+        source = await sourceQuery.getOne();
+        if (!source) throw new NotFoundException(`Pedido ${sourceUuid} não encontrado.`);
+        this.assertOrigem(source, 'interno');
+      }
+
       await this.assertUuidLivre(manager, dto.uuid);
       const refs = await this.resolveHeader(manager, dto, user);
       const sequence = await manager.query(`SELECT nextval('pedidos_numero_seq')::int AS numero`) as Array<{ numero: number }>;
@@ -140,13 +162,66 @@ export class OrdersService {
       ));
       await assertCodigosItensUnicos(manager, user.tenantId, saved.id, items, { substituiTodos: true });
       const totals = this.totalsFromItems(items);
-      await manager.save(items.map((item) => manager.create(OrderItem, item)));
+      const savedItems = await manager.save(items.map((item) => manager.create(OrderItem, item)));
+
+      if (source) {
+        const mappings = (dto as DuplicateOrderDto).itens
+          .filter((item) => item.foto_origem_item_uuid)
+          .map((item) => ({ sourceUuid: item.foto_origem_item_uuid!, targetUuid: item.uuid }));
+        const sourceUuids = mappings.map((mapping) => mapping.sourceUuid);
+        const targetUuids = mappings.map((mapping) => mapping.targetUuid);
+        if (new Set(sourceUuids).size !== sourceUuids.length
+          || new Set(targetUuids).size !== targetUuids.length) {
+          throw new BadRequestException('Mapeamento de fotos da duplicação contém itens repetidos.');
+        }
+        if (mappings.length) {
+          const validSources = await manager.query(
+            `SELECT uuid FROM itens_pedido
+              WHERE tenant_id = $1 AND pedido_id = $2 AND deleted_at IS NULL
+                AND uuid = ANY($3::uuid[])`,
+            [user.tenantId, source.id, sourceUuids],
+          ) as Array<{ uuid: string }>;
+          if (validSources.length !== mappings.length) {
+            throw new BadRequestException('Item fonte inválido para duplicação de foto.');
+          }
+          const savedUuids = new Set(savedItems.map((item) => item.uuid));
+          if (targetUuids.some((itemUuid) => !savedUuids.has(itemUuid))) {
+            throw new BadRequestException('Item de destino inválido para duplicação de foto.');
+          }
+          await manager.query(
+            `INSERT INTO pedido_item_fotos
+              (tenant_id, pedido_id, item_pedido_id, nome_arquivo, mime_type,
+               tamanho_bytes, conteudo, storage_backend)
+             SELECT $1, $2, destino.id, foto.nome_arquivo, foto.mime_type,
+                    foto.tamanho_bytes, foto.conteudo, foto.storage_backend
+               FROM unnest($3::uuid[], $4::uuid[]) AS mapa(origem_uuid, destino_uuid)
+               JOIN itens_pedido origem
+                 ON origem.uuid = mapa.origem_uuid AND origem.tenant_id = $1
+                AND origem.pedido_id = $5 AND origem.deleted_at IS NULL
+               JOIN itens_pedido destino
+                 ON destino.uuid = mapa.destino_uuid AND destino.tenant_id = $1
+                AND destino.pedido_id = $2 AND destino.deleted_at IS NULL
+               JOIN pedido_item_fotos foto
+                 ON foto.tenant_id = $1 AND foto.item_pedido_id = origem.id
+                AND foto.deleted_at IS NULL`,
+            [user.tenantId, saved.id, sourceUuids, targetUuids, source.id],
+          );
+        }
+      }
       saved.total_sem_imposto = totals.total_sem_imposto;
       saved.total_com_imposto = totals.total_com_imposto;
       await manager.save(saved);
       return saved.uuid;
     });
     return this.findOne(uuid, user);
+  }
+
+  async create(dto: CreateOrderDto, user: RequestUser): Promise<Order> {
+    return this.createInternal(dto, user);
+  }
+
+  async duplicate(sourceUuid: string, dto: DuplicateOrderDto, user: RequestUser): Promise<Order> {
+    return this.createInternal(dto, user, sourceUuid);
   }
 
   /**
@@ -425,6 +500,7 @@ export class OrdersService {
       .leftJoinAndSelect('o.vendedor', 'vendedor')
       .leftJoinAndSelect('o.itens', 'itens', 'itens.deleted_at IS NULL')
       .leftJoinAndSelect('itens.produto', 'produto')
+      .leftJoinAndSelect('itens.foto_especifica', 'foto_especifica', 'foto_especifica.deleted_at IS NULL')
       .where('o.uuid = :uuid', { uuid })
       .andWhere('o.tenant_id = :tenantId', { tenantId: user.tenantId })
       .andWhere('o.deleted_at IS NULL');

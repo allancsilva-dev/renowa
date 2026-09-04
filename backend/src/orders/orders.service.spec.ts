@@ -5,7 +5,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, DuplicateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
 import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-external-order.dto';
 import { ListOrdersQueryDto } from './dto/query-orders.dto';
 import { RequestUser } from '../common/types/jwt-payload.type';
@@ -103,6 +103,135 @@ describe('OrdersService.findAll — filtros', () => {
       const dto = plainToInstance(ListOrdersQueryDto, { page: 2, limit: 50, search: 'acme' });
       expect(await validate(dto, pipeOptions)).toEqual([]);
     });
+  });
+});
+
+describe('OrdersService.duplicate — cópia atômica e isolada', () => {
+  const sourceUuid = '11111111-1111-4111-8111-111111111111';
+  const sourceItemUuid = '22222222-2222-4222-8222-222222222222';
+  const targetUuid = '33333333-3333-4333-8333-333333333333';
+  const targetItemUuid = '44444444-4444-4444-8444-444444444444';
+
+  function subject(source: Record<string, unknown> | null = { id: 7, uuid: sourceUuid, origem: 'interno' }) {
+    const sourceQb = queryBuilder({
+      setLock: jest.fn(),
+      getOne: jest.fn().mockResolvedValue(source),
+    });
+    sourceQb.setLock.mockReturnValue(sourceQb);
+    let nextId = 20;
+    const query = jest.fn(async (sql: string) => {
+      if (sql.includes('SELECT 1 FROM pedidos')) return [];
+      if (sql.includes('FROM clientes')) return [{ id: 2 }];
+      if (sql.includes('FROM fornecedores')) return [{ id: 3 }];
+      if (sql.includes('FROM usuarios')) return [{ id: 4 }];
+      if (sql.includes('nextval')) return [{ numero: 99 }];
+      if (sql.includes('SELECT uuid FROM itens_pedido')) return [{ uuid: sourceItemUuid }];
+      if (sql.includes('INSERT INTO pedido_item_fotos')) return [];
+      return [];
+    });
+    const manager = {
+      getRepository: jest.fn(() => ({ createQueryBuilder: () => sourceQb })),
+      query,
+      create: jest.fn((_entity: unknown, values: Record<string, unknown>) => ({ ...values })),
+      save: jest.fn(async (value: any) => {
+        if (Array.isArray(value)) return value.map((item) => ({ ...item, id: nextId++ }));
+        return Object.assign(value, { id: value.id ?? nextId++ });
+      }),
+    };
+    const dataSource = { transaction: jest.fn((callback: any) => callback(manager)) } as any;
+    const service = new OrdersService({} as any, {} as any, {} as any, dataSource);
+    jest.spyOn(service, 'findOne').mockResolvedValue({ uuid: targetUuid } as any);
+    return { service, manager, query, sourceQb, dataSource };
+  }
+
+  const dto = {
+    uuid: targetUuid,
+    cliente_uuid: '55555555-5555-4555-8555-555555555555',
+    fornecedor_uuid: '66666666-6666-4666-8666-666666666666',
+    itens: [{
+      uuid: targetItemUuid,
+      foto_origem_item_uuid: sourceItemUuid,
+      codigo_manual: 'ITEM-1', qtd_caixas: 1, qtd_unitaria: 2, preco_unitario: 10,
+    }],
+  } as DuplicateOrderDto;
+
+  it('cria pedido, itens e copia foto por INSERT SELECT na mesma transação', async () => {
+    const { service, query, dataSource } = subject();
+
+    await service.duplicate(sourceUuid, dto, admin);
+
+    expect(dataSource.transaction).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO pedido_item_fotos'),
+      expect.arrayContaining([admin.tenantId, [sourceItemUuid], [targetItemUuid]]),
+    );
+  });
+
+  it('aplica ownership de vendedor à busca da fonte', async () => {
+    const { service, sourceQb } = subject();
+
+    await service.duplicate(sourceUuid, dto, vendedorA);
+
+    expect(sourceQb.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('o.vendedor_id ='),
+      { sub: vendedorA.sub, tenantId: vendedorA.tenantId },
+    );
+  });
+
+  it('não revela fonte fora do escopo', async () => {
+    const { service, query } = subject(null);
+
+    await expect(service.duplicate(sourceUuid, dto, vendedorA)).rejects.toBeInstanceOf(NotFoundException);
+    expect(query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO pedido_item_fotos'), expect.anything());
+  });
+
+  it('restringe a fonte ao tenant autenticado', async () => {
+    const { service, sourceQb } = subject();
+
+    await service.duplicate(sourceUuid, dto, admin);
+
+    expect(sourceQb.andWhere).toHaveBeenCalledWith('o.tenant_id = :tenantId', { tenantId: admin.tenantId });
+  });
+
+  it('recusa pedido externo como fonte da rota de duplicação interna', async () => {
+    const { service } = subject({ id: 7, uuid: sourceUuid, origem: 'externo' });
+
+    await expect(service.duplicate(sourceUuid, dto, admin)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('recusa o mesmo item fonte mapeado para dois destinos', async () => {
+    const { service, query } = subject();
+    const repetido = {
+      ...dto,
+      itens: [dto.itens[0], {
+        ...dto.itens[0], uuid: '77777777-7777-4777-8777-777777777777', codigo_manual: 'ITEM-2',
+      }],
+    } as DuplicateOrderDto;
+
+    await expect(service.duplicate(sourceUuid, repetido, admin)).rejects.toBeInstanceOf(BadRequestException);
+    expect(query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO pedido_item_fotos'), expect.anything());
+  });
+
+  it('limita criação e duplicação a 200 itens', async () => {
+    const body = { ...dto, itens: Array.from({ length: 201 }, (_, index) => ({
+      uuid: `${String(index).padStart(8, '0')}-0000-4000-8000-000000000000`,
+      codigo_manual: `I-${index}`, qtd_caixas: 1, qtd_unitaria: 1, preco_unitario: 1,
+    })) };
+    const errors = await validate(plainToInstance(DuplicateOrderDto, body));
+
+    expect(errors.find((error) => error.property === 'itens')?.constraints?.arrayMaxSize).toBeDefined();
+  });
+
+  it('aceita o vínculo de foto no DTO sem abrir campos arbitrários', async () => {
+    const valid = await validate(plainToInstance(DuplicateOrderDto, dto), {
+      whitelist: true, forbidNonWhitelisted: true,
+    });
+    const invalid = await validate(plainToInstance(DuplicateOrderDto, {
+      ...dto, itens: [{ ...dto.itens[0], tenant_id: admin.tenantId }],
+    }), { whitelist: true, forbidNonWhitelisted: true });
+
+    expect(valid).toEqual([]);
+    expect(invalid[0]?.children?.[0]?.children?.some((error) => error.property === 'tenant_id')).toBe(true);
   });
 });
 

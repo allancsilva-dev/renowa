@@ -1,7 +1,8 @@
-import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
+import { Column, Entity, Index, ManyToOne, JoinColumn, OneToOne } from 'typeorm';
 import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Order } from './order.entity';
 import { Product } from '../../products/entities/product.entity';
+import { OrderItemPhoto } from './order-item-photo.entity';
 
 @Entity('itens_pedido')
 @Index(['tenant_id', 'uuid'], { unique: true })
@@ -29,6 +30,10 @@ export class OrderItem extends VersionedBaseEntity {
     { name: 'produto_id', referencedColumnName: 'id' },
   ])
   produto: Product | null;
+
+  /** Metadados apenas; `conteudo` é select:false e nunca entra no JSON do pedido. */
+  @OneToOne(() => OrderItemPhoto, (photo) => photo.item)
+  foto_especifica?: OrderItemPhoto | null;
 
   /** Código manual quando não há produto cadastrado */
   @Column({ name: 'codigo_manual', type: 'varchar', nullable: true })

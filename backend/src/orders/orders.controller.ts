@@ -2,8 +2,9 @@ import {
   Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { IsString } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, DuplicateOrderDto, UpdateOrderDto } from './dto/create-order.dto';
 import { CreateExternalOrderDto, UpdateExternalOrderDto } from './dto/create-external-order.dto';
 import { ListOrdersQueryDto } from './dto/query-orders.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -28,6 +29,17 @@ export class OrdersController {
   @RequirePermission('pedidos.criar')
   async create(@Body() dto: CreateOrderDto, @CurrentUser() user: RequestUser) {
     return this.ordersService.create(dto, user);
+  }
+
+  @Post(':uuid/duplicar')
+  @RequirePermission(['pedidos.ver', 'pedidos.criar'])
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  async duplicate(
+    @Param('uuid') uuid: string,
+    @Body() dto: DuplicateOrderDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.ordersService.duplicate(uuid, dto, user);
   }
 
   /**

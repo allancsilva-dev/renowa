@@ -1,5 +1,6 @@
 import {
   ArrayMinSize,
+  ArrayMaxSize,
   IsArray,
   IsDateString,
   IsDefined,
@@ -60,4 +61,18 @@ export class UpdateOrderDto extends CreateOrderDto {
   @IsInt()
   @Min(1)
   version: number;
+}
+
+export class DuplicateOrderItemDto extends CreateOrderItemDto {
+  /** Item do pedido fonte cuja foto específica será copiada, quando existir. */
+  @IsOptional() @IsUUID('4') foto_origem_item_uuid?: string;
+}
+
+export class DuplicateOrderDto extends CreateOrderDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => DuplicateOrderItemDto)
+  declare itens: DuplicateOrderItemDto[];
 }
