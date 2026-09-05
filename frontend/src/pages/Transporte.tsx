@@ -8,7 +8,7 @@ import api from '@/lib/apiClient';
 import Dialog from '@/components/ui/Dialog';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { importTransportadoras } from '@/services/import';
-import type { PaginatedResponse, Transport } from '@/types';
+import type { ApiResponse, PaginatedResponse, Transport } from '@/types';
 import { Can } from '@/components/Can';
 import { RowAction, RowActions } from '@/components/tables/RowActions';
 import DetailDialog from '@/components/ui/DetailDialog';
@@ -46,6 +46,7 @@ export default function Transporte() {
   const [rowActionError, setRowActionError] = useState<string | null>(null);
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjMessage, setCnpjMessage] = useState<string | null>(null);
+  const [cnpjConflict, setCnpjConflict] = useState<string | null>(null);
   const cnpjAbortRef = useRef<AbortController | null>(null);
   // Modal reaproveitado: a identidade da criação renova a cada abertura de
   // "Nova", e sobrevive a quantas tentativas o mesmo cadastro precisar.
@@ -72,6 +73,7 @@ export default function Transporte() {
     });
     setFormError(null);
     setCnpjMessage(null);
+    setCnpjConflict(null);
     setIsOpen(true);
   }
 
@@ -102,6 +104,7 @@ export default function Transporte() {
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;
     if (name === 'cnpj') {
+      setCnpjConflict(null);
       setForm((prev) => ({ ...prev, cnpj: maskCnpj(value) }));
     } else if (name === 'telefone') {
       setForm((prev) => ({ ...prev, telefone: maskTel(value) }));
@@ -110,10 +113,27 @@ export default function Transporte() {
     }
   }
 
+  async function handleCnpjBlur() {
+    const digits = form.cnpj.replace(/\D/g, '');
+    if (digits.length !== 14) return;
+    try {
+      const { data } = await api.get<ApiResponse<{ available: boolean }>>('/transportadoras/disponibilidade-cnpj', {
+        params: { cnpj: digits, excludeUuid: editingUuid },
+      });
+      setCnpjConflict(data.data.available ? null : 'Este CNPJ já existe no cadastro de transportadoras.');
+    } catch {
+      // O POST/PATCH mantém validação definitiva; falha transitória não bloqueia edição.
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.razao_social.trim()) {
       setFormError('Razão Social é obrigatória.');
+      return;
+    }
+    if (cnpjConflict) {
+      setFormError(cnpjConflict);
       return;
     }
     setSaving(true);
@@ -130,8 +150,8 @@ export default function Transporte() {
       setIsOpen(false);
       setForm(emptyForm);
       reload();
-    } catch {
-      setFormError('Erro ao salvar transportadora. Tente novamente.');
+    } catch (err) {
+      setFormError(getApiErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -304,6 +324,7 @@ export default function Transporte() {
                     name='cnpj'
                     value={form.cnpj}
                     onChange={handleChange}
+                    onBlur={handleCnpjBlur}
                     placeholder='00.000.000/0001-00'
                     inputMode='numeric'
                     className={`${inputClass} flex-1`}
@@ -318,6 +339,7 @@ export default function Transporte() {
                   </button>
                 </div>
                 {cnpjMessage && <p className='text-xs text-amber-700'>{cnpjMessage}</p>}
+                {cnpjConflict && <p role='alert' className='text-xs text-red-700'>{cnpjConflict}</p>}
               </div>
 
               <div className='flex flex-col gap-1'>

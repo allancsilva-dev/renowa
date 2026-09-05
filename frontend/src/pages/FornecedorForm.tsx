@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchSupplier, createSupplier, updateSupplier, type SupplierFormData } from '@/services/suppliers.service';
 import { lookupCnpj } from '@/services/consultas.service';
-import type { Supplier } from '@/types';
+import type { ApiResponse, Supplier } from '@/types';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { maskCnpj, maskCep, maskTel } from '@/lib/format';
 import { getApiErrorMessage } from '@/lib/errors';
+import api from '@/lib/apiClient';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -60,6 +61,7 @@ export default function FornecedorForm() {
   const [fetching, setFetching] = useState(isEdit);
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjMessage, setCnpjMessage] = useState<string | null>(null);
+  const [cnpjConflict, setCnpjConflict] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const cnpjAbortRef = useRef<AbortController | null>(null);
 
@@ -80,7 +82,21 @@ export default function FornecedorForm() {
   }
 
   function handleCnpj(e: React.ChangeEvent<HTMLInputElement>) {
+    setCnpjConflict(null);
     setForm((prev) => ({ ...prev, cnpj: maskCnpj(e.target.value) }));
+  }
+
+  async function handleCnpjBlur() {
+    const digits = form.cnpj.replace(/\D/g, '');
+    if (digits.length !== 14) return;
+    try {
+      const { data } = await api.get<ApiResponse<{ available: boolean }>>('/fornecedores/disponibilidade-cnpj', {
+        params: { cnpj: digits, excludeUuid: uuid },
+      });
+      setCnpjConflict(data.data.available ? null : 'Este CNPJ já existe no cadastro de fornecedores.');
+    } catch {
+      // O POST/PATCH mantém validação definitiva; falha transitória não bloqueia edição.
+    }
   }
 
   function handleTel(e: React.ChangeEvent<HTMLInputElement>) {
@@ -132,6 +148,10 @@ export default function FornecedorForm() {
     e.preventDefault();
     if (!form.razao_social.trim()) {
       setError('Razão Social é obrigatória.');
+      return;
+    }
+    if (cnpjConflict) {
+      setError(cnpjConflict);
       return;
     }
     setLoading(true);
@@ -224,6 +244,7 @@ export default function FornecedorForm() {
                     name='cnpj'
                     value={form.cnpj}
                     onChange={handleCnpj}
+                    onBlur={handleCnpjBlur}
                     placeholder='00.000.000/0001-00'
                     inputMode='numeric'
                     className={`${inputClass} flex-1`}
@@ -240,6 +261,7 @@ export default function FornecedorForm() {
                 {cnpjMessage && (
                   <p role='status' className='mt-1 text-xs text-amber-700'>{cnpjMessage}</p>
                 )}
+                {cnpjConflict && <p role='alert' className='mt-1 text-xs text-red-700'>{cnpjConflict}</p>}
               </div>
 
               <div className='flex flex-col gap-1'>

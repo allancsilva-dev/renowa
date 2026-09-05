@@ -96,6 +96,7 @@ export default function ClienteForm() {
   const [cepLoading, setCepLoading] = useState(false);
   const [cnpjLoading, setCnpjLoading] = useState(false);
   const [cnpjMessage, setCnpjMessage] = useState<string | null>(null);
+  const [cnpjConflict, setCnpjConflict] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transports, setTransports] = useState<Transport[]>([]);
   const cnpjAbortRef = useRef<AbortController | null>(null);
@@ -123,7 +124,21 @@ export default function ClienteForm() {
   }
 
   function handleCnpj(e: React.ChangeEvent<HTMLInputElement>) {
+    setCnpjConflict(null);
     setForm((prev) => ({ ...prev, cnpj: maskCnpj(e.target.value) }));
+  }
+
+  async function handleCnpjBlur() {
+    const digits = form.cnpj.replace(/\D/g, '');
+    if (digits.length !== 14) return;
+    try {
+      const { data } = await api.get<ApiResponse<{ available: boolean }>>('/clientes/disponibilidade-cnpj', {
+        params: { cnpj: digits, excludeUuid: uuid },
+      });
+      setCnpjConflict(data.data.available ? null : 'Este CNPJ já existe no cadastro de clientes.');
+    } catch {
+      // O POST/PATCH mantém validação definitiva; falha transitória não bloqueia edição.
+    }
   }
 
   function handleTel(e: React.ChangeEvent<HTMLInputElement>) {
@@ -202,6 +217,10 @@ export default function ClienteForm() {
     e.preventDefault();
     if (!form.razao_social.trim()) {
       setError('Razão Social é obrigatória.');
+      return;
+    }
+    if (cnpjConflict) {
+      setError(cnpjConflict);
       return;
     }
     setLoading(true);
@@ -295,6 +314,7 @@ export default function ClienteForm() {
                     name='cnpj'
                     value={form.cnpj}
                     onChange={handleCnpj}
+                    onBlur={handleCnpjBlur}
                     placeholder='00.000.000/0001-00'
                     inputMode='numeric'
                     className={`${inputClass} flex-1`}
@@ -311,6 +331,7 @@ export default function ClienteForm() {
                 {cnpjMessage && (
                   <p role='status' className='mt-1 text-xs text-amber-700'>{cnpjMessage}</p>
                 )}
+                {cnpjConflict && <p role='alert' className='mt-1 text-xs text-red-700'>{cnpjConflict}</p>}
               </div>
 
               {/* E-mail */}
