@@ -100,6 +100,7 @@ export default function ClienteForm() {
   const [error, setError] = useState<string | null>(null);
   const [transports, setTransports] = useState<Transport[]>([]);
   const cnpjAbortRef = useRef<AbortController | null>(null);
+  const cnpjAvailabilityRequestRef = useRef(0);
 
   useEffect(() => {
     fetchAllPages<Transport>('/transportadoras').then(setTransports)
@@ -124,21 +125,30 @@ export default function ClienteForm() {
   }
 
   function handleCnpj(e: React.ChangeEvent<HTMLInputElement>) {
+    cnpjAvailabilityRequestRef.current += 1;
     setCnpjConflict(null);
     setForm((prev) => ({ ...prev, cnpj: maskCnpj(e.target.value) }));
   }
 
-  async function handleCnpjBlur() {
-    const digits = form.cnpj.replace(/\D/g, '');
-    if (digits.length !== 14) return;
+  async function checkCnpjAvailability(digits: string): Promise<boolean> {
+    const requestId = ++cnpjAvailabilityRequestRef.current;
     try {
       const { data } = await api.get<ApiResponse<{ available: boolean }>>('/clientes/disponibilidade-cnpj', {
         params: { cnpj: digits, excludeUuid: uuid },
       });
-      setCnpjConflict(data.data.available ? null : 'Este CNPJ já existe no cadastro de clientes.');
+      if (requestId !== cnpjAvailabilityRequestRef.current) return false;
+      const available = data.data.available;
+      setCnpjConflict(available ? null : 'Este CNPJ já existe no cadastro de clientes.');
+      return available;
     } catch {
       // O POST/PATCH mantém validação definitiva; falha transitória não bloqueia edição.
+      return requestId === cnpjAvailabilityRequestRef.current;
     }
+  }
+
+  async function handleCnpjBlur() {
+    const digits = form.cnpj.replace(/\D/g, '');
+    if (digits.length === 14) await checkCnpjAvailability(digits);
   }
 
   function handleTel(e: React.ChangeEvent<HTMLInputElement>) {
@@ -182,6 +192,7 @@ export default function ClienteForm() {
       setCnpjMessage('Informe um CNPJ completo (14 dígitos) para consultar.');
       return;
     }
+    if (!(await checkCnpjAvailability(cnpjLimpo))) return;
 
     cnpjAbortRef.current?.abort();
     const controller = new AbortController();
