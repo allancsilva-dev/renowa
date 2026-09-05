@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { DeepPartial, IsNull, ObjectLiteral, Repository } from 'typeorm';
+import { DeepPartial, ObjectLiteral, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import * as Papa from 'papaparse';
 import { isValidCnpj } from '../validators/brazilian-document.validators';
@@ -155,12 +155,14 @@ export async function importCnpjEntity<E extends ObjectLiteral & { id: number }>
       seen.add(digits);
     }
 
-    const existing =
-      cnpj !== undefined
-        ? await repo.findOne({
-            where: { cnpj, tenant_id: tenantId, deleted_at: IsNull() } as never,
-          })
-        : null;
+    const digits = onlyDigits(cnpj);
+    const existing = digits
+      ? await repo.createQueryBuilder('entity')
+        .where('entity.tenant_id = :tenantId', { tenantId })
+        .andWhere('entity.deleted_at IS NULL')
+        .andWhere("regexp_replace(COALESCE(entity.cnpj, ''), '\\D', '', 'g') = :cnpj", { cnpj: digits })
+        .getOne()
+      : null;
 
     if (existing) {
       // Só sobrescreve campos informados na linha (não zera dados existentes).

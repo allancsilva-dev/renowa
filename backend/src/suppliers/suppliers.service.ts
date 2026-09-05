@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Supplier } from './entities/supplier.entity';
@@ -7,6 +7,8 @@ import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
 import { ImportResultDto } from '../common/csv/import-result.dto';
 import { importCnpjEntity, parseCsvRows, pick } from '../common/csv/csv-import.util';
+import { onlyDigits } from '../common/csv/csv-import.util';
+import { rethrowCnpjUniqueViolation } from '../common/persistence/cnpj-conflict';
 
 const IMPORT_MAX_ROWS = 5000;
 
@@ -19,8 +21,13 @@ export class SuppliersService {
   ) {}
 
   async create(dto: CreateSupplierDto, tenantId: string): Promise<Supplier> {
+    await this.ensureCnpjAvailable(dto.cnpj, tenantId);
     const s = this.supplierRepo.create({ ...dto, tenant_id: tenantId });
-    return this.supplierRepo.save(s);
+    try {
+      return await this.supplierRepo.save(s);
+    } catch (error) {
+      return rethrowCnpjUniqueViolation(error, 'fornecedores');
+    }
   }
 
   async findAll(
@@ -55,9 +62,34 @@ export class SuppliersService {
 
   async update(uuid: string, dto: UpdateSupplierDto, tenantId: string): Promise<Supplier> {
     const s = await this.findOne(uuid, tenantId);
+    if (Object.prototype.hasOwnProperty.call(dto, 'cnpj')) {
+      await this.ensureCnpjAvailable(dto.cnpj, tenantId, uuid);
+    }
     const { uuid: _u, ...rest } = dto;
     Object.assign(s, rest);
-    return this.supplierRepo.save(s);
+    try {
+      return await this.supplierRepo.save(s);
+    } catch (error) {
+      return rethrowCnpjUniqueViolation(error, 'fornecedores');
+    }
+  }
+
+  async cnpjAvailability(cnpj: string | undefined, tenantId: string, excludeUuid?: string) {
+    const digits = onlyDigits(cnpj);
+    if (!digits) return { available: true };
+    const qb = this.supplierRepo.createQueryBuilder('s')
+      .where('s.tenant_id = :tenantId', { tenantId })
+      .andWhere('s.deleted_at IS NULL')
+      .andWhere("regexp_replace(COALESCE(s.cnpj, ''), '\\D', '', 'g') = :cnpj", { cnpj: digits });
+    if (excludeUuid) qb.andWhere('s.uuid <> :excludeUuid', { excludeUuid });
+    return { available: !(await qb.getOne()) };
+  }
+
+  private async ensureCnpjAvailable(cnpj: string | null | undefined, tenantId: string, excludeUuid?: string): Promise<void> {
+    if (!cnpj) return;
+    if (!(await this.cnpjAvailability(cnpj, tenantId, excludeUuid)).available) {
+      throw new ConflictException('Este CNPJ já existe no cadastro de fornecedores.');
+    }
   }
 
   async remove(uuid: string, tenantId: string): Promise<void> {

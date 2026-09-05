@@ -47,6 +47,16 @@ export class TransportController {
     return this.transportService.findAll(user.tenantId, pagination, search);
   }
 
+  @Get('disponibilidade-cnpj')
+  @RequirePermission('transportadoras.ver')
+  async cnpjAvailability(
+    @Query('cnpj') cnpj: string,
+    @Query('excludeUuid') excludeUuid: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.transportService.cnpjAvailability(cnpj, user.tenantId, excludeUuid);
+  }
+
   @Get(':uuid')
   @RequirePermission('transportadoras.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {

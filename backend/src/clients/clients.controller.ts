@@ -59,6 +59,16 @@ export class ClientsController {
     return this.clientsService.findAll(user, pagination, search);
   }
 
+  @Get('disponibilidade-cnpj')
+  @RequirePermission('clientes.ver')
+  async cnpjAvailability(
+    @Query('cnpj') cnpj: string,
+    @Query('excludeUuid') excludeUuid: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.clientsService.cnpjAvailability(cnpj, user.tenantId, excludeUuid);
+  }
+
   @Get(':uuid')
   @RequirePermission('clientes.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {

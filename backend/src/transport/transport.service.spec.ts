@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { TransportService } from './transport.service';
 
 const CNPJ_A = '11.222.333/0001-81';
@@ -9,11 +9,17 @@ function buildCsvFile(rows: string[], originalname = 'transportadoras.csv'): Exp
 
 function makeManager(existing: Array<{ cnpj: string }> = []) {
   const saved: any[] = [];
+  const query = {
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getOne: jest.fn(async () => existing[0] ? { ...existing[0], id: 1 } : null),
+  };
   const repo = {
     findOne: jest.fn(async ({ where }: any) => {
       const found = existing.find((e) => e.cnpj === where.cnpj);
       return found ? { ...found, id: 1 } : null;
     }),
+    createQueryBuilder: jest.fn(() => query),
     create: jest.fn((value: any) => value),
     save: jest.fn(async (value: any) => {
       saved.push(value);
@@ -70,5 +76,16 @@ describe('TransportService#importFromFile', () => {
     const file = buildCsvFile(['razao_social,endereco', 'Transporte,Av Central 500']);
     await buildService(manager).importFromFile(file, 'tenant-a');
     expect(saved[0].endereco_completo).toBe('Av Central 500');
+  });
+});
+
+describe('TransportService#create CNPJ', () => {
+  it('bloqueia CNPJ ativo repetido', async () => {
+    const query = { where: jest.fn().mockReturnThis(), andWhere: jest.fn().mockReturnThis(), getOne: jest.fn(async () => ({ id: 1 })) };
+    const repo = { createQueryBuilder: jest.fn(() => query), create: jest.fn(), save: jest.fn() };
+    const service = new TransportService(repo as any, {} as any);
+    await expect(service.create({ razao_social: 'Duplicado', cnpj: CNPJ_A } as any, 'tenant-a'))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(repo.save).not.toHaveBeenCalled();
   });
 });

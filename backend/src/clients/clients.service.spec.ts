@@ -1,4 +1,5 @@
 import { ClientsService } from './clients.service';
+import { ConflictException } from '@nestjs/common';
 
 const CNPJ_A = '11.222.333/0001-81';
 const TRANSP_CNPJ = '99.888.777/0001-00';
@@ -16,11 +17,17 @@ function makeManager(
   transportadoras: Array<{ id: number; cnpjDigits?: string; razao?: string }> = [],
 ) {
   const saved: any[] = [];
+  const query = {
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getOne: jest.fn(async () => existingClients[0] ? { ...existingClients[0], id: 1 } : null),
+  };
   const repo = {
     findOne: jest.fn(async ({ where }: any) => {
       const found = existingClients.find((e) => e.cnpj === where.cnpj);
       return found ? { ...found, id: 1 } : null;
     }),
+    createQueryBuilder: jest.fn(() => query),
     create: jest.fn((value: any) => value),
     save: jest.fn(async (value: any) => {
       saved.push(value);
@@ -148,5 +155,16 @@ describe('ClientsService#update', () => {
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       action: 'UPDATE', resourceUuid: current.uuid, tenantId: 'tenant-a',
     }), manager);
+  });
+});
+
+describe('ClientsService#create CNPJ', () => {
+  it('bloqueia CNPJ ativo repetido mesmo com máscara diferente', async () => {
+    const query = { where: jest.fn().mockReturnThis(), andWhere: jest.fn().mockReturnThis(), getOne: jest.fn(async () => ({ id: 1 })) };
+    const repo = { createQueryBuilder: jest.fn(() => query), create: jest.fn() };
+    const service = new ClientsService(repo as any, {} as any, {} as any);
+    await expect(service.create({ razao_social: 'Duplicado', cnpj: '11222333000181' } as any, { tenantId: 'tenant-a' } as any))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(repo.create).not.toHaveBeenCalled();
   });
 });

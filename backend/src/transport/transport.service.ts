@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Transport } from './entities/transport.entity';
@@ -6,7 +6,8 @@ import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { CreateTransportDto } from './dto/create-transport.dto';
 import { UpdateTransportDto } from './dto/update-transport.dto';
 import { ImportResultDto } from '../common/csv/import-result.dto';
-import { importCnpjEntity, parseCsvRows, pick } from '../common/csv/csv-import.util';
+import { importCnpjEntity, onlyDigits, parseCsvRows, pick } from '../common/csv/csv-import.util';
+import { rethrowCnpjUniqueViolation } from '../common/persistence/cnpj-conflict';
 
 const IMPORT_MAX_ROWS = 5000;
 
@@ -22,8 +23,13 @@ export class TransportService {
     dto: CreateTransportDto,
     tenantId: string,
   ): Promise<Transport> {
+    await this.ensureCnpjAvailable(dto.cnpj, tenantId);
     const t = this.transportRepo.create({ ...dto, tenant_id: tenantId });
-    return this.transportRepo.save(t);
+    try {
+      return await this.transportRepo.save(t);
+    } catch (error) {
+      return rethrowCnpjUniqueViolation(error, 'transportadoras');
+    }
   }
 
   async findAll(
@@ -62,8 +68,33 @@ export class TransportService {
 
   async update(uuid: string, dto: UpdateTransportDto, tenantId: string): Promise<Transport> {
     const t = await this.findOne(uuid, tenantId);
+    if (Object.prototype.hasOwnProperty.call(dto, 'cnpj')) {
+      await this.ensureCnpjAvailable(dto.cnpj, tenantId, uuid);
+    }
     Object.assign(t, dto);
-    return this.transportRepo.save(t);
+    try {
+      return await this.transportRepo.save(t);
+    } catch (error) {
+      return rethrowCnpjUniqueViolation(error, 'transportadoras');
+    }
+  }
+
+  async cnpjAvailability(cnpj: string | undefined, tenantId: string, excludeUuid?: string) {
+    const digits = onlyDigits(cnpj);
+    if (!digits) return { available: true };
+    const qb = this.transportRepo.createQueryBuilder('t')
+      .where('t.tenant_id = :tenantId', { tenantId })
+      .andWhere('t.deleted_at IS NULL')
+      .andWhere("regexp_replace(COALESCE(t.cnpj, ''), '\\D', '', 'g') = :cnpj", { cnpj: digits });
+    if (excludeUuid) qb.andWhere('t.uuid <> :excludeUuid', { excludeUuid });
+    return { available: !(await qb.getOne()) };
+  }
+
+  private async ensureCnpjAvailable(cnpj: string | null | undefined, tenantId: string, excludeUuid?: string): Promise<void> {
+    if (!cnpj) return;
+    if (!(await this.cnpjAvailability(cnpj, tenantId, excludeUuid)).available) {
+      throw new ConflictException('Este CNPJ já existe no cadastro de transportadoras.');
+    }
   }
 
   async remove(uuid: string, tenantId: string): Promise<void> {

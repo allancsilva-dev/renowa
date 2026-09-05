@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Client } from './entities/client.entity';
@@ -9,6 +9,7 @@ import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { ImportResultDto } from '../common/csv/import-result.dto';
 import { importCnpjEntity, onlyDigits, parseCsvRows, pick } from '../common/csv/csv-import.util';
+import { rethrowCnpjUniqueViolation } from '../common/persistence/cnpj-conflict';
 
 const IMPORT_MAX_ROWS = 5000;
 
@@ -23,6 +24,7 @@ export class ClientsService {
 
   async create(dto: CreateClientDto, user: RequestUser): Promise<Client> {
     const tenantId = user.tenantId;
+    await this.ensureCnpjAvailable(dto.cnpj, tenantId);
     let transportadora_id: number | null = null;
 
     if (dto.transportadora_uuid) {
@@ -40,12 +42,16 @@ export class ClientsService {
       transportadora_id,
       tenant_id: tenantId,
     });
-    return this.dataSource.transaction(async (manager) => {
-      const saved = await manager.getRepository(Client).save(client);
-      await this.audit.record({ tenantId, actor: user, action: 'CREATE', resourceType: 'cliente',
-        resourceUuid: saved.uuid, fields: Object.keys(rest), purpose: 'Cadastro operacional de cliente' }, manager);
-      return saved;
-    });
+    try {
+      return await this.dataSource.transaction(async (manager) => {
+        const saved = await manager.getRepository(Client).save(client);
+        await this.audit.record({ tenantId, actor: user, action: 'CREATE', resourceType: 'cliente',
+          resourceUuid: saved.uuid, fields: Object.keys(rest), purpose: 'Cadastro operacional de cliente' }, manager);
+        return saved;
+      });
+    } catch (error) {
+      return rethrowCnpjUniqueViolation(error, 'clientes');
+    }
   }
 
   async findAll(
@@ -105,7 +111,12 @@ export class ClientsService {
     const changes: Partial<Client> = { ...rest };
     const changesTransport = Object.prototype.hasOwnProperty.call(dto, 'transportadora_uuid');
 
-    return this.dataSource.transaction(async (manager) => {
+    if (Object.prototype.hasOwnProperty.call(dto, 'cnpj')) {
+      await this.ensureCnpjAvailable(dto.cnpj, tenantId, uuid);
+    }
+
+    try {
+      return await this.dataSource.transaction(async (manager) => {
       if (changesTransport) {
         changes.transportadora_id = dto.transportadora_uuid
           ? await this.resolveTransport(manager, dto.transportadora_uuid, tenantId)
@@ -123,7 +134,28 @@ export class ClientsService {
       await this.audit.record({ tenantId, actor: user, action: 'UPDATE', resourceType: 'cliente',
         resourceUuid: uuid, fields: Object.keys(rest), purpose: 'Atualização operacional de cliente' }, manager);
       return saved;
-    });
+      });
+    } catch (error) {
+      return rethrowCnpjUniqueViolation(error, 'clientes');
+    }
+  }
+
+  async cnpjAvailability(cnpj: string | undefined, tenantId: string, excludeUuid?: string) {
+    const digits = onlyDigits(cnpj);
+    if (!digits) return { available: true };
+    const qb = this.clientRepo.createQueryBuilder('c')
+      .where('c.tenant_id = :tenantId', { tenantId })
+      .andWhere('c.deleted_at IS NULL')
+      .andWhere("regexp_replace(COALESCE(c.cnpj, ''), '\\D', '', 'g') = :cnpj", { cnpj: digits });
+    if (excludeUuid) qb.andWhere('c.uuid <> :excludeUuid', { excludeUuid });
+    return { available: !(await qb.getOne()) };
+  }
+
+  private async ensureCnpjAvailable(cnpj: string | null | undefined, tenantId: string, excludeUuid?: string): Promise<void> {
+    if (!cnpj) return;
+    if (!(await this.cnpjAvailability(cnpj, tenantId, excludeUuid)).available) {
+      throw new ConflictException('Este CNPJ já existe no cadastro de clientes.');
+    }
   }
 
   private async resolveTransport(manager: EntityManager, uuid: string, tenantId: string): Promise<number> {

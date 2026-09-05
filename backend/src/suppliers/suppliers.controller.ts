@@ -47,6 +47,16 @@ export class SuppliersController {
     return this.suppliersService.findAll(user.tenantId, pagination, search);
   }
 
+  @Get('disponibilidade-cnpj')
+  @RequirePermission('fornecedores.ver')
+  async cnpjAvailability(
+    @Query('cnpj') cnpj: string,
+    @Query('excludeUuid') excludeUuid: string | undefined,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.suppliersService.cnpjAvailability(cnpj, user.tenantId, excludeUuid);
+  }
+
   @Get(':uuid')
   @RequirePermission('fornecedores.ver')
   async findOne(@Param('uuid') uuid: string, @CurrentUser() user: RequestUser) {
