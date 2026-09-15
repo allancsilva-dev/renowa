@@ -2,7 +2,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const nginxConfig = readFileSync(new URL('../nginx.conf', import.meta.url), 'utf8');
+// O CSP vive no arquivo incluído pelo nginx.conf; validar o include diretamente
+// evita falso negativo quando os cabeçalhos são compartilhados entre locations.
+const nginxConfig = readFileSync(new URL('../security-headers.conf', import.meta.url), 'utf8');
 
 describe('Content-Security-Policy do frontend', () => {
   const sources = (directive: string) =>
