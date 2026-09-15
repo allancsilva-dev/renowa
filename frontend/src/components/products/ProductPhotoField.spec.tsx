@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { StrictMode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProductPhotoField from './ProductPhotoField';
@@ -23,6 +23,16 @@ function escolher() {
   const input = document.querySelector('input[type="file"]') as HTMLInputElement;
   fireEvent.change(input, { target: { files: [arquivo()] } });
 }
+
+function zona() {
+  return screen.getByText(/Aparece na linha deste produto/).parentElement!
+    .querySelector('[aria-busy]') as HTMLElement;
+}
+
+beforeEach(() => {
+  globalThis.URL.createObjectURL = vi.fn(() => 'blob:preview');
+  globalThis.URL.revokeObjectURL = vi.fn();
+});
 
 afterEach(() => {
   cleanup();
@@ -64,6 +74,33 @@ describe('ProductPhotoField — produto já salvo', () => {
 
     await waitFor(() => expect(uploadProductPhoto).toHaveBeenCalledWith('prod-1', expect.any(File)));
     await waitFor(() => expect(screen.getByAltText('Foto do produto')).toBeInTheDocument());
+  });
+
+  it('sobe imediatamente a foto arrastada na edição', async () => {
+    fetchProductPhoto.mockResolvedValue(null);
+    uploadProductPhoto.mockResolvedValue({ uuid: 'f1', version: 1 });
+    fetchProductPhotoDataUrl.mockResolvedValue('data:image/png;base64,DROP');
+
+    render(<ProductPhotoField produtoUuid='prod-1' editable />);
+    await waitFor(() => expect(fetchProductPhoto).toHaveBeenCalled());
+    const file = arquivo();
+    fireEvent.drop(zona(), { dataTransfer: { files: [file] } });
+
+    await waitFor(() => expect(uploadProductPhoto).toHaveBeenCalledWith('prod-1', file));
+    expect(screen.getByAltText('Foto do produto')).toHaveAttribute('src', 'data:image/png;base64,DROP');
+  });
+
+  it('recusa arquivo arrastado que não é imagem', async () => {
+    fetchProductPhoto.mockResolvedValue(null);
+    render(<ProductPhotoField produtoUuid='prod-1' editable />);
+    await waitFor(() => expect(fetchProductPhoto).toHaveBeenCalled());
+
+    fireEvent.drop(zona(), {
+      dataTransfer: { files: [new File(['x'], 'nota.pdf', { type: 'application/pdf' })] },
+    });
+
+    expect(uploadProductPhoto).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent('Arraste uma imagem JPEG, PNG ou WEBP.');
   });
 
   /** Remover manda a `version` corrente: outra aba pode ter trocado a foto. */
@@ -170,6 +207,20 @@ describe('ProductPhotoField — produto ainda não salvo', () => {
     expect(uploadProductPhoto).not.toHaveBeenCalled();
     expect(fetchProductPhoto).not.toHaveBeenCalled();
     expect(screen.getByAltText('Foto do produto')).toHaveAttribute('src', 'blob:preview');
+  });
+
+  it('guarda o arquivo arrastado até salvar o produto', async () => {
+    const onPendingChange = vi.fn();
+    globalThis.URL.createObjectURL = vi.fn(() => 'blob:drop-preview');
+    globalThis.URL.revokeObjectURL = vi.fn();
+
+    render(<ProductPhotoField editable onPendingChange={onPendingChange} />);
+    const file = arquivo();
+    fireEvent.drop(zona(), { dataTransfer: { files: [file] } });
+
+    await waitFor(() => expect(onPendingChange).toHaveBeenCalledWith(file));
+    expect(uploadProductPhoto).not.toHaveBeenCalled();
+    expect(screen.getByAltText('Foto do produto')).toHaveAttribute('src', 'blob:drop-preview');
   });
 
   it('remover limpa o arquivo pendente', async () => {

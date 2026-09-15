@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 
@@ -23,6 +23,18 @@ export function useFileDrop(onFile: (file: File) => void, options: UseFileDropOp
   // Entrar num elemento filho dispara dragleave no pai: sem contador, o
   // destaque pisca enquanto o cursor atravessa a zona.
   const depth = useRef(0);
+
+  // Soltar o arquivo fora da zona faz o navegador abri-lo e descartar o
+  // formulário não salvo (ex.: pedido com vários itens). Vale mesmo desabilitado.
+  useEffect(() => {
+    const block = (event: DragEvent) => event.preventDefault();
+    window.addEventListener('dragover', block);
+    window.addEventListener('drop', block);
+    return () => {
+      window.removeEventListener('dragover', block);
+      window.removeEventListener('drop', block);
+    };
+  }, []);
 
   const onDragEnter = useCallback((event: React.DragEvent) => {
     if (disabled) return;

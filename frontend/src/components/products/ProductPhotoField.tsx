@@ -8,6 +8,7 @@ import {
   fetchProductPhotoDataUrl,
   uploadProductPhoto,
 } from '@/services/productPhotos.service';
+import { IMAGE_MIME_TYPES, useFileDrop } from '@/hooks/useFileDrop';
 
 type LoadedProductPhoto = { meta: ProductPhoto | null; dataUrl: string | null };
 
@@ -57,6 +58,19 @@ export default function ProductPhotoField({
   const [pending, setPending] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const { isOver, rejection, clearRejection, dropProps } = useFileDrop(
+    (file) => { void escolher(file); },
+    {
+      disabled: !editable || busy,
+      accept: IMAGE_MIME_TYPES,
+      rejectMessage: 'Arraste uma imagem JPEG, PNG ou WEBP.',
+    },
+  );
+
+  useEffect(() => () => {
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
+  }, [preview]);
+
   useEffect(() => {
     if (!produtoUuid) return;
     let ativo = true;
@@ -127,7 +141,13 @@ export default function ProductPhotoField({
           {erro}
         </p>
       )}
-      <div className='mt-1 flex items-center gap-3'>
+      <div
+        {...dropProps}
+        aria-busy={busy}
+        className={`mt-1 flex items-center gap-3 rounded-lg border p-3 transition-colors ${
+          isOver ? 'border-dashed border-primary bg-primary/5' : 'border-slate-200 bg-slate-50'
+        }`}
+      >
         <div className='flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50'>
           {preview
             ? <img src={preview} alt='Foto do produto' className='h-full w-full object-contain' />
@@ -135,9 +155,10 @@ export default function ProductPhotoField({
         </div>
         {editable && (
           <div className='flex flex-col gap-2'>
-            <label className='flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50'>
+            <p className='text-xs text-slate-500'>Arraste uma imagem para cá ou escolha um arquivo.</p>
+            <label className='relative flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-100'>
               <ImagePlus className='h-4 w-4' />
-              {temFoto ? 'Trocar foto' : 'Escolher foto'}
+              {busy ? 'Enviando...' : temFoto ? 'Trocar foto' : 'Escolher foto'}
               <input
                 type='file'
                 accept='image/jpeg,image/png,image/webp'
@@ -146,7 +167,10 @@ export default function ProductPhotoField({
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   event.target.value = '';
-                  if (file) void escolher(file);
+                  if (file) {
+                    clearRejection();
+                    void escolher(file);
+                  }
                 }}
               />
             </label>
@@ -164,6 +188,7 @@ export default function ProductPhotoField({
           </div>
         )}
       </div>
+      {rejection && <p role='alert' className='mt-1 text-xs text-red-700'>{rejection}</p>}
       {editable && (
         <div
           role='status'
