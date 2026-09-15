@@ -15,8 +15,21 @@ import { Can } from '@/components/Can';
 import { useAuth } from '@/hooks/useAuth';
 import { canCancelarPedido } from '@/lib/orderPermissions';
 import { getApiErrorMessage } from '@/lib/errors';
+import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
+import { fetchSuppliers } from '@/services/suppliers.service';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+function supplierFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
+  return fetchSuppliers({ search, page, limit: 20 }).then((result) => ({
+    options: result.data.map((supplier) => ({
+      value: supplier.uuid,
+      label: supplier.razao_social,
+      description: supplier.cnpj ?? undefined,
+    })),
+    hasMore: result.meta.page < result.meta.totalPages,
+  }));
+}
 
 export default function Pedidos() {
   const navigate = useNavigate();
@@ -24,6 +37,8 @@ export default function Pedidos() {
   const [statusFilter, setStatusFilter] = useState<OrderStatus | ''>('');
   const [origemFilter, setOrigemFilter] = useState<OrderOrigem | ''>('');
   const [search, setSearch] = useState('');
+  const [fornecedorFiltroUuid, setFornecedorFiltroUuid] = useState<string | null>(null);
+  const [fornecedorFiltroLabel, setFornecedorFiltroLabel] = useState('');
   const [novoMenuAberto, setNovoMenuAberto] = useState(false);
   const novoMenuRef = useRef<HTMLDivElement>(null);
   const [menuPedidoUuid, setMenuPedidoUuid] = useState<string | null>(null);
@@ -37,8 +52,9 @@ export default function Pedidos() {
         status: statusFilter || undefined,
         origem: origemFilter || undefined,
         search: search || undefined,
+        fornecedor_uuid: fornecedorFiltroUuid || undefined,
       }),
-    [statusFilter, origemFilter, search],
+    [statusFilter, origemFilter, search, fornecedorFiltroUuid],
   );
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<Order>({ fetcher });
@@ -97,6 +113,11 @@ export default function Pedidos() {
       cell: (row: Order) => row.cliente?.razao_social ?? '—',
     },
     {
+      key: 'fornecedor_id',
+      header: 'Fornecedor',
+      cell: (row: Order) => row.fornecedor?.razao_social ?? '—',
+    },
+    {
       key: 'data',
       header: 'Data',
       cell: (row: Order) => formatDate(row.data),
@@ -148,7 +169,7 @@ export default function Pedidos() {
             type='search'
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder='Cliente, CNPJ, número ou sistema'
+            placeholder='Cliente, fornecedor, CNPJ, número ou sistema'
             aria-label='Buscar pedidos'
             className='min-h-11 min-w-64 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
           />
@@ -174,6 +195,21 @@ export default function Pedidos() {
               <option key={o} value={o}>{orderOrigemLabel[o]}</option>
             ))}
           </select>
+          <div className='w-64'>
+            <AsyncCombobox
+              ariaLabel='Filtrar por fornecedor'
+              value={fornecedorFiltroUuid}
+              displayValue={fornecedorFiltroLabel}
+              onChange={(value, option) => {
+                setFornecedorFiltroUuid(value);
+                setFornecedorFiltroLabel(option?.label ?? '');
+              }}
+              fetcher={supplierFetcher}
+              placeholder='Filtrar por fornecedor...'
+              emptyMessage='Nenhum fornecedor encontrado.'
+              errorMessage='Não foi possível carregar os fornecedores.'
+            />
+          </div>
         </div>
 
         {/* O menu inteiro some sem `pedidos.criar`: as duas opções levam a rotas

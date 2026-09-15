@@ -75,6 +75,26 @@ describe('OrdersService.findAll — filtros', () => {
     expect(qb.andWhere).toHaveBeenCalledWith('o.origem = :origem', { origem: 'externo' });
   });
 
+  it('carrega fornecedor e inclui razão social/CNPJ na busca sem remover o escopo do tenant', async () => {
+    const { service, qb } = serviceParaLista();
+
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, undefined, 'Acme');
+
+    expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('o.fornecedor', 'fornecedor');
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('fornecedor.razao_social ILIKE'), { search: '%Acme%' });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('fornecedor.cnpj ILIKE'), { search: '%Acme%' });
+    expect(qb.where).toHaveBeenCalledWith('o.tenant_id = :tenantId', { tenantId: 'tenant-a' });
+  });
+
+  it('filtra pelo fornecedor selecionado', async () => {
+    const { service, qb } = serviceParaLista();
+
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, undefined, undefined, undefined, 'forn-uuid');
+
+    expect(qb.andWhere).toHaveBeenCalledWith('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid: 'forn-uuid' });
+    expect(qb.where).toHaveBeenCalledWith('o.tenant_id = :tenantId', { tenantId: 'tenant-a' });
+  });
+
   // PROB-0081: os testes acima passavam sem provar nada sobre o HTTP — `status` e
   // `origem` nem chegavam ao service, porque o `forbidNonWhitelisted` global os
   // rejeitava como propriedade desconhecida. O que impede o falso positivo de
@@ -102,6 +122,15 @@ describe('OrdersService.findAll — filtros', () => {
     it('mantém `search` e a paginação aceitos', async () => {
       const dto = plainToInstance(ListOrdersQueryDto, { page: 2, limit: 50, search: 'acme' });
       expect(await validate(dto, pipeOptions)).toEqual([]);
+    });
+
+    it('aceita fornecedor_uuid válido e recusa valor que não é uuid', async () => {
+      const valido = plainToInstance(ListOrdersQueryDto, { fornecedor_uuid: '55555555-5555-4555-8555-555555555555' });
+      expect(await validate(valido, pipeOptions)).toEqual([]);
+
+      const errors = await validate(plainToInstance(ListOrdersQueryDto, { fornecedor_uuid: 'x' }), pipeOptions);
+      expect(errors).toHaveLength(1);
+      expect(errors[0].property).toBe('fornecedor_uuid');
     });
   });
 });

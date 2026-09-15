@@ -456,10 +456,12 @@ export class OrdersService {
     status?: string,
     search?: string,
     origem?: string,
+    fornecedorUuid?: string,
   ): Promise<PaginatedResponse<Order>> {
     const { page = 1, limit = 20 } = pagination;
     const qb = this.orderRepo.createQueryBuilder('o')
       .leftJoinAndSelect('o.cliente', 'c')
+      .leftJoinAndSelect('o.fornecedor', 'fornecedor')
       .where('o.tenant_id = :tenantId', { tenantId })
       .andWhere('o.deleted_at IS NULL');
     if (this.isVendorOnly(user)) {
@@ -479,10 +481,14 @@ export class OrdersService {
       }
       qb.andWhere('o.origem = :origem', { origem });
     }
+    if (fornecedorUuid) {
+      qb.andWhere('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid });
+    }
     if (search) {
       qb.andWhere(
         '(CAST(o.numero_pedido AS TEXT) ILIKE :search OR o.numero_pedido_externo ILIKE :search'
-        + ' OR o.sistema_origem ILIKE :search OR c.razao_social ILIKE :search OR c.cnpj ILIKE :search)',
+        + ' OR o.sistema_origem ILIKE :search OR c.razao_social ILIKE :search OR c.cnpj ILIKE :search'
+        + ' OR fornecedor.razao_social ILIKE :search OR fornecedor.cnpj ILIKE :search)',
         { search: `%${search}%` },
       );
     }

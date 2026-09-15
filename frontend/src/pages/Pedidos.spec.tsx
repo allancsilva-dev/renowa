@@ -7,6 +7,7 @@ import type { Order } from '@/types';
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(), reload: vi.fn(), updateStatus: vi.fn(), permissions: new Set<string>(),
+  fetchOrders: vi.fn(), fetcher: null as null | ((params: { page: number; limit: number }) => unknown),
 }));
 
 vi.mock('react-router-dom', () => ({ useNavigate: () => mocks.navigate }));
@@ -14,17 +15,32 @@ vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ hasPermission: (permission: string) => mocks.permissions.has(permission) }),
 }));
 vi.mock('@/services/orders.service', () => ({
-  fetchOrders: vi.fn(),
+  fetchOrders: (...args: unknown[]) => mocks.fetchOrders(...args),
   updateOrderStatus: (...args: unknown[]) => mocks.updateStatus(...args),
 }));
+vi.mock('@/services/suppliers.service', () => ({ fetchSuppliers: vi.fn() }));
+vi.mock('@/components/ui/AsyncCombobox', () => ({
+  AsyncCombobox: ({ ariaLabel, onChange }: {
+    ariaLabel: string;
+    onChange: (value: string | null, option: { label: string } | null) => void;
+  }) => (
+    <div aria-label={ariaLabel}>
+      <button type='button' onClick={() => onChange('forn-1', { label: 'Fornecedor Acme' })}>filtrar fornecedor</button>
+      <button type='button' onClick={() => onChange(null, null)}>limpar fornecedor</button>
+    </div>
+  ),
+}));
 vi.mock('@/hooks/usePaginatedQuery', () => ({
-  usePaginatedQuery: () => ({
-    data: [
-      { uuid: 'interno-1', version: 3, numero_pedido: 10, origem: 'interno', status: 'em_aberto', itens: [] },
-      { uuid: 'externo-1', version: 2, numero_pedido: 11, origem: 'externo', status: 'faturado', itens: [] },
-    ] as unknown as Order[],
-    meta: null, isLoading: false, error: null, goToPage: vi.fn(), reload: mocks.reload,
-  }),
+  usePaginatedQuery: ({ fetcher }: { fetcher: (params: { page: number; limit: number }) => unknown }) => {
+    mocks.fetcher = fetcher;
+    return {
+      data: [
+        { uuid: 'interno-1', version: 3, numero_pedido: 10, origem: 'interno', status: 'em_aberto', fornecedor: { razao_social: 'Fornecedor Acme' }, itens: [] },
+        { uuid: 'externo-1', version: 2, numero_pedido: 11, origem: 'externo', status: 'faturado', itens: [] },
+      ] as unknown as Order[],
+      meta: null, isLoading: false, error: null, goToPage: vi.fn(), reload: mocks.reload,
+    };
+  },
 }));
 vi.mock('@/components/tables/DataTable', () => ({
   default: ({ columns, data }: { columns: Array<{ key: string; cell: (row: Order) => React.ReactNode }>; data: Order[] }) => (
@@ -46,6 +62,22 @@ afterEach(() => {
 });
 
 describe('Pedidos — menu de ações', () => {
+  it('mostra o fornecedor e fallback para pedido legado sem vínculo', () => {
+    render(<Pedidos />);
+    expect(screen.getByText('Fornecedor Acme')).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+  it('envia o fornecedor escolhido no filtro e remove ao limpar', () => {
+    render(<Pedidos />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'filtrar fornecedor' }));
+    mocks.fetcher!({ page: 1, limit: 20 });
+    expect(mocks.fetchOrders).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, fornecedor_uuid: 'forn-1' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'limpar fornecedor' }));
+    mocks.fetcher!({ page: 1, limit: 20 });
+    expect(mocks.fetchOrders.mock.lastCall?.[0].fornecedor_uuid).toBeUndefined();
+  });
   it('usa três pontos verticais e abre detalhes', async () => {
     render(<Pedidos />);
     fireEvent.click(screen.getByRole('button', { name: 'Opções do pedido #10' }));

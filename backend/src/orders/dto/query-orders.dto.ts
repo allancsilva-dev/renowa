@@ -1,4 +1,4 @@
-import { IsIn, IsOptional } from 'class-validator';
+import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { ORDER_ORIGENS, ORDER_STATUSES } from '../entities/order.entity';
 
@@ -27,4 +27,8 @@ export class ListOrdersQueryDto extends PaginationDto {
     message: `Origem inválida. Use um de: ${ORDER_ORIGENS.join(', ')}.`,
   })
   origem?: string;
+
+  @IsOptional()
+  @IsUUID(undefined, { message: 'fornecedor_uuid inválido.' })
+  fornecedor_uuid?: string;
 }
