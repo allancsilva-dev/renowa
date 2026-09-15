@@ -15,6 +15,7 @@ import { CSV_TEMPLATE_HEADERS, downloadCsvTemplate } from '@/lib/csvTemplate';
 import { Can } from '@/components/Can';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const INTEGER = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
 
 function supplierFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
   return fetchSuppliers({ search, page, limit: 20 }).then((result) => ({
@@ -100,8 +101,8 @@ export default function Produtos() {
     },
     {
       key: 'quantidade',
-      header: 'Quantidade',
-      cell: (row: Product) => row.quantidade,
+      header: 'Unidades por caixa',
+      cell: (row: Product) => INTEGER.format(row.quantidade),
     },
     {
       key: 'preco_base',
@@ -240,7 +241,8 @@ export default function Produtos() {
                 <code className='rounded bg-slate-100 px-1'>codigo</code>,{' '}
                 <code className='rounded bg-slate-100 px-1'>descricao</code> e{' '}
                 <code className='rounded bg-slate-100 px-1'>preco_base</code>,{' '}
-                <code className='rounded bg-slate-100 px-1'>ipi_perc</code> e{' '}
+                <code className='rounded bg-slate-100 px-1'>ipi_perc</code>,{' '}
+                <code className='rounded bg-slate-100 px-1'>quantidade</code> (unidades por caixa, inteiro ≥ 0) e{' '}
                 <code className='rounded bg-slate-100 px-1'>foto</code>. No XLSX, ancore uma imagem flutuante na célula <code className='rounded bg-slate-100 px-1'>foto</code> da mesma linha. O modo “Imagem na célula” não é aceito. Máximo de 5.000 linhas e 500 imagens.
               </p>
               <button

@@ -43,6 +43,39 @@ function buildService(manager: any) {
   return new ProductsService({} as any, dataSource, {} as any);
 }
 
+describe('ProductsService#findAll', () => {
+  it('isola tenant, inclui fornecedor e combina busca com filtro por UUID', async () => {
+    const rows = [{
+      uuid: 'p1', descricao: 'Produto', quantidade: 12,
+      fornecedor: { uuid: 'f1', razao_social: 'Fornecedor Um' },
+    }];
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'skip', 'take']) {
+      qb[method] = jest.fn(() => qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([rows, 1]);
+    const productRepo = { createQueryBuilder: jest.fn(() => qb) } as any;
+    const service = new ProductsService(productRepo, {} as any, {} as any);
+
+    await expect(service.findAll(
+      'tenant-a', { page: 2, limit: 10 }, 'parafuso', 'fornecedor-uuid',
+    )).resolves.toEqual({
+      data: rows,
+      meta: { total: 1, page: 2, limit: 10, totalPages: 1 },
+    });
+
+    expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('p.fornecedor', 'f');
+    expect(qb.where).toHaveBeenCalledWith('p.tenant_id = :tenantId', { tenantId: 'tenant-a' });
+    expect(qb.andWhere).toHaveBeenCalledWith('p.deleted_at IS NULL');
+    expect(qb.andWhere).toHaveBeenCalledWith(
+      '(p.descricao ILIKE :s OR p.codigo ILIKE :s)', { s: '%parafuso%' },
+    );
+    expect(qb.andWhere).toHaveBeenCalledWith('f.uuid = :fornecedorUuid', { fornecedorUuid: 'fornecedor-uuid' });
+    expect(qb.skip).toHaveBeenCalledWith(10);
+    expect(qb.take).toHaveBeenCalledWith(10);
+  });
+});
+
 describe('ProductsService#importFromFile', () => {
   it('rejeita quando não há arquivo', async () => {
     const { manager } = makeManager();

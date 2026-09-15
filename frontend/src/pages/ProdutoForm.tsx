@@ -233,7 +233,7 @@ export default function ProdutoForm() {
 
           <div className='flex flex-col gap-1'>
             <label htmlFor='produto-quantidade' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
-              Quantidade <span className='text-red-500'>*</span>
+              Unidades por caixa <span className='text-red-500'>*</span>
             </label>
             <input
               type='number'

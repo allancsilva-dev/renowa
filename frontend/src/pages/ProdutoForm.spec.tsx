@@ -90,7 +90,7 @@ describe('ProdutoForm — criação com foto', () => {
 
   it('permite alterar quantidade enviada no cadastro', async () => {
     const salvar = await preencher();
-    fireEvent.change(screen.getByLabelText(/Quantidade/), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText(/Unidades por caixa/), { target: { value: '6' } });
 
     fireEvent.click(salvar);
 

@@ -154,10 +154,11 @@ export class ProductsService {
       { header: 'descricao', key: 'descricao', width: 42 },
       { header: 'preco_base', key: 'preco_base', width: 16 },
       { header: 'ipi_perc', key: 'ipi_perc', width: 14 },
-      { header: 'quantidade', key: 'quantidade', width: 14 },
+      { header: 'quantidade', key: 'quantidade', width: 18 },
       { header: 'foto', key: 'foto', width: 22 },
     ];
     sheet.getRow(1).font = { bold: true };
+    sheet.getCell('E1').note = 'Quantidade de unidades contidas em cada caixa. Informe um número inteiro maior ou igual a zero.';
     sheet.addRow({ codigo: 'PROD-001', descricao: 'Produto de exemplo', preco_base: 10.5, ipi_perc: 5, quantidade: 1, foto: 'Ancore uma imagem flutuante nesta célula' });
     sheet.getRow(2).height = 72;
     const output = await workbook.xlsx.writeBuffer();
