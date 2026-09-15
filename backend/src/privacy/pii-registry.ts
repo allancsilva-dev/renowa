@@ -134,6 +134,18 @@ export const PII_REGISTRY: readonly PiiTablePlan[] = [
       'Observação livre da nota, alcançável pelo titular via pedido. Número, série '
       + 'e valor ficam: são registro fiscal com retenção legal própria.',
   },
+  {
+    table: 'faturamento_finalizacoes',
+    subject: 'CLIENT',
+    vinculo: { kind: 'via', sql: 'pedido_id IN (SELECT id FROM pedidos WHERE tenant_id = $1 AND cliente_id = $2)' },
+    columns: {
+      motivo: { set: 'literal', value: '[removido - LGPD]' },
+      reabertura_motivo: { set: 'null' },
+    },
+    bumpVersion: true,
+    motivo:
+      'Os motivos de fechamento e reabertura são textos livres ligados ao cliente pelo pedido e podem conter PII.',
+  },
 
   // ── Ramo USER ──────────────────────────────────────────────────────────────
   {

@@ -4,6 +4,10 @@ import { Order } from '../orders/entities/order.entity';
 import { NotaFiscal } from './entities/nota-fiscal.entity';
 import { Commission } from '../finance/entities/commission.entity';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
+import { FaturamentoFinalizacao } from './entities/faturamento-finalizacao.entity';
+import { FinalizarFaturamentoDto, ReabrirFaturamentoDto } from './dto/finalizar-faturamento.dto';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 
 const tenantId = 'tenant-a';
 const pedidoUuid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
@@ -17,6 +21,7 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
     cliente_id: 2,
     fornecedor_id: 3,
     numero_pedido: 10,
+    version: 1,
     data: '2026-01-01',
     total_com_imposto: '100.00',
     total_sem_imposto: null,
@@ -50,20 +55,27 @@ function buildRepos({ order, notaSumAfter, existingNota = null }: { order: Order
     update: jest.fn().mockResolvedValue({ affected: 1 }),
     softRemove: jest.fn(async (v: any) => v),
   };
-  return { orderRepo, notaRepo, commissionRepo };
+  const finalizacaoRepo = {
+    findOne: jest.fn().mockResolvedValue(null),
+    find: jest.fn().mockResolvedValue([]),
+    create: jest.fn((v: any) => v),
+    save: jest.fn(async (v: any) => ({ ...v, id: v.id ?? 9, version: v.version ?? 1 })),
+  };
+  return { orderRepo, notaRepo, commissionRepo, finalizacaoRepo };
 }
 
-function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: any }) {
+function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: any; finalizacaoRepo: any }) {
   const manager = {
     getRepository: jest.fn((entity: any) => {
       if (entity === Order) return repos.orderRepo;
       if (entity === NotaFiscal) return repos.notaRepo;
       if (entity === Commission) return repos.commissionRepo;
+      if (entity === FaturamentoFinalizacao) return repos.finalizacaoRepo;
       throw new Error(`repo not mocked for ${String(entity)}`);
     }),
   };
   const dataSource = { transaction: jest.fn((cb: any) => cb(manager)) } as any;
-  return new FaturamentoService(repos.notaRepo, repos.orderRepo, dataSource);
+  return new FaturamentoService(repos.notaRepo, repos.orderRepo, dataSource, repos.finalizacaoRepo);
 }
 
 describe('FaturamentoService', () => {
@@ -81,7 +93,7 @@ describe('FaturamentoService', () => {
       }
       somaQb.getRawMany = jest.fn().mockResolvedValue([]);
       const notaRepo = { createQueryBuilder: jest.fn(() => somaQb) };
-      return new FaturamentoService(notaRepo as any, orderRepo as any, {} as any);
+      return new FaturamentoService(notaRepo as any, orderRepo as any, {} as any, { find: jest.fn() } as any);
     }
 
     // Quem confere a nota precisa distinguir valor declarado de valor somado dos
@@ -271,5 +283,92 @@ describe('FaturamentoService', () => {
       await expect(service.excluirNota('nota-1', 1, tenantId)).rejects.toBeInstanceOf(ConflictException);
       expect(repos.notaRepo.softRemove).not.toHaveBeenCalled();
     });
+  });
+
+  describe('finalização manual', () => {
+    it('fecha saldo positivo recalculado no servidor e incrementa a versão do pedido', async () => {
+      const order = buildOrder({ status: 'parcialmente_faturado', total_com_imposto: '42.85' });
+      const repos = buildRepos({ order, notaSumAfter: '40.00' });
+      const service = buildService(repos);
+
+      const result = await service.finalizar(pedidoUuid, {
+        uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', version: 1, motivo: 'Diferença aceita',
+      }, tenantId, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+
+      expect(result.saldo_encerrado).toBe('2.85');
+      expect(repos.finalizacaoRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        pedido_id: 1, saldo_encerrado: '2.85', motivo: 'Diferença aceita',
+      }));
+      expect(repos.orderRepo.update).toHaveBeenCalledWith(
+        { id: 1, tenant_id: tenantId },
+        expect.objectContaining({ status: 'faturado' }),
+      );
+    });
+
+    it('recusa status inválido, saldo não positivo e versão obsoleta', async () => {
+      const invalidStatus = buildRepos({ order: buildOrder({ status: 'liberado' }), notaSumAfter: '0.00' });
+      await expect(buildService(invalidStatus).finalizar(pedidoUuid, {
+        uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', version: 1, motivo: 'Motivo válido',
+      }, tenantId, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).rejects.toBeInstanceOf(ConflictException);
+
+      const noBalance = buildRepos({ order: buildOrder({ status: 'parcialmente_faturado' }), notaSumAfter: '100.00' });
+      await expect(buildService(noBalance).finalizar(pedidoUuid, {
+        uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', version: 1, motivo: 'Motivo válido',
+      }, tenantId, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).rejects.toBeInstanceOf(ConflictException);
+
+      const stale = buildRepos({ order: buildOrder({ status: 'parcialmente_faturado', version: 2 }), notaSumAfter: '40.00' });
+      await expect(buildService(stale).finalizar(pedidoUuid, {
+        uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', version: 1, motivo: 'Motivo válido',
+      }, tenantId, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).rejects.toBeInstanceOf(ConcurrentModificationException);
+    });
+
+    it('reabre uma finalização ativa e recalcula o status pelas notas', async () => {
+      const order = buildOrder({ status: 'faturado', version: 2 });
+      const repos = buildRepos({ order, notaSumAfter: '40.00' });
+      const active = { id: 9, uuid: 'fin-1', version: 3, tenant_id: tenantId, pedido_id: 1, reaberto_at: null };
+      repos.finalizacaoRepo.findOne.mockResolvedValue(active);
+      const service = buildService(repos);
+
+      await service.reabrir(pedidoUuid, {
+        version: 2, finalizacao_version: 3, motivo: 'Emitiremos outra nota',
+      }, tenantId, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+
+      expect(repos.finalizacaoRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        reaberto_por: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', reabertura_motivo: 'Emitiremos outra nota',
+      }));
+      expect(repos.orderRepo.update).toHaveBeenCalledWith(
+        { id: 1, tenant_id: tenantId },
+        expect.objectContaining({ status: 'parcialmente_faturado' }),
+      );
+    });
+
+    it('bloqueia alteração de nota enquanto há fechamento ativo', async () => {
+      const order = buildOrder({ status: 'faturado' });
+      const repos = buildRepos({ order, notaSumAfter: '40.00' });
+      repos.notaRepo.findOne.mockResolvedValue({ id: 5, uuid: 'nota-1', tenant_id: tenantId, pedido_id: 1, version: 1, valor: '40.00' });
+      repos.finalizacaoRepo.findOne.mockResolvedValue({ id: 9, reaberto_at: null });
+
+      await expect(buildService(repos).atualizarNota('nota-1', { version: 1, valor: 41 } as any, tenantId))
+        .rejects.toBeInstanceOf(ConflictException);
+      expect(repos.notaRepo.save).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('Finalizar/ReabrirFaturamentoDto — motivo', () => {
+  const pipeOptions = { whitelist: true, forbidNonWhitelisted: true };
+  const base = { uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', version: 1 };
+
+  it('aceita motivo até 1000 caracteres e recusa acima', async () => {
+    expect(await validate(plainToInstance(FinalizarFaturamentoDto, { ...base, motivo: 'a'.repeat(1000) }), pipeOptions)).toEqual([]);
+
+    const errors = await validate(plainToInstance(FinalizarFaturamentoDto, { ...base, motivo: 'a'.repeat(1001) }), pipeOptions);
+    expect(errors.map((error) => error.property)).toEqual(['motivo']);
+
+    const reabrir = await validate(
+      plainToInstance(ReabrirFaturamentoDto, { version: 1, finalizacao_version: 1, motivo: 'a'.repeat(1001) }),
+      pipeOptions,
+    );
+    expect(reabrir.map((error) => error.property)).toEqual(['motivo']);
   });
 });

@@ -25,6 +25,22 @@ export interface FaturamentoPedidoDetalhe extends Order {
   valor: string;
   total_faturado: string;
   divergencia: string;
+  finalizacao_ativa: FaturamentoFinalizacao | null;
+  finalizacoes: FaturamentoFinalizacao[];
+}
+
+export interface FaturamentoFinalizacao {
+  uuid: string;
+  version: number;
+  saldo_encerrado: string;
+  motivo: string;
+  finalizado_por: string;
+  finalizadoPor?: { nome: string } | null;
+  created_at: string;
+  reaberto_at: string | null;
+  reaberto_por: string | null;
+  reabertoPor?: { nome: string } | null;
+  reabertura_motivo: string | null;
 }
 
 export async function fetchFaturamentoPedidos(params: {
@@ -70,4 +86,14 @@ export async function atualizarNota(uuid: string, payload: UpdateNotaFiscalPaylo
 
 export async function excluirNota(uuid: string, version: number): Promise<void> {
   await api.delete(`/faturamento/notas/${uuid}`, { params: { version } });
+}
+
+export async function finalizarFaturamento(pedidoUuid: string, payload: { uuid: string; version: number; motivo: string }): Promise<FaturamentoFinalizacao> {
+  const { data } = await api.post<ApiResponse<FaturamentoFinalizacao>>(`/faturamento/pedidos/${pedidoUuid}/finalizacao`, payload);
+  return data.data;
+}
+
+export async function reabrirFaturamento(pedidoUuid: string, payload: { version: number; finalizacao_version: number; motivo: string }): Promise<FaturamentoFinalizacao> {
+  const { data } = await api.post<ApiResponse<FaturamentoFinalizacao>>(`/faturamento/pedidos/${pedidoUuid}/reabertura`, payload);
+  return data.data;
 }

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -7,12 +7,19 @@ import { Order } from '../orders/entities/order.entity';
 import { Commission } from '../finance/entities/commission.entity';
 import { CreateNotaFiscalDto } from './dto/create-nota-fiscal.dto';
 import { UpdateNotaFiscalDto } from './dto/update-nota-fiscal.dto';
+import { FinalizarFaturamentoDto, ReabrirFaturamentoDto } from './dto/finalizar-faturamento.dto';
+import { FaturamentoFinalizacao } from './entities/faturamento-finalizacao.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { decimal, money, percentageOf } from '../common/decimal/decimal';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 
 /** Pedidos elegíveis para registrar nota fiscal (fora de em_aberto/cancelado). */
 const FATURAVEL_STATUSES = ['liberado', 'parcialmente_faturado', 'faturado'];
+
+/** Data civil (YYYY-MM-DD) em America/Sao_Paulo — `toISOString` usa UTC e vira o dia após 21h. */
+function saoPauloDate(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(date);
+}
 
 export interface PedidoFaturamentoRow {
   uuid: string;
@@ -39,6 +46,7 @@ export class FaturamentoService {
     @InjectRepository(NotaFiscal) private readonly notaRepo: Repository<NotaFiscal>,
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     private readonly dataSource: DataSource,
+    @InjectRepository(FaturamentoFinalizacao) private readonly finalizacaoRepo: Repository<FaturamentoFinalizacao>,
   ) {}
 
   private orderValor(order: Pick<Order, 'total_com_imposto' | 'total_sem_imposto'>): string {
@@ -116,6 +124,24 @@ export class FaturamentoService {
 
     const valor = this.orderValor(order);
     const totalFaturado = money(notas.reduce((acc, n) => acc.plus(decimal(n.valor)), decimal(0)));
+    const finalizacoes = await this.finalizacaoRepo.find({
+      where: { pedido_id: order.id, tenant_id: tenantId, deleted_at: IsNull() },
+      relations: ['finalizadoPor', 'reabertoPor'],
+      order: { created_at: 'DESC' },
+    });
+    const finalizacoesPublicas = finalizacoes.map((item) => ({
+      uuid: item.uuid,
+      version: item.version,
+      saldo_encerrado: item.saldo_encerrado,
+      motivo: item.motivo,
+      finalizado_por: item.finalizado_por,
+      finalizadoPor: item.finalizadoPor ? { nome: item.finalizadoPor.nome } : null,
+      created_at: item.created_at,
+      reaberto_at: item.reaberto_at,
+      reaberto_por: item.reaberto_por,
+      reabertoPor: item.reabertoPor ? { nome: item.reabertoPor.nome } : null,
+      reabertura_motivo: item.reabertura_motivo,
+    }));
 
     return {
       ...order,
@@ -123,7 +149,22 @@ export class FaturamentoService {
       valor,
       total_faturado: totalFaturado,
       divergencia: money(decimal(valor).minus(totalFaturado)),
+      finalizacao_ativa: finalizacoesPublicas.find((item) => !item.reaberto_at) ?? null,
+      finalizacoes: finalizacoesPublicas,
     };
+  }
+
+  private async activeFinalization(manager: EntityManager, order: Order): Promise<FaturamentoFinalizacao | null> {
+    return manager.getRepository(FaturamentoFinalizacao).findOne({
+      where: { pedido_id: order.id, tenant_id: order.tenant_id, reaberto_at: IsNull(), deleted_at: IsNull() },
+      lock: { mode: 'pessimistic_write' },
+    });
+  }
+
+  private async assertNoActiveFinalization(manager: EntityManager, order: Order): Promise<void> {
+    if (await this.activeFinalization(manager, order)) {
+      throw new ConflictException('O faturamento foi finalizado manualmente. Reabra-o antes de alterar notas fiscais.');
+    }
   }
 
   /** Recalcula o status do pedido a partir da soma de notas ativas. Chamado sempre dentro de uma transação com o pedido já travado. */
@@ -172,11 +213,17 @@ export class FaturamentoService {
       if (!FATURAVEL_STATUSES.includes(order.status)) {
         throw new ConflictException('Pedido precisa estar liberado para registrar nota fiscal.');
       }
+      await this.assertNoActiveFinalization(manager, order);
 
       const duplicate = await notaRepo.findOne({
-        where: { pedido_id: order.id, tenant_id: tenantId, numero_nota: dto.numero_nota, deleted_at: IsNull() },
+        where: [
+          { uuid: dto.uuid, tenant_id: tenantId },
+          { pedido_id: order.id, tenant_id: tenantId, numero_nota: dto.numero_nota, deleted_at: IsNull() },
+        ],
+        // O unique (tenant_id, uuid) vale também para linhas soft-deleted.
+        withDeleted: true,
       });
-      if (duplicate) throw new ConflictException('Já existe uma nota fiscal com este número para este pedido.');
+      if (duplicate) throw new ConflictException('Esta nota fiscal já foi registrada para o pedido.');
 
       const nota = notaRepo.create({
         uuid: dto.uuid,
@@ -198,7 +245,9 @@ export class FaturamentoService {
         cliente_id: order.cliente_id,
         fornecedor_id: order.fornecedor_id,
         numero_pedido: order.numero_pedido !== null ? String(order.numero_pedido) : null,
+        numero_nfe: savedNota.numero_nota,
         data_pedido: order.data,
+        data_faturamento: savedNota.data_emissao ?? saoPauloDate(savedNota.created_at ?? new Date()),
         valor_pedido: this.orderValor(order),
         valor_faturado: savedNota.valor,
         perc_comissao: null,
@@ -246,6 +295,7 @@ export class FaturamentoService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!order) throw new NotFoundException('Pedido vinculado não encontrado.');
+      await this.assertNoActiveFinalization(manager, order);
 
       if (dto.numero_nota !== undefined && dto.numero_nota !== nota.numero_nota) {
         const duplicate = await notaRepo.findOne({
@@ -266,14 +316,18 @@ export class FaturamentoService {
 
       if (valorChanged) {
         await this.recalculateOrderStatus(manager, order);
+      }
 
-        if (commission) {
-          const patch: Record<string, unknown> = { valor_faturado: saved.valor };
-          if (commission.status === 'faturado' && commission.perc_comissao) {
-            patch.valor_comissao = percentageOf(saved.valor, commission.perc_comissao);
-          }
-          await commissionRepo.update({ id: commission.id, tenant_id: tenantId }, patch as any);
+      if (commission) {
+        const patch: Record<string, unknown> = {
+          numero_nfe: saved.numero_nota,
+          data_faturamento: saved.data_emissao ?? saoPauloDate(saved.created_at ?? new Date()),
+        };
+        if (valorChanged) patch.valor_faturado = saved.valor;
+        if (commission.status === 'faturado' && commission.perc_comissao) {
+          patch.valor_comissao = percentageOf(saved.valor, commission.perc_comissao);
         }
+        await commissionRepo.update({ id: commission.id, tenant_id: tenantId }, patch as any);
       }
 
       return saved;
@@ -313,11 +367,97 @@ export class FaturamentoService {
         lock: { mode: 'pessimistic_write' },
       });
       if (!order) throw new NotFoundException('Pedido vinculado não encontrado.');
+      await this.assertNoActiveFinalization(manager, order);
 
       await notaRepo.softRemove(nota);
       if (commission) await commissionRepo.softRemove(commission);
 
       await this.recalculateOrderStatus(manager, order);
+    });
+  }
+
+  async finalizar(
+    pedidoUuid: string,
+    dto: FinalizarFaturamentoDto,
+    tenantId: string,
+    userUuid: string,
+  ): Promise<FaturamentoFinalizacao> {
+    if (dto.motivo.trim().length < 3) throw new BadRequestException('Informe um motivo com pelo menos 3 caracteres.');
+    return this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(Order);
+      const finalRepo = manager.getRepository(FaturamentoFinalizacao);
+      const order = await orderRepo.findOne({
+        where: { uuid: pedidoUuid, tenant_id: tenantId, deleted_at: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!order) throw new NotFoundException(`Pedido ${pedidoUuid} não encontrado.`);
+      if (order.version !== dto.version) {
+        throw new ConcurrentModificationException('pedido', pedidoUuid, dto.version, order.version);
+      }
+      if (order.status !== 'parcialmente_faturado') {
+        throw new ConflictException('Somente pedido parcialmente faturado pode ser finalizado manualmente.');
+      }
+      if (await this.activeFinalization(manager, order)) {
+        throw new ConflictException('Este pedido já possui uma finalização ativa.');
+      }
+      const duplicateUuid = await finalRepo.findOne({ where: { uuid: dto.uuid, tenant_id: tenantId }, withDeleted: true });
+      if (duplicateUuid) throw new ConflictException('Esta finalização já foi registrada.');
+
+      const sum = await manager.getRepository(NotaFiscal).createQueryBuilder('n')
+        .select('COALESCE(SUM(n.valor), 0)', 'total')
+        .where('n.pedido_id = :pedidoId', { pedidoId: order.id })
+        .andWhere('n.tenant_id = :tenantId', { tenantId })
+        .andWhere('n.deleted_at IS NULL')
+        .getRawOne<{ total: string }>();
+      const saldo = decimal(this.orderValor(order)).minus(decimal(sum?.total ?? 0));
+      if (!saldo.gt(0)) throw new ConflictException('O pedido não possui saldo positivo para finalizar.');
+
+      const saved = await finalRepo.save(finalRepo.create({
+        uuid: dto.uuid,
+        tenant_id: tenantId,
+        pedido_id: order.id,
+        saldo_encerrado: money(saldo),
+        motivo: dto.motivo.trim(),
+        finalizado_por: userUuid,
+        reaberto_at: null,
+        reaberto_por: null,
+        reabertura_motivo: null,
+      }));
+      await orderRepo.update(
+        { id: order.id, tenant_id: tenantId },
+        { status: 'faturado', version: () => '"version" + 1' } as any,
+      );
+      return saved;
+    });
+  }
+
+  async reabrir(
+    pedidoUuid: string,
+    dto: ReabrirFaturamentoDto,
+    tenantId: string,
+    userUuid: string,
+  ): Promise<FaturamentoFinalizacao> {
+    if (dto.motivo.trim().length < 3) throw new BadRequestException('Informe um motivo com pelo menos 3 caracteres.');
+    return this.dataSource.transaction(async (manager) => {
+      const order = await manager.getRepository(Order).findOne({
+        where: { uuid: pedidoUuid, tenant_id: tenantId, deleted_at: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!order) throw new NotFoundException(`Pedido ${pedidoUuid} não encontrado.`);
+      if (order.version !== dto.version) {
+        throw new ConcurrentModificationException('pedido', pedidoUuid, dto.version, order.version);
+      }
+      const finalizacao = await this.activeFinalization(manager, order);
+      if (!finalizacao) throw new ConflictException('Este pedido não possui finalização ativa.');
+      if (finalizacao.version !== dto.finalizacao_version) {
+        throw new ConcurrentModificationException('finalizacao-faturamento', finalizacao.uuid, dto.finalizacao_version, finalizacao.version);
+      }
+      finalizacao.reaberto_at = new Date();
+      finalizacao.reaberto_por = userUuid;
+      finalizacao.reabertura_motivo = dto.motivo.trim();
+      const saved = await manager.getRepository(FaturamentoFinalizacao).save(finalizacao);
+      await this.recalculateOrderStatus(manager, order);
+      return saved;
     });
   }
 }

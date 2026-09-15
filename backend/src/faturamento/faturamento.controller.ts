@@ -9,6 +9,7 @@ import { VersionDto } from '../common/dto/version.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { FinalizarFaturamentoDto, ReabrirFaturamentoDto } from './dto/finalizar-faturamento.dto';
 
 @Controller('faturamento')
 export class FaturamentoController {
@@ -34,6 +35,26 @@ export class FaturamentoController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.faturamentoService.registrarNota(uuid, dto, user.tenantId);
+  }
+
+  @Post('pedidos/:uuid/finalizacao')
+  @RequirePermission('faturamento.editar')
+  async finalizar(
+    @Param('uuid') uuid: string,
+    @Body() dto: FinalizarFaturamentoDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.faturamentoService.finalizar(uuid, dto, user.tenantId, user.sub);
+  }
+
+  @Post('pedidos/:uuid/reabertura')
+  @RequirePermission('faturamento.editar')
+  async reabrir(
+    @Param('uuid') uuid: string,
+    @Body() dto: ReabrirFaturamentoDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.faturamentoService.reabrir(uuid, dto, user.tenantId, user.sub);
   }
 
   @Patch('notas/:uuid')

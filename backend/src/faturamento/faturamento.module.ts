@@ -5,6 +5,7 @@ import { Order } from '../orders/entities/order.entity';
 import { Commission } from '../finance/entities/commission.entity';
 import { FaturamentoService } from './faturamento.service';
 import { FaturamentoController } from './faturamento.controller';
+import { FaturamentoFinalizacao } from './entities/faturamento-finalizacao.entity';
 
 /**
  * Registra Order/Commission diretamente (em vez de importar OrdersModule/
@@ -14,7 +15,7 @@ import { FaturamentoController } from './faturamento.controller';
  * injetados via forFeature aqui são escopados só a este módulo.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([NotaFiscal, Order, Commission])],
+  imports: [TypeOrmModule.forFeature([NotaFiscal, Order, Commission, FaturamentoFinalizacao])],
   controllers: [FaturamentoController],
   providers: [FaturamentoService],
   exports: [FaturamentoService],

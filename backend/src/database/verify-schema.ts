@@ -58,6 +58,8 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
   { tabela: 'transportadoras', nome: 'transportadoras_version_check', validado: true, expressao: 'version > 0', origem: '0009' },
   { tabela: 'itens_pedido', nome: 'itens_pedido_version_check', validado: true, expressao: 'version > 0', origem: '0009' },
   { tabela: 'notas_fiscais', nome: 'notas_fiscais_version_check', validado: true, expressao: 'version > 0', origem: '0028' },
+  { tabela: 'faturamento_finalizacoes', nome: 'faturamento_finalizacoes_version_check', validado: true, expressao: 'version > 0', origem: '0047' },
+  { tabela: 'faturamento_finalizacoes', nome: 'faturamento_finalizacoes_saldo_encerrado_check', validado: true, expressao: 'saldo_encerrado > 0', origem: '0047' },
   { tabela: 'produto_fotos', nome: 'produto_fotos_version_check', validado: true, expressao: 'version > 0', origem: '0040' },
   { tabela: 'chamados_sac', nome: 'chamados_sac_version_check', validado: true, expressao: 'version > 0', origem: '0035' },
   { tabela: 'itens_chamado_sac', nome: 'itens_chamado_sac_version_check', validado: true, expressao: 'version > 0', origem: '0035' },
@@ -217,6 +219,13 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
  */
 const INDICES_PARCIAIS_ESPERADOS: IndiceParcialEsperado[] = [
   {
+    tabela: 'faturamento_finalizacoes',
+    colunas: ['tenant_id', 'pedido_id'],
+    predicado: 'deleted_at IS NULL AND reaberto_at IS NULL',
+    regra: 'somente uma finalizacao manual ativa por pedido',
+    origem: '0047',
+  },
+  {
     tabela: 'notas_fiscais',
     colunas: ['tenant_id', 'pedido_id', 'numero_nota'],
     predicado: 'deleted_at IS NULL',
@@ -280,6 +289,7 @@ const TABELAS_ESPERADAS = [
   'clientes',
   'comissoes',
   'financeiro_movimentacao',
+  'faturamento_finalizacoes',
   'fornecedores',
   'inadimplencia',
   'itens_chamado_sac',
