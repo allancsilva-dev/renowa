@@ -79,6 +79,56 @@ describe('FinanceService tenant supplier validation', () => {
   });
 });
 
+describe('FinanceService — notas faturadas', () => {
+  it('lista notas diretamente, com data efetiva e isolamento por tenant', async () => {
+    const qb: any = {};
+    for (const method of ['innerJoin', 'leftJoin', 'where', 'andWhere', 'select', 'orderBy', 'addOrderBy', 'skip', 'take', 'offset', 'limit']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getCount = jest.fn().mockResolvedValue(1);
+    qb.getRawMany = jest.fn().mockResolvedValue([{ uuid: 'nota-1', numero_nota: '123', valor: '40.00' }]);
+    const dataSource = { getRepository: jest.fn(() => ({ createQueryBuilder: jest.fn(() => qb) })) } as any;
+    const service = new FinanceService({} as any, {} as any, {} as any, {} as any, dataSource);
+
+    const result = await service.findFaturados('tenant-a', { page: 3, limit: 20 }, {
+      mes: 9, ano: 2026, fornecedor_uuid: 'forn-1', search: '123',
+    });
+
+    // getRawMany com join ignora skip/take no TypeORM: paginação precisa de offset/limit.
+    expect(qb.offset).toHaveBeenCalledWith(40);
+    expect(qb.limit).toHaveBeenCalledWith(20);
+    expect(qb.skip).not.toHaveBeenCalled();
+    expect(qb.take).not.toHaveBeenCalled();
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining("AT TIME ZONE 'America/Sao_Paulo'"), { mes: 9 });
+
+    expect(result.data).toEqual([{ uuid: 'nota-1', numero_nota: '123', valor: '40.00' }]);
+    expect(qb.where).toHaveBeenCalledWith('n.tenant_id = :tenantId', { tenantId: 'tenant-a' });
+    expect(qb.andWhere).toHaveBeenCalledWith('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid: 'forn-1' });
+    expect(qb.select).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.stringMatching(/^TO_CHAR\(COALESCE\(n\.data_emissao.*'YYYY-MM-DD'\) AS data_faturamento$/),
+      'n.valor AS valor',
+    ]));
+  });
+});
+
+describe('FinanceService — listagem de comissões', () => {
+  it('ordena pela data de faturamento via alias (expressão no orderBy quebra skip/take com join)', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    const commissionRepo = { createQueryBuilder: jest.fn(() => qb) } as any;
+    const service = new FinanceService({} as any, commissionRepo, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { mes: 9, ano: 2026 });
+
+    expect(qb.addSelect).toHaveBeenCalledWith('COALESCE(c.data_faturamento, c.data_pedido)', 'data_ordem');
+    expect(qb.orderBy).toHaveBeenCalledWith('data_ordem', 'DESC');
+    expect(qb.orderBy).not.toHaveBeenCalledWith(expect.stringContaining('('), expect.anything());
+  });
+});
+
 describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo de caixa', () => {
   const tenantId = 'tenant-a';
   const uuid = 'a1a1a1a1-1111-1111-1111-111111111111';

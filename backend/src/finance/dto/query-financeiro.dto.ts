@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 export class LancamentosQueryDto extends PaginationDto {
@@ -51,4 +51,10 @@ export class ParceirosQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   ano?: string;
+}
+
+export class FaturadosQueryDto extends PaginationDto {
+  @IsOptional() @IsString() mes?: string;
+  @IsOptional() @IsString() ano?: string;
+  @IsOptional() @IsUUID() fornecedor_uuid?: string;
 }

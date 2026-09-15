@@ -11,7 +11,7 @@ import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-ina
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
 import {
-  LancamentosQueryDto, MovimentacoesQueryDto, ComissoesQueryDto, ParceirosQueryDto,
+  LancamentosQueryDto, MovimentacoesQueryDto, ComissoesQueryDto, ParceirosQueryDto, FaturadosQueryDto,
 } from './dto/query-financeiro.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
@@ -45,6 +45,23 @@ export class FinanceController {
       mes ? Number(mes) : now.getMonth() + 1,
       ano ? Number(ano) : now.getFullYear(),
     );
+  }
+
+  @Get('faturados/fornecedores')
+  @RequirePermission('financeiro.ver')
+  async fornecedoresFaturados(@CurrentUser() user: RequestUser) {
+    return this.financeService.findFornecedoresFaturados(user.tenantId);
+  }
+
+  @Get('faturados')
+  @RequirePermission('financeiro.ver')
+  async faturados(@Query() query: FaturadosQueryDto, @CurrentUser() user: RequestUser) {
+    return this.financeService.findFaturados(user.tenantId, query, {
+      mes: query.mes ? Number(query.mes) : undefined,
+      ano: query.ano ? Number(query.ano) : undefined,
+      fornecedor_uuid: query.fornecedor_uuid || undefined,
+      search: query.search || undefined,
+    });
   }
 
   // ── Movimentações / Lançamentos ───────────────────────────

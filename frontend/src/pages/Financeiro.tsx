@@ -8,6 +8,10 @@ import { moneyForDisplay, moneyString, percentageOf, sumMoney } from '@/lib/deci
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { Can } from '@/components/Can';
+import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
+import { useDebounce } from '@/hooks/useDebounce';
+import { useNavigate } from 'react-router-dom';
+import type { PaginatedResponse } from '@/types';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -74,6 +78,19 @@ interface Fornecedor {
   id: number;
   uuid: string;
   razao_social: string;
+}
+
+interface Faturado {
+  uuid: string;
+  numero_nota: string;
+  serie: string | null;
+  valor: string;
+  data_faturamento: string;
+  pedido_uuid: string;
+  numero_pedido: number | null;
+  cliente: string | null;
+  fornecedor_uuid: string | null;
+  fornecedor: string | null;
 }
 
 // ─── Helpers visuais ─────────────────────────────────────────────────────────
@@ -354,6 +371,60 @@ function useFornecedoresFiltro() {
   }, [podeVer]);
 
   return { fornecedores, fornecedoresError, podeVerFornecedores: podeVer };
+}
+
+function Faturados() {
+  const navigate = useNavigate();
+  const [mes, setMes] = useState(now.getMonth() + 1);
+  const [ano, setAno] = useState(now.getFullYear());
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search.trim());
+  const [fornecedorUuid, setFornecedorUuid] = useState('');
+  const [fornecedores, setFornecedores] = useState<Array<Pick<Fornecedor, 'uuid' | 'razao_social'>>>([]);
+  const [fornecedoresError, setFornecedoresError] = useState<string | null>(null);
+  useEffect(() => {
+    api.get('/financeiro/faturados/fornecedores')
+      .then((response) => setFornecedores((response.data as { data: Array<Pick<Fornecedor, 'uuid' | 'razao_social'>> }).data ?? []))
+      .catch(() => setFornecedoresError('Não foi possível carregar os fornecedores do filtro.'));
+  }, []);
+  const fetcher = useCallback(async ({ page, limit }: { page: number; limit: number }) => {
+    const { data } = await api.get<PaginatedResponse<Faturado>>('/financeiro/faturados', {
+      params: { page, limit, mes, ano, search: debouncedSearch || undefined, fornecedor_uuid: fornecedorUuid || undefined },
+    });
+    return data;
+  }, [ano, fornecedorUuid, mes, debouncedSearch]);
+  const query = usePaginatedQuery<Faturado>({ fetcher });
+
+  return <div className='space-y-4'>
+    <div className='flex flex-wrap items-center gap-3'>
+      <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      <input type='search' aria-label='Buscar faturados' value={search} onChange={(event) => setSearch(event.target.value)} placeholder='NF, pedido, cliente ou fornecedor' className={`${inputCls} max-w-xs`} />
+      <select aria-label='Filtrar faturados por fornecedor' value={fornecedorUuid} onChange={(event) => setFornecedorUuid(event.target.value)} className={`${inputCls} max-w-xs`}>
+        <option value=''>Todos os fornecedores</option>
+        {fornecedores.map((fornecedor) => <option key={fornecedor.uuid} value={fornecedor.uuid}>{fornecedor.razao_social}</option>)}
+      </select>
+    </div>
+    <WriteError message={fornecedoresError} />
+    <DataTable<Faturado>
+      columns={[
+        { key: 'nota', header: 'NF / Série', cell: (row) => <span className='font-mono'>{row.numero_nota}{row.serie ? ` / ${row.serie}` : ''}</span> },
+        { key: 'data', header: 'Emissão efetiva', cell: (row) => fmtDate(row.data_faturamento) },
+        { key: 'pedido', header: 'Pedido', cell: (row) => row.numero_pedido != null ? `#${row.numero_pedido}` : '—' },
+        { key: 'cliente', header: 'Cliente', cell: (row) => row.cliente ?? '—' },
+        { key: 'fornecedor', header: 'Fornecedor', cell: (row) => row.fornecedor ?? '—' },
+        { key: 'valor', header: 'Valor faturado', className: 'text-right', cell: (row) => <span className='font-semibold'>{BRL.format(moneyForDisplay(row.valor))}</span> },
+        { key: 'acao', header: 'Ação', cell: (row) => <Can permission='faturamento.ver' fallback='—'><button type='button' onClick={() => navigate(`/faturamento/${row.pedido_uuid}`)} className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50'>Ver detalhe</button></Can> },
+      ]}
+      data={query.data}
+      isLoading={query.isLoading}
+      error={query.error}
+      onRetry={query.reload}
+      meta={query.meta ?? undefined}
+      onPageChange={query.goToPage}
+      emptyTitle='Nenhuma nota faturada no período'
+      emptyDescription='Notas parciais e totais aparecem aqui assim que são registradas.'
+    />
+  </div>;
 }
 
 function Empresas() {
@@ -1198,10 +1269,11 @@ function InadimplenciaTab() {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
-type Tab = 'fluxo-caixa' | 'empresas' | 'parceiros' | 'comissao' | 'custos' | 'inadimplencia';
+type Tab = 'fluxo-caixa' | 'faturados' | 'empresas' | 'parceiros' | 'comissao' | 'custos' | 'inadimplencia';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'fluxo-caixa', label: 'Fluxo de Caixa' },
+  { id: 'faturados', label: 'Faturados' },
   { id: 'empresas', label: 'Empresas' },
   { id: 'parceiros', label: 'Parceiros' },
   { id: 'comissao', label: 'Comissão' },
@@ -1233,6 +1305,7 @@ export default function Financeiro() {
 
       {/* Conteúdo da tab ativa */}
       {tab === 'fluxo-caixa' && <FluxoCaixa />}
+      {tab === 'faturados' && <Faturados />}
       {tab === 'empresas' && <Empresas />}
       {tab === 'parceiros' && <Parceiros />}
       {tab === 'comissao' && <ComissaoAlune />}

@@ -13,6 +13,7 @@ import { CreateComissaoDto, UpdateComissaoDto } from './dto/create-comissao.dto'
 import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { decimal, money, percentageOf, sumMoney } from '../common/decimal/decimal';
+import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 
 @Injectable()
 export class FinanceService {
@@ -44,6 +45,57 @@ export class FinanceService {
     }
 
     return rows[0].id as number;
+  }
+
+  async findFaturados(
+    tenantId: string,
+    pagination: PaginationDto,
+    filters: { mes?: number; ano?: number; fornecedor_uuid?: string; search?: string },
+  ): Promise<PaginatedResponse<Record<string, unknown>>> {
+    const { page = 1, limit = 20 } = pagination;
+    const qb = this.dataSource.getRepository(NotaFiscal).createQueryBuilder('n')
+      .innerJoin('n.pedido', 'pedido')
+      .leftJoin('pedido.cliente', 'cliente')
+      .leftJoin('pedido.fornecedor', 'fornecedor')
+      .where('n.tenant_id = :tenantId', { tenantId })
+      .andWhere('n.deleted_at IS NULL')
+      .andWhere('pedido.deleted_at IS NULL');
+    const effectiveDate = "COALESCE(n.data_emissao, (n.created_at AT TIME ZONE 'America/Sao_Paulo')::date)";
+    if (filters.mes) qb.andWhere(`EXTRACT(MONTH FROM ${effectiveDate}) = :mes`, { mes: filters.mes });
+    if (filters.ano) qb.andWhere(`EXTRACT(YEAR FROM ${effectiveDate}) = :ano`, { ano: filters.ano });
+    if (filters.fornecedor_uuid) qb.andWhere('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid: filters.fornecedor_uuid });
+    if (filters.search) {
+      qb.andWhere(
+        '(n.numero_nota ILIKE :search OR n.serie ILIKE :search OR CAST(pedido.numero_pedido AS TEXT) ILIKE :search'
+        + ' OR cliente.razao_social ILIKE :search OR fornecedor.razao_social ILIKE :search OR fornecedor.cnpj ILIKE :search)',
+        { search: `%${filters.search}%` },
+      );
+    }
+    const total = await qb.getCount();
+    const data = await qb.select([
+      'n.uuid AS uuid', 'n.version AS version', 'n.numero_nota AS numero_nota', 'n.serie AS serie',
+      // TO_CHAR: `date` cru chega como Date JS (ISO com hora/fuso) e o front espera YYYY-MM-DD.
+      'n.valor AS valor', `TO_CHAR(${effectiveDate}, 'YYYY-MM-DD') AS data_faturamento`, 'pedido.uuid AS pedido_uuid',
+      'pedido.numero_pedido AS numero_pedido', 'cliente.razao_social AS cliente',
+      'fornecedor.uuid AS fornecedor_uuid', 'fornecedor.razao_social AS fornecedor',
+    ]).orderBy(effectiveDate, 'DESC').addOrderBy('n.created_at', 'DESC')
+      // getRawMany com join ignora skip/take (TypeORM só os aplica sem joins).
+      .offset((page - 1) * limit).limit(limit).getRawMany<Record<string, unknown>>();
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
+  }
+
+  async findFornecedoresFaturados(tenantId: string): Promise<Array<{ uuid: string; razao_social: string }>> {
+    return this.dataSource.getRepository(NotaFiscal).createQueryBuilder('n')
+      .innerJoin('n.pedido', 'pedido')
+      .innerJoin('pedido.fornecedor', 'fornecedor')
+      .select(['fornecedor.uuid AS uuid', 'fornecedor.razao_social AS razao_social'])
+      .distinct(true)
+      .where('n.tenant_id = :tenantId', { tenantId })
+      .andWhere('n.deleted_at IS NULL')
+      .andWhere('pedido.deleted_at IS NULL')
+      .andWhere('fornecedor.deleted_at IS NULL')
+      .orderBy('fornecedor.razao_social', 'ASC')
+      .getRawMany<{ uuid: string; razao_social: string }>();
   }
 
   // ── Movimentações ─────────────────────────────────────────
@@ -161,7 +213,8 @@ export class FinanceService {
     const notasResult = await this.dataSource.query(
       `SELECT COALESCE(SUM(n.valor), 0) AS total FROM notas_fiscais n
        WHERE n.tenant_id = $1 AND n.deleted_at IS NULL
-         AND EXTRACT(MONTH FROM n.data_emissao) = $2 AND EXTRACT(YEAR FROM n.data_emissao) = $3`,
+         AND EXTRACT(MONTH FROM COALESCE(n.data_emissao, (n.created_at AT TIME ZONE 'America/Sao_Paulo')::date)) = $2
+         AND EXTRACT(YEAR FROM COALESCE(n.data_emissao, (n.created_at AT TIME ZONE 'America/Sao_Paulo')::date)) = $3`,
       [tenantId, mes, ano],
     ) as Array<{ total: string }>;
 
@@ -302,14 +355,17 @@ export class FinanceService {
       qb.andWhere('c.status = :status', { status: filters.status });
     }
     if (filters?.mes && filters?.ano) {
-      qb.andWhere('EXTRACT(MONTH FROM c.data_pedido) = :mes', { mes: filters.mes })
-        .andWhere('EXTRACT(YEAR FROM c.data_pedido) = :ano', { ano: filters.ano });
+      qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes: filters.mes })
+        .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
     } else if (filters?.ano) {
-      qb.andWhere('EXTRACT(YEAR FROM c.data_pedido) = :ano', { ano: filters.ano });
+      qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
     }
 
     const [data, total] = await qb
-      .orderBy('c.data_pedido', 'DESC')
+      // Expressão direto no orderBy + skip/take + join quebra no TypeORM
+      // ("alias was not found"); ordenar pelo alias de um addSelect é suportado.
+      .addSelect('COALESCE(c.data_faturamento, c.data_pedido)', 'data_ordem')
+      .orderBy('data_ordem', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();
@@ -335,10 +391,10 @@ export class FinanceService {
       .andWhere('c.deleted_at IS NULL');
 
     if (mes && ano) {
-      qb.andWhere('EXTRACT(MONTH FROM c.data_pedido) = :mes', { mes })
-        .andWhere('EXTRACT(YEAR FROM c.data_pedido) = :ano', { ano });
+      qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes })
+        .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
     } else if (ano) {
-      qb.andWhere('EXTRACT(YEAR FROM c.data_pedido) = :ano', { ano });
+      qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
     }
 
     const result = await qb.getRawOne<{ total: string; faturado: string; pendente: string; pago: string }>();
@@ -371,13 +427,13 @@ export class FinanceService {
 
     if (fornecedor_id) qb.andWhere('c.fornecedor_id = :fornecedor_id', { fornecedor_id });
     if (mes && ano) {
-      qb.andWhere('EXTRACT(MONTH FROM c.data_pedido) = :mes', { mes })
-        .andWhere('EXTRACT(YEAR FROM c.data_pedido) = :ano', { ano });
+      qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes })
+        .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
     } else if (ano) {
-      qb.andWhere('EXTRACT(YEAR FROM c.data_pedido) = :ano', { ano });
+      qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
     }
 
-    const registros = await qb.orderBy('c.data_pedido', 'DESC').getMany();
+    const registros = await qb.orderBy('COALESCE(c.data_faturamento, c.data_pedido)', 'DESC').getMany();
 
     const mapa = new Map<number, { fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Commission[] }>();
     for (const r of registros) {
