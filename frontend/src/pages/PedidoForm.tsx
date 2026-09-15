@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { duplicateOrder, fetchOrder, liberarOrder, saveOrder } from '@/services/orders.service';
 import { fetchClients } from '@/services/clients.service';
+import { fetchProducts } from '@/services/products.service';
 import { orderStatusLabel, orderStatusColor, type Order, type OrderStatus, type Product, type Supplier, type Transport } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
@@ -36,6 +37,7 @@ type ItemForm = {
   precisa_produto: boolean;
   foto: File | null; fotoPreview: string | null; fotoVersion: number | null;
   fotoOrigemItemUuid: string | null;
+  fotoRemover: boolean;
 };
 
 type TenantUser = { authUserId: string; name: string; active: boolean };
@@ -51,7 +53,7 @@ const newItem = (): ItemForm => ({
   qtd_caixas: '1', qtd_unitaria: '1', preco_unitario: null, desconto_perc: '0', ipi_perc: '0',
   precisa_produto: false,
   foto: null, fotoPreview: null, fotoVersion: null,
-  fotoOrigemItemUuid: null,
+  fotoOrigemItemUuid: null, fotoRemover: false,
 });
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -75,6 +77,7 @@ function orderToForm(order: Order, duplicating = false): { header: HeaderForm; i
       precisa_produto: false,
       foto: null, fotoPreview: null, fotoVersion: null,
       fotoOrigemItemUuid: duplicating && item.foto_especifica ? item.uuid : null,
+      fotoRemover: false,
     })),
   };
 }
@@ -105,7 +108,6 @@ export default function PedidoForm() {
   const [items, setItems] = useState<ItemForm[]>([newItem()]);
   const [version, setVersion] = useState<number | null>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [transports, setTransports] = useState<Transport[]>([]);
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -113,6 +115,12 @@ export default function PedidoForm() {
   const [error, setError] = useState<string | null>(null);
   const [liberando, setLiberando] = useState(false);
   const [persistedUuid, setPersistedUuid] = useState<string | null>(null);
+  const photoPreviewUrls = useRef(new Set<string>());
+
+  useEffect(() => () => {
+    photoPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    photoPreviewUrls.current.clear();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -145,15 +153,6 @@ export default function PedidoForm() {
       .finally(() => { if (active) setFetching(false); });
     return () => { active = false; };
   }, [canChooseVendor, duplicateSourceUuid, uuid]);
-
-  useEffect(() => {
-    if (!header.fornecedor_uuid) { setProducts([]); return; }
-    let active = true;
-    fetchAllPages<Product>('/produtos', { fornecedor_uuid: header.fornecedor_uuid })
-      .then((products) => { if (active) setProducts(products); })
-      .catch((reason) => { if (active) setError(getApiErrorMessage(reason)); });
-    return () => { active = false; };
-  }, [header.fornecedor_uuid]);
 
   const totals = previewOrder(items);
   const itensSemProduto = items.filter((item) => item.precisa_produto).length;
@@ -202,15 +201,29 @@ export default function PedidoForm() {
     } : item)); // linha manual não depende de fornecedor: fica intacta
   }
 
-  function chooseProduct(itemUuid: string, productUuid: string) {
-    const product = products.find((entry) => entry.uuid === productUuid);
+  function chooseProduct(itemUuid: string, productUuid: string | null, option: AsyncComboboxOption | null) {
+    const product = option?.data as Product | undefined;
     setItems((current) => current.map((item) => item.uuid === itemUuid ? {
-      ...item, produto_uuid: productUuid, codigo_manual: product?.codigo ?? item.codigo_manual,
+      ...item, produto_uuid: productUuid ?? '', codigo_manual: product?.codigo ?? item.codigo_manual,
       descricao_manual: product?.descricao ?? item.descricao_manual,
       preco_unitario: product?.preco_base == null ? item.preco_unitario : Number(product.preco_base),
       ipi_perc: product?.ipi_perc == null ? item.ipi_perc : String(product.ipi_perc),
+      qtd_unitaria: product ? String(product.quantidade) : item.qtd_unitaria,
       precisa_produto: productUuid ? false : item.precisa_produto,
     } : item));
+  }
+
+  function productFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
+    if (!header.fornecedor_uuid) return Promise.resolve({ options: [], hasMore: false });
+    return fetchProducts({ search, page, limit: 20, fornecedor_uuid: header.fornecedor_uuid }).then((result) => ({
+      options: result.data.map((product) => ({
+        value: product.uuid,
+        label: product.codigo ? `${product.codigo} — ${product.descricao}` : product.descricao,
+        description: `${product.quantidade} un./caixa`,
+        data: product,
+      })),
+      hasMore: result.meta.page < result.meta.totalPages,
+    }));
   }
 
   function addItem() {
@@ -251,16 +264,32 @@ export default function PedidoForm() {
 
   function chooseItemPhoto(itemUuid: string, file: File | null) {
     if (!file) return;
-    updateItemPhotoState(itemUuid, { foto: file, fotoPreview: URL.createObjectURL(file) });
+    const currentPreview = items.find((item) => item.uuid === itemUuid)?.fotoPreview;
+    if (currentPreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(currentPreview);
+      photoPreviewUrls.current.delete(currentPreview);
+    }
+    const fotoPreview = URL.createObjectURL(file);
+    photoPreviewUrls.current.add(fotoPreview);
+    updateItemPhotoState(itemUuid, {
+      foto: file,
+      fotoPreview,
+      fotoOrigemItemUuid: null,
+      fotoRemover: false,
+    });
   }
 
-  async function removeItemPhoto(item: ItemForm) {
-    try {
-      if ((uuid ?? persistedUuid) && item.fotoVersion != null) {
-        await deleteOrderItemPhoto((uuid ?? persistedUuid)!, item.uuid, item.fotoVersion);
-      }
-      updateItemPhotoState(item.uuid, { foto: null, fotoPreview: null, fotoVersion: null, fotoOrigemItemUuid: null });
-    } catch (reason) { setError(getApiErrorMessage(reason)); }
+  function removeItemPhoto(item: ItemForm) {
+    if (item.fotoPreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(item.fotoPreview);
+      photoPreviewUrls.current.delete(item.fotoPreview);
+    }
+    updateItemPhotoState(item.uuid, {
+      foto: null,
+      fotoPreview: null,
+      fotoOrigemItemUuid: null,
+      fotoRemover: Boolean((uuid ?? persistedUuid) && item.fotoVersion != null),
+    });
   }
 
   async function handleLiberar() {
@@ -316,13 +345,23 @@ export default function PedidoForm() {
         : await saveOrder(payload, uuid ?? persistedUuid ?? undefined);
       setPersistedUuid(saved.uuid); setVersion(saved.version);
       setItems((current) => current.map((item) => ({ ...item, fotoOrigemItemUuid: null })));
-      const uploads = await Promise.allSettled(items.filter((item) => item.foto).map(async (item) => {
-        const metadata = await uploadOrderItemPhoto(saved.uuid, item.uuid, item.foto!);
-        updateItemPhotoState(item.uuid, { foto: null, fotoVersion: metadata.version });
-      }));
-      const failed = uploads.filter((result) => result.status === 'rejected').length;
+      const photoOperations = items.flatMap((item) => {
+        if (item.foto) return [async () => {
+          const metadata = await uploadOrderItemPhoto(saved.uuid, item.uuid, item.foto!);
+          updateItemPhotoState(item.uuid, { foto: null, fotoVersion: metadata.version, fotoRemover: false });
+        }];
+        if (item.fotoRemover && item.fotoVersion != null) return [async () => {
+          await deleteOrderItemPhoto(saved.uuid, item.uuid, item.fotoVersion!);
+          updateItemPhotoState(item.uuid, { fotoVersion: null, fotoRemover: false });
+        }];
+        return [];
+      });
+      const photoResults = await Promise.allSettled(photoOperations.map((operation) => operation()));
+      const failed = photoResults.filter((result) => result.status === 'rejected').length;
       if (failed) {
-        setError(`O pedido foi salvo, mas ${failed} foto(s) não foram enviadas. Tente salvar novamente para reenviar somente as fotos pendentes.`);
+        const firstFailure = photoResults.find((result) => result.status === 'rejected');
+        const detail = firstFailure?.status === 'rejected' ? ` ${getApiErrorMessage(firstFailure.reason)}` : '';
+        setError(`O pedido foi salvo, mas ${failed} operação(ões) de foto não foram concluídas.${detail} Tente salvar novamente para repetir somente as pendentes.`);
         return;
       }
       navigate(`/pedidos/${saved.uuid}`);
@@ -410,7 +449,7 @@ export default function PedidoForm() {
           <div className='mb-3 flex justify-between'><strong className='text-sm text-slate-800'>Item {index + 1}</strong><button type='button' aria-label={`Remover item ${index + 1}`} disabled={items.length === 1 || locked}
             onClick={() => setItems((current) => current.filter((entry) => entry.uuid !== item.uuid))} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-40'><Trash2 className='h-4 w-4' /></button></div>
           <div className='grid gap-3 md:grid-cols-4'>
-            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><select disabled={locked} value={item.produto_uuid} aria-invalid={item.precisa_produto || undefined} onChange={(e) => chooseProduct(item.uuid, e.target.value)} className={`${inputClass}${item.precisa_produto ? ' border-amber-400' : ''}`}><option value=''></option>{products.map((product) => <option key={product.uuid} value={product.uuid}>{product.codigo ? `${product.codigo} — ` : ''}{product.descricao}</option>)}</select></label>
+            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><AsyncCombobox disabled={locked || !header.fornecedor_uuid} value={item.produto_uuid || null} displayValue={item.produto_uuid ? `${item.codigo_manual ? `${item.codigo_manual} — ` : ''}${item.descricao_manual}` : ''} ariaLabel={`Buscar produto do item ${index + 1}`} ariaInvalid={item.precisa_produto} placeholder={header.fornecedor_uuid ? 'Busque por código ou descrição' : 'Selecione o fornecedor primeiro'} emptyMessage='Nenhum produto desse fornecedor encontrado.' fetcher={productFetcher} onChange={(value, option) => chooseProduct(item.uuid, value, option)} className={`${inputClass}${item.precisa_produto ? ' border-amber-400' : ''}`} /></label>
             <div className='flex flex-col gap-1'>
               <label className='flex flex-col gap-1'><span className={labelClass}>Código</span><input disabled={locked} value={item.codigo_manual} aria-invalid={duplicados.uuids.has(item.uuid) || undefined} aria-describedby={duplicados.uuids.has(item.uuid) ? `item-${item.uuid}-codigo-erro` : undefined} onChange={(e) => updateItem(item.uuid, { codigo_manual: e.target.value })} className={`${inputClass}${duplicados.uuids.has(item.uuid) ? ' border-red-400' : ''}`} /></label>
               {duplicados.uuids.has(item.uuid) && <span id={`item-${item.uuid}-codigo-erro`} className='text-xs text-red-700'>Este item já está no pedido. Cada código só pode aparecer uma vez.</span>}
@@ -427,7 +466,7 @@ export default function PedidoForm() {
               willCopy={Boolean(item.fotoOrigemItemUuid)}
               locked={locked}
               onChoose={(file) => chooseItemPhoto(item.uuid, file)}
-              onRemove={() => void removeItemPhoto(item)}
+              onRemove={() => removeItemPhoto(item)}
             />
             <div className='md:col-span-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700'><span>{qtyForDisplay(item.qtd_caixas || 0)} cx × {qtyForDisplay(item.qtd_unitaria || 0)} un = <strong>{qtyForDisplay(calculated.qtd_total)}</strong></span><span>Valor unitário com desconto: <strong>{BRL.format(moneyForDisplay(calculated.valor_com_desconto))}</strong></span><span>Sem IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_sem_imposto))}</strong></span><span>Com IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_com_imposto))}</strong></span></div>
           </div></div>; })}</div>

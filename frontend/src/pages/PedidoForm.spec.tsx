@@ -15,7 +15,13 @@ const saveOrder = vi.fn();
 const duplicateOrder = vi.fn();
 const fetchOrder = vi.fn();
 const fetchAllPages = vi.fn();
+const fetchProducts = vi.fn();
 const routerSearch = vi.hoisted(() => ({ value: '' }));
+const routerParams = vi.hoisted(() => ({ uuid: undefined as string | undefined }));
+const fetchOrderItemPhoto = vi.fn();
+const fetchOrderItemPhotoDataUrl = vi.fn();
+const uploadOrderItemPhoto = vi.fn();
+const deleteOrderItemPhoto = vi.fn();
 
 vi.mock('@/services/orders.service', () => ({
   fetchOrder: (...args: unknown[]) => fetchOrder(...args),
@@ -29,29 +35,48 @@ vi.mock('@/services/clients.service', () => ({
     meta: { page: 1, totalPages: 1 },
   })),
 }));
+vi.mock('@/services/products.service', () => ({
+  fetchProducts: (...args: unknown[]) => fetchProducts(...args),
+}));
 vi.mock('@/lib/fetchAllPages', () => ({ fetchAllPages: (...args: unknown[]) => fetchAllPages(...args) }));
+vi.mock('@/services/productPhotos.service', () => ({
+  fetchOrderItemPhoto: (...args: unknown[]) => fetchOrderItemPhoto(...args),
+  fetchOrderItemPhotoDataUrl: (...args: unknown[]) => fetchOrderItemPhotoDataUrl(...args),
+  uploadOrderItemPhoto: (...args: unknown[]) => uploadOrderItemPhoto(...args),
+  deleteOrderItemPhoto: (...args: unknown[]) => deleteOrderItemPhoto(...args),
+}));
 vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ hasAnyRole: () => false, hasPermission: () => true }),
 }));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
-  useParams: () => ({}),
+  useParams: () => routerParams,
   useSearchParams: () => [new URLSearchParams(routerSearch.value)],
 }));
 
 const FORNECEDOR_A = { uuid: 'forn-a', razao_social: 'Fornecedor A' };
 const FORNECEDOR_B = { uuid: 'forn-b', razao_social: 'Fornecedor B' };
-const PRODUTO_A = { uuid: 'prod-a', codigo: 'AAA-1', descricao: 'Produto A', preco_base: '25.50', ipi_perc: '10' };
-const PRODUTO_B = { uuid: 'prod-b', codigo: 'BBB-1', descricao: 'Produto B', preco_base: '30.00', ipi_perc: '5' };
+const PRODUTO_A = { uuid: 'prod-a', codigo: 'AAA-1', descricao: 'Produto A', preco_base: '25.50', ipi_perc: '10', quantidade: 12 };
+const PRODUTO_B = { uuid: 'prod-b', codigo: 'BBB-1', descricao: 'Produto B', preco_base: '30.00', ipi_perc: '5', quantidade: 6 };
 
 beforeEach(() => {
   routerSearch.value = '';
+  routerParams.uuid = undefined;
+  fetchOrderItemPhoto.mockResolvedValue(null);
+  uploadOrderItemPhoto.mockResolvedValue({ uuid: 'foto-nova', version: 1 });
+  deleteOrderItemPhoto.mockResolvedValue(undefined);
+  globalThis.URL.createObjectURL = vi.fn(() => 'blob:item-preview');
+  globalThis.URL.revokeObjectURL = vi.fn();
   // `products` é recarregado por fornecedor; os demais recursos são fixos.
   fetchAllPages.mockImplementation(async (path: string, params?: { fornecedor_uuid?: string }) => {
     if (path === '/fornecedores') return [FORNECEDOR_A, FORNECEDOR_B];
     if (path === '/produtos') return params?.fornecedor_uuid === 'forn-b' ? [PRODUTO_B] : [PRODUTO_A];
     return [];
   });
+  fetchProducts.mockImplementation(async ({ fornecedor_uuid }: { fornecedor_uuid?: string }) => ({
+    data: fornecedor_uuid === 'forn-b' ? [PRODUTO_B] : [PRODUTO_A],
+    meta: { page: 1, totalPages: 1 },
+  }));
 });
 
 describe('PedidoForm — duplicação', () => {
@@ -102,12 +127,18 @@ async function montar() {
   await waitFor(() => expect(screen.getByLabelText(/Fornecedor/)).toBeInTheDocument());
   return {
     fornecedor: screen.getByLabelText(/Fornecedor/) as HTMLSelectElement,
-    produto: () => screen.getByLabelText('Produto cadastrado') as HTMLSelectElement,
+    produto: () => screen.getByLabelText('Buscar produto do item 1') as HTMLInputElement,
     caixas: () => screen.getByLabelText('Caixas') as HTMLInputElement,
     desconto: () => screen.getByLabelText('Desconto (%)') as HTMLInputElement,
     ipi: () => screen.getByLabelText('IPI (%)') as HTMLInputElement,
     codigo: () => screen.getByLabelText('Código') as HTMLInputElement,
   };
+}
+
+async function escolherProduto(index = 0, nome = /AAA-1/) {
+  const campos = screen.getAllByRole('combobox', { name: /Buscar produto do item/ });
+  fireEvent.focus(campos[index]);
+  fireEvent.click(await screen.findByRole('option', { name: nome }));
 }
 
 describe('PedidoForm — troca de fornecedor', () => {
@@ -139,8 +170,9 @@ describe('PedidoForm — troca de fornecedor', () => {
     const campos = await montar();
 
     fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
-    await waitFor(() => expect(screen.getByRole('option', { name: /AAA-1/ })).toBeInTheDocument());
-    fireEvent.change(campos.produto(), { target: { value: 'prod-a' } });
+    await escolherProduto();
+    expect(screen.getByLabelText('Unidades por caixa')).toHaveValue(12);
+    expect(campos.caixas()).toHaveValue(1);
     fireEvent.change(campos.desconto(), { target: { value: '10' } });
 
     expect(screen.getByText('Valor unitário com desconto:').parentElement).toHaveTextContent('R$ 22,95');
@@ -150,8 +182,7 @@ describe('PedidoForm — troca de fornecedor', () => {
     const campos = await montar();
 
     fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
-    await waitFor(() => expect(screen.getByRole('option', { name: /AAA-1/ })).toBeInTheDocument());
-    fireEvent.change(campos.produto(), { target: { value: 'prod-a' } });
+    await escolherProduto();
     fireEvent.change(campos.caixas(), { target: { value: '4' } });
     fireEvent.change(campos.desconto(), { target: { value: '10' } });
     expect(campos.ipi()).toHaveValue(10);
@@ -172,12 +203,11 @@ describe('PedidoForm — troca de fornecedor', () => {
     const campos = await montar();
 
     fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
-    await waitFor(() => expect(screen.getByRole('option', { name: /AAA-1/ })).toBeInTheDocument());
-    fireEvent.change(campos.produto(), { target: { value: 'prod-a' } });
+    await escolherProduto();
 
     fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
 
-    expect(campos.produto()).toHaveValue('prod-a');
+    expect(campos.produto()).toHaveValue('AAA-1 — Produto A');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
@@ -197,8 +227,7 @@ describe('PedidoForm — troca de fornecedor', () => {
     const campos = await montar();
 
     fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
-    await waitFor(() => expect(screen.getByRole('option', { name: /AAA-1/ })).toBeInTheDocument());
-    fireEvent.change(campos.produto(), { target: { value: 'prod-a' } });
+    await escolherProduto();
     fireEvent.change(campos.fornecedor, { target: { value: 'forn-b' } });
 
     // Cliente é obrigatório e é checado antes dos itens no `submit()`.
@@ -213,8 +242,7 @@ describe('PedidoForm — troca de fornecedor', () => {
     );
     expect(saveOrder).not.toHaveBeenCalled();
 
-    await waitFor(() => expect(screen.getByRole('option', { name: /BBB-1/ })).toBeInTheDocument());
-    fireEvent.change(campos.produto(), { target: { value: 'prod-b' } });
+    await escolherProduto(0, /BBB-1/);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
     expect(campos.produto()).not.toHaveAttribute('aria-invalid');
   });
@@ -286,11 +314,8 @@ describe('PedidoForm — código duplicado entre itens', () => {
    */
   it('pega o mesmo produto cadastrado escolhido em dois itens', async () => {
     await comDoisItens();
-    await waitFor(() => expect(screen.getAllByRole('option', { name: /AAA-1/ })).toHaveLength(2));
-
-    const produtos = screen.getAllByLabelText('Produto cadastrado') as HTMLSelectElement[];
-    fireEvent.change(produtos[0], { target: { value: 'prod-a' } });
-    fireEvent.change(produtos[1], { target: { value: 'prod-a' } });
+    await escolherProduto(0);
+    await escolherProduto(1);
 
     expect(codigos()[1]).toHaveValue('AAA-1');
     expect(codigos()[1]).toHaveAttribute('aria-invalid', 'true');
@@ -336,5 +361,63 @@ describe('PedidoForm — código duplicado entre itens', () => {
       'Há itens com o mesmo código: ABC. Cada código só pode aparecer uma vez no pedido.',
     );
     expect(saveOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe('PedidoForm — foto específica na edição', () => {
+  function pedido(status: 'em_aberto' | 'liberado' = 'em_aberto') {
+    return {
+      uuid: 'ped-edit', version: 3, origem: 'interno', status, data: '2026-09-15',
+      cliente: { uuid: 'cli-1', razao_social: 'Cliente Um' }, vendedor: null,
+      fornecedor: FORNECEDOR_A, transportadora: null, pgt: null, prazo: null,
+      local_entrega: null, tipo_faturamento: null, observacao: null,
+      itens: [{
+        uuid: 'item-edit', produto: PRODUTO_A, foto_especifica: { uuid: 'foto-1', version: 4 },
+        codigo_manual: 'AAA-1', descricao_manual: 'Produto A', qtd_caixas: '2',
+        qtd_unitaria: '3', preco_unitario: '25.50', desconto_perc: '0', ipi_perc: '10',
+      }],
+    };
+  }
+
+  async function montarEdicao(status: 'em_aberto' | 'liberado' = 'em_aberto') {
+    routerParams.uuid = 'ped-edit';
+    fetchOrder.mockResolvedValue(pedido(status));
+    fetchOrderItemPhoto.mockResolvedValue({ uuid: 'foto-1', version: 4 });
+    fetchOrderItemPhotoDataUrl.mockResolvedValue('data:image/jpeg;base64,EXISTENTE');
+    saveOrder.mockResolvedValue({ uuid: 'ped-edit', version: 4 });
+    render(<PedidoForm />);
+    await screen.findByAltText('Foto específica do item 1');
+  }
+
+  it('só remove foto persistida depois de salvar pedido', async () => {
+    await montarEdicao();
+    fireEvent.click(screen.getByRole('button', { name: 'Remover' }));
+    expect(deleteOrderItemPhoto).not.toHaveBeenCalled();
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Salvar pedido' }).closest('form')!);
+    await waitFor(() => expect(saveOrder).toHaveBeenCalled());
+    await waitFor(() => expect(deleteOrderItemPhoto).toHaveBeenCalledWith('ped-edit', 'item-edit', 4));
+  });
+
+  it('só envia foto arrastada depois de salvar pedido', async () => {
+    await montarEdicao();
+    const file = new File(['foto'], 'nova.jpg', { type: 'image/jpeg' });
+    const zone = screen.getByText('Foto deste pedido').closest('div')!.parentElement!;
+    fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+    expect(uploadOrderItemPhoto).not.toHaveBeenCalled();
+
+    fireEvent.submit(screen.getByRole('button', { name: 'Salvar pedido' }).closest('form')!);
+    await waitFor(() => expect(uploadOrderItemPhoto).toHaveBeenCalledWith('ped-edit', 'item-edit', file));
+    expect(deleteOrderItemPhoto).not.toHaveBeenCalled();
+  });
+
+  it('bloqueia troca quando pedido não está em aberto', async () => {
+    await montarEdicao('liberado');
+    const file = new File(['foto'], 'nova.jpg', { type: 'image/jpeg' });
+    const zone = screen.getByText('Foto deste pedido').closest('div')!.parentElement!;
+    fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+
+    expect(uploadOrderItemPhoto).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Salvar pedido' })).toBeDisabled();
   });
 });

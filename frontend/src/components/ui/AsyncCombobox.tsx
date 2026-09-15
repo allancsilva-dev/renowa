@@ -33,6 +33,7 @@ export interface AsyncComboboxProps {
   disabled?: boolean;
   required?: boolean;
   ariaLabel?: string;
+  ariaInvalid?: boolean;
   emptyMessage?: string;
   errorMessage?: string;
   className?: string;
@@ -52,6 +53,7 @@ export function AsyncCombobox({
   disabled = false,
   required = false,
   ariaLabel,
+  ariaInvalid,
   emptyMessage = 'Nenhum resultado encontrado.',
   errorMessage = 'Não foi possível carregar os resultados.',
   className,
@@ -207,6 +209,7 @@ export function AsyncCombobox({
           aria-autocomplete='list'
           aria-activedescendant={activeOptionId}
           aria-label={ariaLabel}
+          aria-invalid={ariaInvalid || undefined}
           aria-required={required}
           value={inputText}
           onChange={(e) => handleInputChange(e.target.value)}
