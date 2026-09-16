@@ -609,3 +609,88 @@
 - **Riscos residuais:** (a) os vínculos órfãos dos perfis excluídos **antes** desta correção continuam fisicamente em `tenant_role_permissions` — inertes pelo filtro de role viva, mas presentes; nenhum saneamento foi feito e o volume não foi medido em dev nem em produção. (b) `usuarios.roles` (jsonb) segue como segunda fonte de verdade: o rename agora propaga, mas a duplicação continua (BACKLOG-0083). (c) O índice UNIQUE parcial continua permitindo perfil novo com nome de perfil excluído. (d) ~~A validação pela UI cobriu só o perfil admin.~~ Coberta também no ramo negativo em 2026-08-26 (BACKLOG-0085): perfil de um slug só, Sidebar com 2 itens, 7 URLs redirecionando, botões ausentes e backend devolvendo 403 nos mesmos pontos. (e) `mobile/` não foi tocado nem validado. (f) Nada commitado: tudo no working tree do `master`.
 - **Próximo passo:** BACKLOG-0081 (validar pela UI antes de considerar o assunto encerrado).
 - **Relacionado:** FIX-0031, FIX-0028, BACKLOG-0081, BACKLOG-0082, BACKLOG-0083, BACKLOG-0084, PROB-0057, PROB-0058
+
+### PROB-0085 — Badge da Curva ABC classifica dentro do Top 10, não sobre a carteira
+- **Data:** 2026-09-15
+- **Origem:** revisão (sessão de correções de layout do Dashboard)
+- **Severidade:** MEDIUM
+- **Status:** ABERTO
+- **Área:** backend / negócio
+- **Sintoma:** nada quebra e nada parece errado na tela — os badges `Prioridade`, `Atenção` e `Regular` aparecem distribuídos de forma plausível. O que eles significam é que não é o que o nome promete.
+- **Causa raiz:** confirmada por leitura. A query de curva ABC em `backend/src/finance/finance.service.ts` aplica `ORDER BY valor DESC LIMIT 10` **antes** de `buildCurvaAbc` receber as linhas; o método soma `total` a partir das linhas que recebeu e vai acumulando o percentual sobre esse total. Logo o denominador é o faturamento dos 10 maiores, não o faturamento da carteira. Os cortes `≤80%` (Prioridade) e `≤95%` (Atenção) rodam dentro do Top 10, e o último cliente da lista sempre fecha em 100% do recorte — **sempre haverá `Regular` no Top 10**, mesmo que os dez juntos representem 5% do faturamento total.
+- **Impacto técnico:** curva ABC de verdade classifica sobre o universo inteiro: A são os clientes que somam até 80% do faturamento **total**, e eles podem ser 3 ou 300. Como está, o rótulo é um ranking relativo com nome de classificação absoluta. Quem usa a tela para decidir prioridade comercial está lendo o dado errado com a confiança do nome certo. Note que o dado bruto do total da carteira **já é buscado** na mesma chamada (existe uma query de `SUM` do faturamento total), então a correção não exige round-trip novo.
+- **Arquivos/módulos:** `backend/src/finance/finance.service.ts` (query da curva ABC, com o `LIMIT 10`, e `buildCurvaAbc`), `frontend/src/pages/Dashboard.tsx` (card "Curva ABC de Clientes")
+- **Solução proposta:** duas saídas, e a escolha é de negócio, não técnica. (a) **Classificar sobre o universo:** calcular o percentual acumulado sobre o faturamento total da carteira e só então cortar a exibição em 10 — o badge passa a significar o que diz, e é possível que os 10 exibidos sejam todos `Prioridade`. (b) **Assumir o recorte:** manter a aritmética e renomear a coluna para algo que não prometa curva ABC (ex.: "Peso no Top 10"). Não fazer nada é a única opção descartada: o nome atual afirma (a) e a implementação faz (b).
+- **Solução aplicada:** nenhuma. FIX-0032 mexeu **só no layout** deste card e acrescentou o subtítulo `Top 10 por faturamento`, que torna o recorte visível — mas não corrige a semântica do badge.
+- **Evidências/comandos:** leitura de `finance.service.ts` (query com `LIMIT 10` e `buildCurvaAbc` somando `total` das linhas recebidas). Nenhuma medição contra dados reais foi feita: **não se sabe** que fração do faturamento os 10 maiores representam em nenhum tenant.
+- **Riscos residuais:** enquanto não se decide, o subtítulo novo ajuda mas não desfaz a leitura errada — "Regular" continua sugerindo cliente de cauda, quando pode ser o 10º maior cliente da empresa.
+- **Próximo passo:** BACKLOG-0086 — decisão do usuário/PO entre (a) e (b), antes de qualquer código.
+- **Relacionado:** FIX-0032, BACKLOG-0086, BACKLOG-0018
+
+### PROB-0086 — Preview de PDF via `blob:` pode estar barrado pela CSP em produção, e ninguém verificou
+- **Data:** 2026-09-15
+- **Origem:** revisão (derivada da correção de `img-src` em FIX-0033)
+- **Severidade:** HIGH
+- **Status:** ABERTO — **não verificado**, nem em produção nem localmente
+- **Área:** frontend / segurança / infra
+- **Sintoma:** desconhecido. Nenhum relato de usuário, e **nenhuma verificação**: `vite dev` não emite CSP, então o caminho é inexercitável localmente por construção — exatamente a condição que deixou o furo de `img-src` chegar a produção (FIX-0033).
+- **Causa raiz:** não determinada. A análise que motiva o registro: `frontend/src/pages/PedidoDetalhe.tsx` e `frontend/src/pages/SacDetalhe.tsx` abrem uma aba com `window.open('', '_blank')` e depois navegam para uma URL `blob:` criada por `URL.createObjectURL`. Navegação de topo **não** é restringida por CSP — esse ramo deve funcionar. O que não está claro é o documento resultante: um documento `blob:` **herda a política do criador**, e a política não tem `object-src` nem `frame-src` próprios, logo ambos caem no `default-src 'self'`, que **não** inclui `blob:`. Se o navegador renderizar o PDF por plugin/embed interno, a diretiva herdada pode barrar. _Suposição explícita: o comportamento varia por navegador e não foi testado em nenhum._
+- **Impacto técnico:** se confirmado, imprimir/visualizar pedido e chamado de SAC está quebrado em produção para os navegadores afetados — funcionalidade de uso diário, sem alternativa na tela.
+- **Arquivos/módulos:** `frontend/src/pages/PedidoDetalhe.tsx` (`window.open` e `createObjectURL`), `frontend/src/pages/SacDetalhe.tsx` (idem), `frontend/security-headers.conf` (`default-src 'self'`, sem `object-src`/`frame-src`)
+- **Solução proposta:** **primeiro verificar, depois decidir.** Abrir os dois previews em produção com o console aberto, em Safari e Chrome, e registrar se há violação de CSP. Se houver, a correção provável é declarar `object-src 'self' blob:` e `frame-src 'self' blob:` explicitamente — alargar `default-src` seria pior, porque afrouxa tudo de uma vez.
+- **Solução aplicada:** nenhuma. FIX-0033 cobriu **imagem** (`img-src`), não PDF.
+- **Evidências/comandos:** leitura dos dois arquivos, confirmando `window.open` + `createObjectURL` nos dois fluxos, e leitura da política, confirmando a ausência de `object-src`/`frame-src`. **Nenhuma execução** — é a lacuna do registro, não um detalhe dele.
+- **Riscos residuais:** o registro pode ser falso positivo. Mantê-lo aberto sem verificar tem custo baixo; fechá-lo por suposição tem custo alto.
+- **Próximo passo:** BACKLOG-0089 — confirmação no console em produção. Delegado a quem tiver acesso ao ambiente.
+- **Relacionado:** FIX-0033, BACKLOG-0087, BACKLOG-0089
+
+### PROB-0087 — Dois KPIs do Dashboard têm rótulo mais específico que o dado
+- **Data:** 2026-09-15
+- **Origem:** revisão (leitura do agregador do dashboard durante a sessão de correções)
+- **Severidade:** LOW
+- **Status:** ABERTO
+- **Área:** backend / frontend
+- **Sintoma:** os cartões "Produtos ativos" e "Pedidos abertos" mostram números que o operador lê como uma coisa e que a query conta como outra.
+- **Causa raiz:** confirmada por leitura, em `backend/src/finance/finance.service.ts`. (1) **`produtosAtivos`** é `COUNT(*)` de `produtos` com `deleted_at IS NULL` — ou seja, **produtos cadastrados**. Não existe coluna `ativo` em `backend/src/products/entities/product.entity.ts`: não é filtro esquecido, é ausência do conceito pelo qual filtrar, o mesmo padrão já registrado para o SAC em PROB-0078. (2) **`pedidosAbertos`** filtra `status = 'em_aberto'` apenas, ignorando `liberado` e `parcialmente_faturado` — pedidos que ainda não se encerraram e que um operador contaria como abertos.
+- **Impacto técnico:** baixo e contido ao indicador. O de `pedidosAbertos` **subestima** o trabalho em curso, e o erro cresce justamente quando o fluxo de faturamento está ativo, que é quando o número é consultado.
+- **Arquivos/módulos:** `backend/src/finance/finance.service.ts` (montagem de `pedidosAbertos` e `produtosAtivos`), `backend/src/products/entities/product.entity.ts` (sem `ativo`), `frontend/src/pages/Dashboard.tsx` (rótulos)
+- **Solução proposta:** o mais barato e honesto primeiro — **renomear** para "Produtos cadastrados" e ou incluir `liberado`/`parcialmente_faturado` na contagem ou renomear para "Pedidos em aberto (status `em_aberto`)". Criar coluna `ativo` em produtos é feature, não correção, e exige migration + decisão de negócio; não deve entrar por esta porta.
+- **Solução aplicada:** nenhuma.
+- **Evidências/comandos:** leitura do agregador do dashboard (as duas queries) e da entity de produto (`ativo`: zero ocorrências).
+- **Riscos residuais:** enquanto não muda, quem planeja em cima de "Pedidos abertos" planeja com número menor que a realidade.
+- **Próximo passo:** BACKLOG-0090.
+- **Relacionado:** PROB-0088, BACKLOG-0090
+
+### PROB-0088 — Percentuais do donut da carteira podem somar 99% ou 101%
+- **Data:** 2026-09-15
+- **Origem:** revisão
+- **Severidade:** LOW
+- **Status:** ABERTO
+- **Área:** frontend
+- **Sintoma:** as três fatias do donut de carteira (ativos / inativos / prospect) exibidas juntas podem não fechar em 100%.
+- **Causa raiz:** confirmada. `pct(part, total)` em `frontend/src/pages/Dashboard.tsx` faz `Math.round((part / total) * 100)` **por fatia, isoladamente**. Três arredondamentos independentes não preservam a soma — é aritmética, não defeito de dado.
+- **Impacto técnico:** cosmético, mas corrói confiança no painel inteiro: quem vê 101% passa a duvidar dos números que estão certos.
+- **Arquivos/módulos:** `frontend/src/pages/Dashboard.tsx` (`pct`)
+- **Solução proposta:** *largest remainder* (arredondar para baixo e distribuir a diferença pelos maiores restos), ou arredondar duas fatias e derivar a terceira por subtração. A primeira é a correta quando o número de fatias pode mudar.
+- **Solução aplicada:** nenhuma.
+- **Evidências/comandos:** leitura de `pct` em `Dashboard.tsx`. **Não foi construído um caso concreto** que produza 101% com os dados de dev — a falha é dedutível da fórmula, e a reprodução exige composição específica da carteira.
+- **Riscos residuais:** nenhum além da percepção.
+- **Próximo passo:** BACKLOG-0090 (agrupado com os rótulos, é a mesma tela e a mesma rodada).
+- **Relacionado:** PROB-0087, BACKLOG-0090
+
+### PROB-0089 — `VITE_AUTH_URL`/`VITE_AUTH_AUD` são variáveis mortas, e o README ainda documenta o fluxo SSO que elas serviam
+- **Data:** 2026-09-15
+- **Origem:** revisão
+- **Severidade:** LOW
+- **Status:** ABERTO
+- **Área:** documentação / frontend
+- **Sintoma:** `frontend/.env` define `VITE_AUTH_URL=https://auth.zonadev.tech` e `VITE_AUTH_AUD=renowa.zonadev.tech`. **Zero consumidores** no código: a varredura por `VITE_AUTH_URL`/`VITE_AUTH_AUD` em `frontend/src` não retorna nada além do próprio `.env`. Ao mesmo tempo, o `README.md` descreve na seção "Fluxo de Autenticação Web" um fluxo que não existe mais — `GET {VITE_AUTH_URL}/api/auth/me` e redirecionamento para `{VITE_AUTH_URL}/login?aud={VITE_AUTH_AUD}&redirect=...`.
+- **Causa raiz:** confirmada — resíduo da migração do SSO externo para a autenticação atual (a mesma família de drift registrada em PROB-0052). O código migrou; a variável e o parágrafo do README ficaram.
+- **Impacto técnico:** nenhum em runtime — variável `VITE_*` não lida é inerte. O dano é de manutenção: o README é o primeiro lugar onde alguém novo procura o fluxo de autenticação, e ele descreve um desenho que foi abandonado. Quem seguir o texto vai depurar um caminho que não existe. Agravante: a variável aponta para um domínio de terceiro, sugerindo dependência externa que o sistema não tem mais.
+- **Arquivos/módulos:** `frontend/.env`, `README.md` (seção "Fluxo de Autenticação Web")
+- **Solução proposta:** remover as duas variáveis do `.env` (e de qualquer `.env.example`/manifesto de deploy que as repita) e reescrever a seção do README para o fluxo real, o mesmo já descrito em `SYSTEM_OVERVIEW.md`. Conferir antes se algum manifesto de produção as injeta — a remoção é segura por serem inertes, mas um manifesto que as exija falharia no deploy.
+- **Solução aplicada:** nenhuma. `.env` e `README.md` estão **fora da permissão deste agente** (só `docs/`).
+- **Evidências/comandos:** varredura por `VITE_AUTH_URL`/`VITE_AUTH_AUD` em `frontend/` → só as duas linhas do `.env`; leitura da seção do `README.md`.
+- **Riscos residuais:** enquanto o texto ficar, todo diagnóstico de autenticação começa por uma pista falsa.
+- **Próximo passo:** BACKLOG-0091. Delegado a `backend-engineer`/`frontend-engineer` (edição de `.env` e `README.md`).
+- **Relacionado:** PROB-0052, BACKLOG-0091

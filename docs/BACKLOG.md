@@ -917,3 +917,80 @@
   - Banco restaurado ao estado pré-teste (perfil, usuário, vínculos e refresh tokens removidos), resíduo zero conferido por consulta.
 - **Status:** CONCLUÍDO (2026-08-26)
 - **Relacionado:** BACKLOG-0081, FIX-0031, PROB-0084
+
+### BACKLOG-0086 — Decidir a semântica da Curva ABC: classificar sobre a carteira ou renomear a coluna
+- **Prioridade:** P2
+- **Área:** backend / negócio
+- **Origem:** PROB-0085 (2026-09-15), achado ao corrigir o layout do card (FIX-0032).
+- **Motivo:** o badge `Prioridade`/`Atenção`/`Regular` é calculado sobre o **Top 10**, porque o `LIMIT 10` roda antes do cálculo do acumulado. Curva ABC clássica classifica sobre o faturamento total. Hoje o rótulo promete uma coisa e a aritmética entrega outra, e sempre haverá `Regular` no Top 10 — mesmo que os dez juntos sejam 5% do faturamento.
+- **Dependências:** decisão do usuário/PO. Tecnicamente nenhuma: o total da carteira **já é buscado** na mesma chamada do dashboard, então não há round-trip novo.
+- **Critério de aceite:** uma das duas, explicitamente escolhida. (a) O percentual acumulado passa a usar o faturamento total da carteira como denominador, o corte para 10 vira só exibição, e existe teste com um caso em que **todos** os 10 exibidos são `Prioridade` (hoje impossível). (b) A coluna é renomeada para algo que não prometa curva ABC e o teste fixa o novo rótulo. Em qualquer dos casos, o subtítulo `Top 10 por faturamento` (FIX-0032) permanece.
+- **Risco se ficar pendente:** decisão comercial de priorização de cliente tomada sobre um rótulo que não significa o que diz.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0085, FIX-0032
+
+### BACKLOG-0087 — CI precisa construir as imagens Docker e validar a configuração do nginx
+- **Prioridade:** P1
+- **Área:** infra / segurança
+- **Origem:** FIX-0033 (2026-09-15). Não é hipótese: foi exatamente por esta lacuna que o furo de `img-src` chegou a produção.
+- **Motivo:** `.github/workflows/ci.yml` roda `npm ci`, lint, test e build dos workspaces — e nada além disso. **Nenhum Dockerfile é construído, nenhum `nginx.conf` é validado, nenhum header de resposta é verificado.** Toda a configuração que só existe em produção (CSP, `security-headers.conf`, os dois Dockerfiles, `docker-compose.prod.yml`) é exercitada pela primeira vez **no deploy**. O agravante é assimétrico: `vite dev` não emite CSP, então o desenvolvedor não tem como esbarrar no erro localmente nem por acidente. O teste unitário criado em FIX-0033 lê o `.conf` como texto — ajuda, mas não prova que o nginx aceita o arquivo nem que o header sai na resposta.
+- **Dependências:** nenhuma. `docker build` roda em runner `ubuntu-latest` sem serviço externo.
+- **Critério de aceite:** o workflow constrói as duas imagens (api e web) em PR; roda `nginx -t` sobre a configuração final **de dentro da imagem web** (não sobre o arquivo do repositório, que não é o que o nginx monta); e sobe o container web para fazer uma requisição, assertando que `Content-Security-Policy` **sai na resposta** com `blob:` em `img-src` e `worker-src`. O último ponto é o que fecha a classe inteira: header derrubado por `add_header` de location — a armadilha já documentada no topo de `security-headers.conf` — não é pego por leitura de arquivo nenhuma.
+- **Risco se ficar pendente:** o próximo furo de CSP, o próximo `add_header` que derruba os outros e o próximo erro de sintaxe de nginx chegam a produção pelo mesmo caminho, e serão diagnosticados como bug de aplicação.
+- **Status:** ABERTO
+- **Relacionado:** FIX-0033, PROB-0086, BACKLOG-0088
+
+### BACKLOG-0088 — Expurgar os segredos que já entraram em camadas de build e rotacionar o que vazou
+- **Prioridade:** P1
+- **Área:** segurança / infra
+- **Origem:** FIX-0034 (2026-09-15). A correção do `.dockerignore` vale dali em diante; este item é o passivo.
+- **Motivo:** enquanto os padrões eram `.env`/`.env.*` sem `**/`, `backend/.env` e `frontend/.env` entraram no estágio *builder* de todo build feito. A imagem final nunca publicou o segredo (multi-stage, copia só `dist/`), mas as **camadas intermediárias** e o **cache de build** contêm `DATABASE_URL`, `RENOWA_AT_SECRET` e `RENOWA_JWT_SECRET` em cleartext. Nada foi expurgado e nada foi rotacionado. Não se apurou se algum build com o `.dockerignore` antigo rodou fora da máquina de desenvolvimento — em runner de CI ou no host de produção; se rodou, o cache de lá tem o mesmo conteúdo.
+- **Dependências:** acesso ao host de produção e ao registry; janela para rotacionar `RENOWA_AT_SECRET`/`RENOWA_JWT_SECRET`, que **invalida as sessões ativas** (todo mundo é deslogado) — precisa de horário combinado.
+- **Critério de aceite:** (1) levantamento de onde rodaram builds com o `.dockerignore` antigo (máquina local, CI, host de produção); (2) `docker builder prune` e remoção das imagens intermediárias nesses lugares, com verificação de que nenhum `history`/camada remanescente contém `.env`; (3) decisão registrada sobre rotacionar os três segredos — rotacionar é o default, e não rotacionar precisa de justificativa escrita; (4) se rotacionados, `RENOWA_AT_SECRET` e `RENOWA_JWT_SECRET` trocados com a janela de deslogue comunicada.
+- **Risco se ficar pendente:** credencial de banco e segredo de assinatura de token em cleartext em cache de build, com validade indefinida e sem inventário de onde estão.
+- **Status:** ABERTO
+- **Relacionado:** FIX-0034, PROB-0002, BACKLOG-0087
+
+### BACKLOG-0089 — Confirmar em produção se a CSP barra o preview de PDF de pedido e de SAC
+- **Prioridade:** P1
+- **Área:** frontend / infra
+- **Origem:** PROB-0086 (2026-09-15), derivado de FIX-0033.
+- **Motivo:** imprimir/visualizar pedido e chamado de SAC navega para uma URL `blob:`. Navegação de topo não é barrada por CSP, mas o documento `blob:` herda a política do criador, e não há `object-src` nem `frame-src` declarados — ambos caem no `default-src 'self'`, que não inclui `blob:`. **Não foi verificado em nenhum navegador**, e não dá para verificar localmente: `vite dev` não emite CSP. É a mesma cegueira que produziu o furo de `img-src`, aplicada a um fluxo de uso diário.
+- **Dependências:** acesso a produção (ou a um build servido pelo nginx real). Não precisa de código.
+- **Critério de aceite:** os dois previews abertos em produção com o console aberto, em **Safari e Chrome**, com o resultado registrado em PROB-0086 — funcionou ou apareceu violação, com o texto da violação. Se barrado: `object-src 'self' blob:` e `frame-src 'self' blob:` declarados explicitamente (**não** alargar `default-src`), asserção nova em `nginxCsp.spec.ts` e reverificação na mesma tela.
+- **Risco se ficar pendente:** uma funcionalidade de uso diário pode estar quebrada em produção sem que ninguém tenha olhado — e, quando alguém reclamar, a suspeita natural recairá sobre a geração do PDF, que estará certa.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0086, FIX-0033, BACKLOG-0087
+
+### BACKLOG-0090 — Alinhar rótulos e percentuais do Dashboard ao dado que eles realmente carregam
+- **Prioridade:** P2
+- **Área:** backend / frontend
+- **Origem:** PROB-0087 e PROB-0088 (2026-09-15).
+- **Motivo:** três imprecisões na mesma tela, todas baratas. "Produtos ativos" conta produtos **cadastrados** (não existe coluna `ativo` na entity de produto); "Pedidos abertos" conta só `status = 'em_aberto'`, ignorando `liberado` e `parcialmente_faturado` — subestima o trabalho em curso justamente quando o faturamento está ativo; e `pct()` arredonda cada fatia do donut isoladamente, então a soma pode dar 99% ou 101%.
+- **Dependências:** para os pedidos, confirmar com o usuário/PO **quais status** contam como aberto. As outras duas não dependem de ninguém.
+- **Critério de aceite:** o cartão de produtos diz "Produtos cadastrados" (ou ganha coluna `ativo` de verdade, o que é feature e exige migration — **não** deve entrar por esta porta sem decisão própria); a contagem de pedidos abertos e o rótulo concordam entre si, com o conjunto de status fixado em teste; e os percentuais do donut somam exatamente 100% por *largest remainder*, com teste cobrindo um caso que hoje daria 101%.
+- **Risco se ficar pendente:** baixo por item; somados, corroem a confiança no painel — um número visivelmente errado (101%) faz duvidar dos que estão certos.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0087, PROB-0088
+
+### BACKLOG-0091 — Remover `VITE_AUTH_URL`/`VITE_AUTH_AUD` e corrigir a seção de autenticação do README
+- **Prioridade:** P3
+- **Área:** documentação / frontend
+- **Origem:** PROB-0089 (2026-09-15).
+- **Motivo:** as duas variáveis estão em `frontend/.env` e não têm **nenhum** consumidor no código; o `README.md` ainda descreve o fluxo SSO externo que elas serviam (`GET {VITE_AUTH_URL}/api/auth/me`, redirecionamento para `{VITE_AUTH_URL}/login?aud=...`), abandonado na migração de autenticação. O README é o primeiro lugar onde alguém procura esse fluxo, e ele aponta para um domínio de terceiro que o sistema não usa mais.
+- **Dependências:** conferir antes se algum manifesto de deploy injeta as variáveis — remover é seguro por serem inertes no código, mas um manifesto que as exija falharia no deploy.
+- **Critério de aceite:** as duas variáveis fora de `frontend/.env` e de qualquer `.env.example`; a seção "Fluxo de Autenticação Web" do `README.md` descrevendo o fluxo real, coerente com `SYSTEM_OVERVIEW.md`; nenhuma ocorrência de `VITE_AUTH_` no repositório.
+- **Risco se ficar pendente:** todo diagnóstico de autenticação feito por quem lê o README começa por uma pista falsa.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0089, PROB-0052
+
+### BACKLOG-0092 — Fixar `RENOWA_VERSION` no deploy: hoje não existe artefato para rollback
+- **Prioridade:** P1
+- **Área:** infra
+- **Origem:** reconfirmado em 2026-09-15 por leitura de `docker-compose.prod.yml`. O estado já estava descrito em `DEPLOY_HOSTINGER.md` (seção de notas, 2026-09-04), mas **nunca virou item rastreável** — e é dele que depende toda a seção "rollback" daquele mesmo documento.
+- **Motivo:** `image: renowa-api:${RENOWA_VERSION:-latest}` e `image: renowa-web:${RENOWA_VERSION:-latest}` em `docker-compose.prod.yml`. A variável **não está no `.env` de produção**, então todo deploy cai no default e sobrescreve a mesma tag `latest`: não sobra imagem da versão anterior. O procedimento de rollback documentado ("trocar a variável e `up -d`") só passa a existir depois do primeiro deploy que exporte a variável — hoje, voltar uma versão significa rebuild do source, com minutos fora do ar. O comentário no topo do compose já explica isso; falta executar.
+- **Dependências:** acesso ao `.env` de produção e uma janela de deploy.
+- **Critério de aceite:** `RENOWA_VERSION` presente no `.env` de produção com o SHA curto do commit; ao menos **dois** deploys consecutivos feitos com tag distinta, com as duas imagens presentes no host (`docker images` mostrando as duas tags); e um rollback **efetivamente exercitado** para a tag anterior, com o serviço de volta ao ar — a documentação diz que funciona, e isso nunca foi provado. Registrar no mesmo passo o limite já documentado: **rollback de imagem não desfaz migration**, o runner é forward-only.
+- **Risco se ficar pendente:** o incidente em que o rollback importa é justamente aquele em que não há tempo para rebuild.
+- **Status:** ABERTO
+- **Relacionado:** BACKLOG-0087, BACKLOG-0088, `DEPLOY_HOSTINGER.md`

@@ -448,3 +448,57 @@
 - **Validação pela UI nos dois ramos:** o ramo **positivo** (admin, 32 permissões) fechou BACKLOG-0081 — nada some de quem pode. O ramo **negativo** fechou BACKLOG-0085 no mesmo dia, com um perfil de **um único slug** (`clientes.ver`) numa janela de navegação privada, em paralelo com a sessão do admin: Sidebar renderizando exatamente `['/dashboard','/clientes']`, as 7 URLs de módulo digitadas à mão redirecionando para `/dashboard`, "Novo Cliente"/"Importar" ausentes da tela de Clientes, "Novo Pedido" ausente do Dashboard, e `GET /pedidos`/`/fornecedores`/`/roles` devolvendo **403** nos mesmos pontos em que a tela esconde — a UI não está adiantada nem atrasada em relação à autoridade. Concedido `clientes.criar` pela sessão do admin, os botões apareceram na sessão restrita **sem novo login**: permissão é resolvida do banco a cada request, então não há janela de token velho para permissão concedida. 25 asserções, todas verdes, banco restaurado.
 - **Ressalvas:** os vínculos órfãos dos perfis excluídos **antes** da correção continuam no banco, inertes pelo filtro mas não saneados, e o volume não foi medido nem em dev nem em produção. `usuarios.roles` continua sendo segunda fonte de verdade (BACKLOG-0083). O template `financeiro` continua sem `fornecedores.ver` — o filtro agora some de forma explicada, mas o dado segue inacessível para esse perfil. Nenhuma permissão nova foi criada: dashboard, importação, exportação e relatórios continuam sem slug próprio (BACKLOG-0082). `mobile/` não foi tocado nem validado. **Nada commitado — tudo no working tree do `master`.**
 - **commit:** pendente
+
+### FIX-0032 — Faixa "Carteira / Inativos / Curva ABC" do Dashboard deixou de esticar os três cards
+- **Data:** 2026-09-15
+- **Fecha:** nenhum PROB anterior — achado e corrigido na mesma sessão. Abre PROB-0085 (semântica da própria Curva ABC, não tocada aqui).
+- **Área:** frontend
+- **Sintoma:** **só em produção.** Os cards "Carteira de Clientes" e "Clientes inativos" apareciam com uma faixa branca morta embaixo, proporcional ao tamanho da Curva ABC ao lado. Em dev nunca reproduziu.
+- **Causa raiz:** confirmada, e não é bug de dado: `grid` do CSS aplica `align-items: stretch` por padrão, então os três filhos da ZONA 4 (`frontend/src/pages/Dashboard.tsx`, o `div` da faixa) recebiam a altura do mais alto. A Curva ABC é o mais alto e **cresce com a carteira** — razões sociais longas quebram em 2-3 linhas cada. O banco de dev tem poucos clientes, com nomes curtos: as três alturas quase coincidiam e o defeito ficava abaixo do limiar de percepção. O tamanho do tenant é a variável, não o ambiente.
+- **Correção:** `items-start` no grid (altura de cada card passa a ser a do próprio conteúdo) **mais** teto de rolagem na tabela da Curva ABC — `max-h-64 overflow-y-auto` no corpo, para que a lista não volte a puxar a faixa quando a carteira crescer. Com rolagem, o cabeçalho precisou virar `sticky`: aplicado **nas células `<th>`, não na `<tr>`** — Safari ignora `position: sticky` em linha e em `<thead>`, e é o navegador de referência do QA do projeto. `CardHeader` ganhou `subtitle` opcional e a Curva ABC passou a dizer `Top 10 por faturamento`, porque com rolagem a lista parece maior do que é.
+- **Arquivos:** `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/Dashboard.spec.tsx` (novo)
+- **Evidência:** `npm test --workspace=frontend` → **39 arquivos, 232 passed** (era 24/157 em 2026-08-26). O arquivo novo trava as duas coisas: a classe `items-start` na faixa e o teto de rolagem da Curva ABC. **Confirmado que ambos os casos reprovam se a correção for revertida** — não são testes que passariam de qualquer jeito. `npm test --workspace=backend` → 59 suítes, **747 passed** (1 skipped), inalterado por esta correção.
+- **Efeito observável:** cada card da faixa passa a ter a altura do próprio conteúdo. A Curva ABC rola dentro do card, com cabeçalho fixo, em vez de esticar os vizinhos.
+- **Ressalvas:** o teste roda em **jsdom**, que não faz layout: ele assere as classes que produzem o comportamento, não a altura renderizada. A prova visual em Safari com dados de tenant grande **não foi feita** — o banco de dev não tem volume para isso. O `max-h-64` é um número escolhido, não derivado de medição. E o conteúdo da Curva ABC segue com o problema de semântica de PROB-0085: o badge classifica dentro do Top 10.
+- **commit:** pendente
+
+### FIX-0033 — CSP passou a permitir `blob:` em `img-src`: preview de foto quebrava só em produção
+- **Data:** 2026-09-15
+- **Fecha:** nenhum PROB anterior. Abre BACKLOG-0087 (o CI não exercita esta configuração) e PROB-0086 (o outro consumidor de `blob:`, o preview de PDF, segue não verificado).
+- **Área:** segurança / frontend / infra
+- **Sintoma:** selecionar a foto do produto ou do item de pedido não mostrava preview nenhum **em produção**; em `vite dev` funcionava sempre. A imagem simplesmente não aparecia, com violação de CSP no console.
+- **Causa raiz:** confirmada. `frontend/security-headers.conf` declarava `img-src 'self' data:` — sem `blob:`. `ProductPhotoField.tsx` e `PedidoForm.tsx` montam o preview com `URL.createObjectURL(file)`, que produz uma URL `blob:`, **antes** de qualquer upload; a foto já persistida volta como data URL, e por isso `data:` bastava para o caso pós-salvamento. O furo era invisível localmente porque **`vite dev` não emite CSP alguma**: a política só existe no nginx que serve o build. Toda a diferença entre "funciona" e "não funciona" morava num arquivo que o desenvolvimento nunca executa.
+- **Correção:** `img-src 'self' data: blob:`, com comentário no próprio arquivo explicando de onde vem a origem `blob:` e por que ela não pode ser deduzida rodando local. `worker-src 'self' blob:` já existia e é outro consumidor, não relacionado.
+- **Arquivos:** `frontend/security-headers.conf`, `frontend/src/nginxCsp.spec.ts`
+- **Evidência:** verificado **servindo a imagem real**, não só lendo o arquivo — o header sai com `blob:` na resposta. `npm test --workspace=frontend` → 39 arquivos, 232 passed, com um caso novo exigindo `'self'`, `data:` e `blob:` em `img-src`.
+- **Defeito no próprio teste, achado ao escrever o caso:** o helper `sources()` casava a diretiva por regex **sobre o arquivo inteiro, comentários inclusive**. O comentário que acabara de ser escrito citando `img-src` casava **antes** da diretiva real, e o teste passaria a validar o texto explicativo em vez da política. O helper passou a descartar linhas iniciadas por `#` antes do match. Vale para qualquer asserção futura sobre este arquivo: comentar a diretiva no `.conf` quebrava o teste que a protege.
+- **Efeito observável:** o preview da foto aparece em produção, no produto e no item de pedido.
+- **Ressalvas:** cobre **imagem**. O preview de **PDF** (pedido e SAC) também usa `blob:`, por um caminho diferente — `window.open` + navegação — e **não foi verificado em produção**: é PROB-0086, aberto. E a classe inteira de defeito continua aberta: nada no CI constrói a imagem nem valida o nginx, então o próximo furo de CSP chega a produção do mesmo jeito (BACKLOG-0087).
+- **commit:** pendente
+
+### FIX-0034 — `.dockerignore` passou a excluir `.env` em qualquer nível, não só na raiz
+- **Data:** 2026-09-15
+- **Fecha:** nenhum PROB anterior. Deixa BACKLOG-0088 aberto (o que já vazou para camadas e cache não foi saneado).
+- **Área:** segurança / infra
+- **Sintoma:** nenhum. Não havia sintoma — é exatamente por isso que estava lá.
+- **Causa raiz:** confirmada. Os padrões eram `.env` e `.env.*`, e no Docker um padrão **sem `**/` casa só o nível raiz**. `backend/.env` e `frontend/.env` não casavam com nada e entravam no contexto de build; `COPY backend ./backend` os levava para dentro do estágio *builder*, com `DATABASE_URL`, `RENOWA_AT_SECRET` e `RENOWA_JWT_SECRET` em cleartext.
+- **Alcance real, medido e não estimado:** a imagem final **não** publicava o segredo — o Dockerfile é multi-stage e o estágio final copia só `dist/`. O que existia era o segredo em **camada intermediária** do estágio builder e no **cache de build do host**. Grave o suficiente para corrigir e registrar; menor do que "segredo na imagem publicada", e a diferença importa para dimensionar a resposta.
+- **Correção:** `**/.env` e `**/.env.*`, preservando `!**/.env.example` — a negação precisa vir depois, e também precisa do `**/` para alcançar os exemplos dos workspaces. Comentário no arquivo registrando por que o `**/` não é decorativo.
+- **Arquivos:** `.dockerignore`
+- **Evidência:** `docker build --target builder` e inspeção do resultado: **`/app/backend/.env` e `/app/frontend/.env` não existem mais** no estágio builder. Antes da correção, existiam.
+- **Efeito observável:** nenhum no runtime. O efeito é o contexto de build deixar de carregar credencial.
+- **Ressalvas:** a correção impede **dali em diante**. As camadas intermediárias já construídas e o cache de build do host **continuam contendo os segredos**, e nada foi expurgado nem rotacionado — é BACKLOG-0088 (P1). Não foi apurado se algum build com o `.dockerignore` antigo rodou em runner de CI ou no host de produção; se rodou, o cache de lá tem o mesmo conteúdo. Nenhuma imagem foi publicada em registry público a partir do estágio builder (o alvo publicado é o final), mas isso foi verificado no Dockerfile, **não** no histórico de publicação.
+- **commit:** pendente
+
+### FIX-0035 — `clientesInativos` do dashboard ganhou teto no payload, sem falsear a contagem
+- **Data:** 2026-09-15
+- **Fecha:** nenhum PROB anterior.
+- **Área:** backend / frontend
+- **Sintoma:** latente. A resposta de `GET` do dashboard carregava **um item por cliente inativo**, sem limite: em dev são poucos, em tenant grande o payload cresce sem teto para alimentar um card que mostra os primeiros.
+- **Causa raiz:** confirmada. A query de clientes inativos (`backend/src/finance/finance.service.ts`) não tem `LIMIT`.
+- **Correção:** o corte foi feito **no payload** (`slice(0, 20)`), não na query — e essa é a decisão que importa. `clientesAtivos` é derivado de `clientesInativos.length`: limitar no SQL faria a contagem parar em 20 e o donut da carteira passaria a mentir, trocando um payload grande por um número errado. A lista completa continua sendo materializada para o cálculo; só a fatia enviada é cortada. Quando há corte, o card informa `20 mais inativos de N`, usando a contagem completa que já existe em `carteira.inativos`.
+- **Arquivos:** `backend/src/finance/finance.service.ts`, `backend/src/finance/finance.service.spec.ts`, `frontend/src/pages/Dashboard.tsx`, `frontend/src/pages/Dashboard.spec.tsx`
+- **Evidência:** `npm test --workspace=backend` → 59 suítes, **748 passed** (1 skipped); `npm test --workspace=frontend` → 39 arquivos, **233 passed**. Lint e build limpos nos dois workspaces. Os testes fixam o teto de 20, a contagem total, a ordem e o aviso de truncamento.
+- **Efeito observável:** o card mostra o mesmo topo e o donut mantém os números completos; quando existem mais de 20 inativos, o subtítulo torna o corte explícito.
+- **Ressalvas:** o custo **no banco** não mudou — a query segue varrendo e materializando todos os inativos; o que foi cortado é a serialização e o tráfego. O teto de 20 é escolha, não medição.
+- **commit:** pendente
