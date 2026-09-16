@@ -17,9 +17,11 @@ build
 .agents
 .impeccable
 
-.env
-.env.*
-!.env.example
+# Precisa do `**/`: sem ele o padrão casa só o `.env` da raiz, e `backend/.env`
+# entrava no estágio builder pelo `COPY backend ./backend` — levando
+# DATABASE_URL, RENOWA_AT_SECRET e RENOWA_JWT_SECRET para a camada de build.
+**/.env
+**/.env.*
 !**/.env.example
 
 docs
