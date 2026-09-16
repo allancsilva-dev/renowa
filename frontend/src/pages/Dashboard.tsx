@@ -75,10 +75,11 @@ function Card({ children, className = '' }: { children: React.ReactNode; classNa
   );
 }
 
-function CardHeader({ title }: { title: string }) {
+function CardHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className='border-b border-slate-100 px-5 pb-3 pt-5'>
       <h2 className='text-sm font-semibold text-slate-800'>{title}</h2>
+      {subtitle && <p className='mt-0.5 text-xs text-slate-500'>{subtitle}</p>}
     </div>
   );
 }
@@ -194,6 +195,9 @@ export default function Dashboard() {
 
   const abcData = data?.curvaAbc ?? [];
   const clientesInativos = data?.clientesInativos ?? [];
+  const clientesInativosSubtitle = data && data.carteira.inativos > clientesInativos.length
+    ? `${clientesInativos.length} mais inativos de ${data.carteira.inativos}`
+    : undefined;
 
   const handleExport = () => {
     const csvContent =
@@ -366,8 +370,11 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── ZONA 4: Carteira + Positivação + Curva ABC ── */}
-      <div className='grid grid-cols-12 gap-4'>
+      {/* ── ZONA 4: Carteira + Positivação + Curva ABC ──
+          `items-start`: sem ele o grid estica os três cards até a altura do mais
+          alto. A Curva ABC cresce com o tamanho da carteira, então em tenant
+          grande os outros dois ganhavam uma faixa branca morta. */}
+      <div className='grid grid-cols-12 gap-4 items-start'>
         {/* Col 1: Carteira de Clientes */}
         <Card className='col-span-12 lg:col-span-4'>
           <CardHeader title='Carteira de Clientes' />
@@ -412,7 +419,7 @@ export default function Dashboard() {
 
         {/* Col 2: clientes sem pedido válido há mais de 30 dias */}
         <Card className='col-span-12 lg:col-span-4'>
-          <CardHeader title='Clientes inativos' />
+          <CardHeader title='Clientes inativos' subtitle={clientesInativosSubtitle} />
           <div className='max-h-64 overflow-y-auto px-5 py-3'>
             {clientesInativos.length === 0 ? (
               <div className='py-10 text-center'>
@@ -433,14 +440,17 @@ export default function Dashboard() {
 
         {/* Col 3: Curva ABC de Clientes */}
         <Card className='col-span-12 lg:col-span-4'>
-          <CardHeader title='Curva ABC de Clientes' />
-          <div className='px-5 py-3'>
+          <CardHeader title='Curva ABC de Clientes' subtitle='Top 10 por faturamento' />
+          {/* Mesmo teto do card de inativos: a lista é proporcional à carteira. */}
+          <div className='max-h-64 overflow-y-auto px-5 py-3'>
             <table className='w-full text-sm'>
               <thead>
-                <tr className='text-xs uppercase text-slate-400 font-semibold border-b border-slate-100'>
-                  <th className='pb-2 text-left font-medium'>Cliente</th>
-                  <th className='pb-2 text-right font-medium'>Valor</th>
-                  <th className='pb-2 text-right font-medium'>Curva</th>
+                {/* `sticky` vai nas células, não na `<tr>`: o Safari ignora
+                    position:sticky em linha e em `<thead>`. */}
+                <tr className='text-xs uppercase text-slate-400 font-semibold'>
+                  <th className='sticky top-0 z-10 bg-white pb-2 text-left font-medium border-b border-slate-100'>Cliente</th>
+                  <th className='sticky top-0 z-10 bg-white pb-2 text-right font-medium border-b border-slate-100'>Valor</th>
+                  <th className='sticky top-0 z-10 bg-white pb-2 text-right font-medium border-b border-slate-100'>Curva</th>
                 </tr>
               </thead>
               <tbody>

@@ -235,3 +235,48 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
     });
   });
 });
+
+describe('FinanceService — dashboard', () => {
+  it('limita o payload de inativos sem alterar a contagem total nem a ordem', async () => {
+    const movementRepo = {
+      createQueryBuilder: jest.fn(() => chainableQueryBuilder({ custo_fixo: '0', custo_rotativo: '0' })),
+    } as any;
+    const commissionRepo = {
+      createQueryBuilder: jest.fn(() => chainableQueryBuilder({ total: '0' })),
+    } as any;
+    const delinquencyRepo = {
+      createQueryBuilder: jest.fn(() => chainableQueryBuilder({ total: '0' })),
+    } as any;
+    const clientesInativos = Array.from({ length: 25 }, (_, index) => ({
+      clienteUuid: `cliente-${index}`,
+      cliente: `Cliente ${index}`,
+      ultimoPedidoEm: '2026-01-01',
+      diasSemPedido: String(100 - index),
+    }));
+    const dataSource = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([{ total: 30 }])
+        .mockResolvedValueOnce([{ total: 25 }])
+        .mockResolvedValueOnce(clientesInativos)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: '0' }]),
+    } as any;
+    const service = new FinanceService(
+      movementRepo,
+      commissionRepo,
+      delinquencyRepo,
+      {} as any,
+      dataSource,
+    );
+
+    const result = await service.getDashboard('tenant-a');
+
+    expect(result.carteira.inativos).toBe(25);
+    expect(result.clientesInativos).toHaveLength(20);
+    expect(result.clientesInativos[0]).toMatchObject({ clienteUuid: 'cliente-0', diasSemPedido: 100 });
+    expect(result.clientesInativos[19]).toMatchObject({ clienteUuid: 'cliente-19', diasSemPedido: 81 });
+  });
+});

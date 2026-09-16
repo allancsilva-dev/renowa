@@ -768,6 +768,9 @@ export class FinanceService {
       ...row, diasSemPedido: Number(row.diasSemPedido),
     }));
     const clientesAtivos = Math.max(clientesComHistorico - clientesInativos.length, 0);
+    // A contagem completa acima alimenta o donut da carteira; a lista enviada é
+    // cortada só no payload, que sem teto cresce com o tamanho do tenant.
+    const clientesInativosTopo = clientesInativos.slice(0, 20);
 
     const vendasMensais = this.buildVendasMensais(
       vendasMensaisRows as { mes: string; valor: string }[],
@@ -791,7 +794,7 @@ export class FinanceService {
         inativos: clientesInativos.length,
         prospect: clientesProspect,
       },
-      clientesInativos,
+      clientesInativos: clientesInativosTopo,
       vendasMensais,
       curvaAbc,
     };
