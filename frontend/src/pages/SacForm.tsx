@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
-import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchSacTicket, saveSacTicket } from '@/services/sac.service';
-import { fetchClients } from '@/services/clients.service';
 import {
-  sacStatusLabel, sacStatusColor, type Product, type SacStatus, type SacTicket, type Supplier,
+  sacStatusLabel, sacStatusColor, type Product, type SacStatus, type SacTicket,
 } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
@@ -13,6 +11,7 @@ import { moneyForDisplay } from '@/lib/decimal';
 import { previewSacItem, previewSacTotal } from '@/lib/sacCalculation';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
+import { clientOptionsFetcher, productOptionsFetcher, supplierOptionsFetcher } from '@/lib/relationOptions';
 
 type HeaderForm = {
   cliente_uuid: string; fornecedor_uuid: string; numero_nfe: string;
@@ -20,7 +19,7 @@ type HeaderForm = {
 };
 
 type ItemForm = {
-  uuid: string; produto_uuid: string; codigo: string;
+  uuid: string; produto_uuid: string; produto_label: string; codigo: string;
   quantidade: string; motivo: string; valor_unitario: number | null;
 };
 
@@ -30,7 +29,7 @@ const emptyHeader: HeaderForm = {
 };
 
 const newItem = (): ItemForm => ({
-  uuid: crypto.randomUUID(), produto_uuid: '', codigo: '',
+  uuid: crypto.randomUUID(), produto_uuid: '', produto_label: '', codigo: '',
   quantidade: '1', motivo: '', valor_unitario: null,
 });
 
@@ -49,23 +48,13 @@ function ticketToForm(ticket: SacTicket): { header: HeaderForm; items: ItemForm[
       observacao: ticket.observacao ?? '', status: ticket.status,
     },
     items: ticket.itens.map((item) => ({
-      uuid: item.uuid, produto_uuid: item.produto?.uuid ?? '', codigo: item.codigo,
+      uuid: item.uuid, produto_uuid: item.produto?.uuid ?? '',
+      produto_label: item.produto ? `${item.produto.codigo ? `${item.produto.codigo} — ` : ''}${item.produto.descricao}` : '',
+      codigo: item.codigo,
       quantidade: item.quantidade ?? '0', motivo: item.motivo,
       valor_unitario: item.valor_unitario == null ? null : Number(item.valor_unitario),
     })),
   };
-}
-
-function clientFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-  return fetchClients({ search, page, limit: 20 }).then((result) => ({
-    options: result.data.map((client) => ({
-      value: client.uuid,
-      label: client.razao_social,
-      description: client.cnpj ?? undefined,
-      data: client,
-    })),
-    hasMore: result.meta.page < result.meta.totalPages,
-  }));
 }
 
 export default function SacForm() {
@@ -75,43 +64,29 @@ export default function SacForm() {
   const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [header, setHeader] = useState<HeaderForm>(emptyHeader);
   const [clienteLabel, setClienteLabel] = useState('');
+  const [supplierLabel, setSupplierLabel] = useState('');
   const [items, setItems] = useState<ItemForm[]>([newItem()]);
   const [version, setVersion] = useState<number | null>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      fetchAllPages<Supplier>('/fornecedores'),
-      uuid ? fetchSacTicket(uuid) : Promise.resolve(null),
-    ]).then(([suppliers, ticket]) => {
+    (uuid ? fetchSacTicket(uuid) : Promise.resolve(null)).then((ticket) => {
       if (!active) return;
-      setSuppliers(suppliers);
       if (ticket) {
         const mapped = ticketToForm(ticket);
         setHeader(mapped.header);
         setItems(mapped.items.length ? mapped.items : [newItem()]);
         setVersion(ticket.version);
         setClienteLabel(ticket.cliente?.razao_social ?? '');
+        setSupplierLabel(ticket.fornecedor?.razao_social ?? '');
       }
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
       .finally(() => { if (active) setFetching(false); });
     return () => { active = false; };
   }, [uuid]);
-
-  // Produtos do fornecedor: preenchem o COD sem obrigar cadastro prévio.
-  useEffect(() => {
-    if (!header.fornecedor_uuid) { setProducts([]); return; }
-    let active = true;
-    fetchAllPages<Product>('/produtos', { fornecedor_uuid: header.fornecedor_uuid })
-      .then((products) => { if (active) setProducts(products); })
-      .catch((reason) => { if (active) setError(getApiErrorMessage(reason)); });
-    return () => { active = false; };
-  }, [header.fornecedor_uuid]);
 
   const locked = isEdit && !EDITAVEL.includes(header.status);
   const total = previewSacTotal(items.map((item) => ({
@@ -131,12 +106,17 @@ export default function SacForm() {
     setItems((current) => current.map((item) => item.uuid === itemUuid ? { ...item, ...patch } : item));
   }
 
-  function chooseProduct(itemUuid: string, productUuid: string) {
-    const product = products.find((entry) => entry.uuid === productUuid);
+  function chooseProduct(itemUuid: string, productUuid: string | null, option: AsyncComboboxOption | null) {
+    const product = option?.data as Product | undefined;
     updateItem(itemUuid, {
-      produto_uuid: productUuid,
+      produto_uuid: productUuid ?? '',
+      produto_label: option?.label ?? '',
       codigo: product?.codigo ?? '',
     });
+  }
+
+  function productFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
+    return productOptionsFetcher(header.fornecedor_uuid, search, page);
   }
 
   async function submit(event: React.FormEvent) {
@@ -205,16 +185,14 @@ export default function SacForm() {
               value={header.cliente_uuid || null}
               displayValue={clienteLabel}
               onChange={handleSelectClient}
-              fetcher={clientFetcher}
+              fetcher={clientOptionsFetcher}
               placeholder='Buscar por razão social ou CNPJ...'
               emptyMessage='Nenhum cliente encontrado.'
               errorMessage='Não foi possível carregar os clientes.'
             />
           </label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Fornecedor *</span>
-            <select disabled={locked} value={header.fornecedor_uuid} onChange={(e) => setHeader((h) => ({ ...h, fornecedor_uuid: e.target.value }))} className={inputClass} required>
-              <option value=''></option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
-            </select></label>
+            <AsyncCombobox disabled={locked} required value={header.fornecedor_uuid || null} displayValue={supplierLabel} onChange={(value, option) => { setHeader((current) => ({ ...current, fornecedor_uuid: value ?? '' })); setSupplierLabel(option?.label ?? ''); }} fetcher={supplierOptionsFetcher} ariaLabel='Fornecedor' placeholder='Buscar por razão social ou CNPJ...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Número de NFE</span>
             <input disabled={locked} value={header.numero_nfe} onChange={(e) => setHeader((h) => ({ ...h, numero_nfe: e.target.value }))} maxLength={120} className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de abertura</span>
@@ -244,9 +222,7 @@ export default function SacForm() {
                 </div>
                 <div className='grid gap-3 md:grid-cols-4'>
                   <label className='flex flex-col gap-1'><span className={labelClass}>Produto cadastrado</span>
-                    <select disabled={locked} value={item.produto_uuid} onChange={(e) => chooseProduct(item.uuid, e.target.value)} className={inputClass}>
-                      <option value=''></option>{products.map((product) => <option key={product.uuid} value={product.uuid}>{product.codigo ? `${product.codigo} — ` : ''}{product.descricao}</option>)}
-                    </select></label>
+                    <AsyncCombobox disabled={locked || !header.fornecedor_uuid} value={item.produto_uuid || null} displayValue={item.produto_label} onChange={(value, option) => chooseProduct(item.uuid, value, option)} fetcher={productFetcher} ariaLabel={`Produto do item ${index + 1}`} placeholder={header.fornecedor_uuid ? 'Buscar por código ou descrição...' : 'Selecione o fornecedor primeiro'} className={inputClass} /></label>
                   <label className='flex flex-col gap-1'><span className={labelClass}>COD *</span>
                     <input disabled={locked} value={item.codigo} onChange={(e) => updateItem(item.uuid, { codigo: e.target.value })} maxLength={120} className={inputClass} required /></label>
                   <label className='flex flex-col gap-1'><span className={labelClass}>QUANT *</span>

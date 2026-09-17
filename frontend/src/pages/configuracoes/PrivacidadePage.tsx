@@ -4,6 +4,8 @@ import { getApiErrorMessage } from '@/lib/errors';
 import { fetchClients } from '@/services/clients.service';
 import { advancePrivacyRequest, createPrivacyRequest, fetchPrivacyRequests, type PrivacyRequest } from '@/services/privacy.service';
 import type { Client } from '@/types';
+import { AsyncCombobox } from '@/components/ui/AsyncCombobox';
+import { clientOptionsFetcher } from '@/lib/relationOptions';
 
 const statusLabel: Record<PrivacyRequest['status'], string> = {
   RECEIVED: 'Recebida', IDENTITY_VERIFIED: 'Identidade validada', APPROVED: 'Aprovada',
@@ -15,6 +17,7 @@ export default function PrivacidadePage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
   const [subjectUuid, setSubjectUuid] = useState('');
+  const [subjectLabel, setSubjectLabel] = useState('');
   const [type, setType] = useState<'ERASURE' | 'EXPORT'>('ERASURE');
   const [reason, setReason] = useState('');
   const [legalBasis, setLegalBasis] = useState('');
@@ -36,7 +39,7 @@ export default function PrivacidadePage() {
 
   async function create(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError(null);
-    try { await createPrivacyRequest({ subjectType: 'CLIENT', subjectUuid, requestType: type, reason: reason || undefined }); setSubjectUuid(''); setReason(''); await load(); }
+    try { await createPrivacyRequest({ subjectType: 'CLIENT', subjectUuid, requestType: type, reason: reason || undefined }); setSubjectUuid(''); setSubjectLabel(''); setReason(''); await load(); }
     catch (err) { setError(getApiErrorMessage(err)); } finally { setBusy(false); }
   }
 
@@ -64,10 +67,21 @@ export default function PrivacidadePage() {
     {error && <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800'>{error}</div>}
     <form onSubmit={create} className='flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4'>
       <label className='grid min-w-72 flex-1 gap-1 text-sm font-medium text-slate-700'>Cliente
-        <select required disabled={clientsLoading} value={subjectUuid} onChange={(event) => setSubjectUuid(event.target.value)} className='rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'>
-          <option value=''>{clientsLoading ? 'Carregando clientes...' : ''}</option>
-          {clients.map((client) => <option key={client.uuid} value={client.uuid}>{client.razao_social}</option>)}
-        </select></label>
+        <AsyncCombobox
+          required
+          disabled={busy}
+          value={subjectUuid || null}
+          displayValue={subjectLabel}
+          onChange={(value, option) => {
+            setSubjectUuid(value ?? '');
+            setSubjectLabel(option?.label ?? '');
+            const client = option?.data as Client | undefined;
+            if (client) setClients((current) => current.some((entry) => entry.uuid === client.uuid) ? current : [...current, client]);
+          }}
+          fetcher={clientOptionsFetcher}
+          ariaLabel='Cliente'
+          placeholder={clientsLoading ? 'Carregando clientes...' : 'Buscar por razão social ou CNPJ...'}
+        /></label>
       <label className='grid gap-1 text-sm font-medium text-slate-700'>Direito solicitado<select value={type} onChange={(event) => setType(event.target.value as typeof type)} className='rounded-lg border border-slate-300 bg-white px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary'><option value='ERASURE'>Apagamento</option><option value='EXPORT'>Portabilidade</option></select></label>
       <label className='grid min-w-56 flex-1 gap-1 text-sm font-medium text-slate-700'>Motivo<input value={reason} onChange={(event) => setReason(event.target.value)} className='rounded-lg border border-slate-300 px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary' /></label>
       <button disabled={busy} className='inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60'><Plus className='h-4 w-4' />Registrar</button>

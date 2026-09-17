@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import { fetchAllPages } from '@/lib/fetchAllPages';
 import type { ApiResponse, Client, Transport } from '@/types';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { maskCnpj, maskCep, maskTel } from '@/lib/format';
 import { lookupCnpj } from '@/services/consultas.service';
 import { getApiErrorMessage } from '@/lib/errors';
+import { AsyncCombobox, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
+import { transportOptionsFetcher } from '@/lib/relationOptions';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -98,14 +99,10 @@ export default function ClienteForm() {
   const [cnpjMessage, setCnpjMessage] = useState<string | null>(null);
   const [cnpjConflict, setCnpjConflict] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [transports, setTransports] = useState<Transport[]>([]);
+  const [selectedTransport, setSelectedTransport] = useState<Transport | null>(null);
+  const [transportLabel, setTransportLabel] = useState('');
   const cnpjAbortRef = useRef<AbortController | null>(null);
   const cnpjAvailabilityRequestRef = useRef(0);
-
-  useEffect(() => {
-    fetchAllPages<Transport>('/transportadoras').then(setTransports)
-      .catch(() => setError('Não foi possível carregar as transportadoras.'));
-  }, []);
 
   useEffect(() => () => cnpjAbortRef.current?.abort(), []);
 
@@ -114,7 +111,12 @@ export default function ClienteForm() {
     setFetching(true);
     api
       .get<ApiResponse<Client>>(`/clientes/${uuid}`)
-      .then((r) => setForm(toFields(r.data.data)))
+      .then((r) => {
+        const client = r.data.data;
+        setForm(toFields(client));
+        setSelectedTransport(client.transportadora ?? null);
+        setTransportLabel(client.transportadora?.razao_social ?? '');
+      })
       .catch(() => setError('Erro ao carregar cliente.'))
       .finally(() => setFetching(false));
   }, [uuid]);
@@ -271,8 +273,11 @@ export default function ClienteForm() {
   const inputClass = 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40';
   const readonlyClass = 'rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 outline-none';
 
-  // Transportadora vinculada — tel/end são exibidos automaticamente (§2.1), read-only
-  const selectedTransport = transports.find((t) => t.uuid === form.transportadora_uuid);
+  function handleSelectTransport(value: string | null, option: AsyncComboboxOption | null) {
+    setForm((current) => ({ ...current, transportadora_uuid: value ?? '' }));
+    setSelectedTransport((option?.data as Transport | undefined) ?? null);
+    setTransportLabel(option?.label ?? '');
+  }
 
   return (
     <div className='max-w-4xl mx-auto'>
@@ -524,10 +529,18 @@ export default function ClienteForm() {
               </div>
               <div className='flex flex-col gap-1'>
                 <label htmlFor='transportadora_uuid' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Transportadora</label>
-                <select id='transportadora_uuid' name='transportadora_uuid' value={form.transportadora_uuid} onChange={handleChange} className={inputClass}>
-                  <option value=''></option>
-                  {transports.map((transport) => <option key={transport.uuid} value={transport.uuid}>{transport.razao_social}</option>)}
-                </select>
+                <AsyncCombobox
+                  id='transportadora_uuid'
+                  ariaLabel='Transportadora'
+                  value={form.transportadora_uuid || null}
+                  displayValue={transportLabel}
+                  onChange={handleSelectTransport}
+                  fetcher={transportOptionsFetcher}
+                  placeholder='Buscar por razão social, CNPJ ou telefone...'
+                  emptyMessage='Nenhuma transportadora encontrada.'
+                  errorMessage='Não foi possível carregar as transportadoras.'
+                  className={inputClass}
+                />
               </div>
               {/* Tel. Transporte — preenchido automaticamente ao vincular transportadora */}
               <div className='flex flex-col gap-1'>

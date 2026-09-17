@@ -3,9 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { duplicateOrder, fetchOrder, liberarOrder, saveOrder } from '@/services/orders.service';
-import { fetchClients } from '@/services/clients.service';
-import { fetchProducts } from '@/services/products.service';
-import { orderStatusLabel, orderStatusColor, type Order, type OrderStatus, type Product, type Supplier, type Transport } from '@/types';
+import { orderStatusLabel, orderStatusColor, type Client, type Order, type OrderStatus, type Product, type Transport } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
 import { moneyForDisplay, qtyForDisplay } from '@/lib/decimal';
@@ -18,6 +16,7 @@ import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
 import { encontrarCodigosDuplicados, mensagemCodigosDuplicados } from '@/lib/orderItemCodes';
 import { deleteOrderItemPhoto, fetchOrderItemPhoto, fetchOrderItemPhotoDataUrl, uploadOrderItemPhoto } from '@/services/productPhotos.service';
 import OrderItemPhotoField from '@/components/orders/OrderItemPhotoField';
+import { clientOptionsFetcher, filterLocalOptions, productOptionsFetcher, supplierOptionsFetcher, transportOptionsFetcher } from '@/lib/relationOptions';
 
 type HeaderForm = {
   data: string; cliente_uuid: string; vendedor_uuid: string; fornecedor_uuid: string;
@@ -82,18 +81,6 @@ function orderToForm(order: Order, duplicating = false): { header: HeaderForm; i
   };
 }
 
-function clientFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-  return fetchClients({ search, page, limit: 20 }).then((result) => ({
-    options: result.data.map((client) => ({
-      value: client.uuid,
-      label: client.razao_social,
-      description: client.cnpj ?? undefined,
-      data: client,
-    })),
-    hasMore: result.meta.page < result.meta.totalPages,
-  }));
-}
-
 export default function PedidoForm() {
   const { uuid } = useParams<{ uuid: string }>();
   const [searchParams] = useSearchParams();
@@ -105,10 +92,12 @@ export default function PedidoForm() {
   const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [header, setHeader] = useState<HeaderForm>(emptyHeader);
   const [clienteLabel, setClienteLabel] = useState('');
+  const [supplierLabel, setSupplierLabel] = useState('');
+  const [vendorLabel, setVendorLabel] = useState('');
+  const [transportLabel, setTransportLabel] = useState('');
+  const [selectedTransport, setSelectedTransport] = useState<Transport | null>(null);
   const [items, setItems] = useState<ItemForm[]>([newItem()]);
   const [version, setVersion] = useState<number | null>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [transports, setTransports] = useState<Transport[]>([]);
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -125,13 +114,10 @@ export default function PedidoForm() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetchAllPages<Supplier>('/fornecedores'),
-      fetchAllPages<Transport>('/transportadoras'),
       canChooseVendor ? fetchAllPages<TenantUser>('/users').catch(() => null) : Promise.resolve(null),
       (uuid ?? duplicateSourceUuid) ? fetchOrder((uuid ?? duplicateSourceUuid)!) : Promise.resolve(null),
-    ]).then(([suppliers, transports, vendorUsers, order]) => {
+    ]).then(([vendorUsers, order]) => {
       if (!active) return;
-      setSuppliers(suppliers); setTransports(transports);
       setUsers(vendorUsers?.filter((entry) => entry.active) ?? []);
       if (order) {
         if (duplicateSourceUuid && (order.origem ?? 'interno') !== 'interno') {
@@ -140,6 +126,10 @@ export default function PedidoForm() {
         }
         const mapped = orderToForm(order, Boolean(duplicateSourceUuid)); setHeader(mapped.header); setItems(mapped.items.length ? mapped.items : [newItem()]);
         setVersion(duplicateSourceUuid ? null : order.version); setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
+        setSupplierLabel(order.fornecedor?.razao_social ?? '');
+        setVendorLabel(order.vendedor?.nome ?? '');
+        setSelectedTransport(duplicateSourceUuid ? null : order.transportadora ?? null);
+        setTransportLabel(duplicateSourceUuid ? '' : order.transportadora?.razao_social ?? '');
         if (!duplicateSourceUuid) {
           void Promise.all(mapped.items.map(async (item) => {
             const metadata = await fetchOrderItemPhoto(order.uuid, item.uuid);
@@ -156,8 +146,6 @@ export default function PedidoForm() {
 
   const totals = previewOrder(items);
   const itensSemProduto = items.filter((item) => item.precisa_produto).length;
-  // Transportadora vinculada — tel/end exibidos automaticamente (§3.2), read-only
-  const selectedTransport = transports.find((t) => t.uuid === header.transportadora_uuid);
   const readonlyClass = 'min-h-11 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500 outline-none';
 
   // Pedido liberado (ou além) trava edição de dados comerciais e itens — o backend já bloqueia
@@ -176,9 +164,11 @@ export default function PedidoForm() {
       setClienteLabel('');
       return;
     }
-    const client = option.data as { pgt_padrao?: string | null; local_entrega?: string | null; transportadora?: { uuid: string } | null } | undefined;
+    const client = option.data as Client | undefined;
     setHeader((current) => applyClientToOrderHeader({ ...current, cliente_uuid: value }, client));
     setClienteLabel(option.label);
+    setSelectedTransport(client?.transportadora ?? null);
+    setTransportLabel(client?.transportadora?.razao_social ?? '');
   }
 
   /**
@@ -201,6 +191,24 @@ export default function PedidoForm() {
     } : item)); // linha manual não depende de fornecedor: fica intacta
   }
 
+  function handleSelectSupplier(value: string | null, option: AsyncComboboxOption | null) {
+    handleSupplierChange(value ?? '');
+    setSupplierLabel(option?.label ?? '');
+  }
+
+  function handleSelectTransport(value: string | null, option: AsyncComboboxOption | null) {
+    setHeader((current) => ({ ...current, transportadora_uuid: value ?? '' }));
+    setSelectedTransport((option?.data as Transport | undefined) ?? null);
+    setTransportLabel(option?.label ?? '');
+  }
+
+  function vendorFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
+    return Promise.resolve(filterLocalOptions(users.map((user) => ({
+      value: user.authUserId,
+      label: user.name,
+    })), search, page));
+  }
+
   function chooseProduct(itemUuid: string, productUuid: string | null, option: AsyncComboboxOption | null) {
     const product = option?.data as Product | undefined;
     setItems((current) => current.map((item) => item.uuid === itemUuid ? {
@@ -214,16 +222,7 @@ export default function PedidoForm() {
   }
 
   function productFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-    if (!header.fornecedor_uuid) return Promise.resolve({ options: [], hasMore: false });
-    return fetchProducts({ search, page, limit: 20, fornecedor_uuid: header.fornecedor_uuid }).then((result) => ({
-      options: result.data.map((product) => ({
-        value: product.uuid,
-        label: product.codigo ? `${product.codigo} — ${product.descricao}` : product.descricao,
-        description: `${product.quantidade} un./caixa`,
-        data: product,
-      })),
-      hasMore: result.meta.page < result.meta.totalPages,
-    }));
+    return productOptionsFetcher(header.fornecedor_uuid, search, page);
   }
 
   function addItem() {
@@ -405,26 +404,20 @@ export default function PedidoForm() {
               value={header.cliente_uuid || null}
               displayValue={clienteLabel}
               onChange={handleSelectClient}
-              fetcher={clientFetcher}
+              fetcher={clientOptionsFetcher}
               placeholder='Buscar por razão social ou CNPJ...'
               emptyMessage='Nenhum cliente encontrado.'
               errorMessage='Não foi possível carregar os clientes.'
             />
           </label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Fornecedor *</span>
-            <select disabled={locked} value={header.fornecedor_uuid} onChange={(e) => handleSupplierChange(e.target.value)} className={inputClass} required>
-              <option value=''></option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
-            </select></label>
+            <AsyncCombobox disabled={locked} required value={header.fornecedor_uuid || null} displayValue={supplierLabel} onChange={handleSelectSupplier} fetcher={supplierOptionsFetcher} ariaLabel='Fornecedor' placeholder='Buscar por razão social ou CNPJ...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
             <input disabled={locked} type='date' value={header.data} onChange={(e) => setHeader((h) => ({ ...h, data: e.target.value }))} className={inputClass} /></label>
           {canChooseVendor && <label className='flex flex-col gap-1'><span className={labelClass}>Vendedor</span>
-            <select disabled={locked} value={header.vendedor_uuid} onChange={(e) => setHeader((h) => ({ ...h, vendedor_uuid: e.target.value }))} className={inputClass}>
-              <option value=''></option>{users.map((entry) => <option key={entry.authUserId} value={entry.authUserId}>{entry.name}</option>)}
-            </select></label>}
+            <AsyncCombobox disabled={locked} value={header.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setHeader((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
-            <select disabled={locked} value={header.transportadora_uuid} onChange={(e) => setHeader((h) => ({ ...h, transportadora_uuid: e.target.value }))} className={inputClass}>
-              <option value=''></option>{transports.map((entry) => <option key={entry.uuid} value={entry.uuid}>{entry.razao_social}</option>)}
-            </select></label>
+            <AsyncCombobox disabled={locked} value={header.transportadora_uuid || null} displayValue={transportLabel} onChange={handleSelectTransport} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Tel. Transporte</span>
             <input value={selectedTransport?.telefone ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>End. Transporte</span>

@@ -3,8 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchOrder, liberarOrder, saveExternalOrder } from '@/services/orders.service';
-import { fetchClients } from '@/services/clients.service';
-import { orderStatusLabel, orderStatusColor, type Order, type OrderStatus, type Supplier, type Transport } from '@/types';
+import { orderStatusLabel, orderStatusColor, type Client, type Order, type OrderStatus } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
 import { getApiErrorMessage } from '@/lib/errors';
@@ -12,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
+import { clientOptionsFetcher, filterLocalOptions, supplierOptionsFetcher, transportOptionsFetcher } from '@/lib/relationOptions';
 
 /**
  * Pedido externo — digitado em sistema de terceiro e só registrado aqui.
@@ -52,18 +52,6 @@ function orderToForm(order: Order, duplicating = false): ExternalForm {
   };
 }
 
-function clientFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-  return fetchClients({ search, page, limit: 20 }).then((result) => ({
-    options: result.data.map((client) => ({
-      value: client.uuid,
-      label: client.razao_social,
-      description: client.cnpj ?? undefined,
-      data: client,
-    })),
-    hasMore: result.meta.page < result.meta.totalPages,
-  }));
-}
-
 export default function PedidoExternoForm() {
   const { uuid } = useParams<{ uuid: string }>();
   const [searchParams] = useSearchParams();
@@ -75,9 +63,10 @@ export default function PedidoExternoForm() {
   const { uuid: uuidDeCriacao } = useUuidDeCriacao();
   const [form, setForm] = useState<ExternalForm>(emptyForm);
   const [clienteLabel, setClienteLabel] = useState('');
+  const [supplierLabel, setSupplierLabel] = useState('');
+  const [vendorLabel, setVendorLabel] = useState('');
+  const [transportLabel, setTransportLabel] = useState('');
   const [version, setVersion] = useState<number | null>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [transports, setTransports] = useState<Transport[]>([]);
   const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -87,13 +76,10 @@ export default function PedidoExternoForm() {
   useEffect(() => {
     let active = true;
     Promise.all([
-      fetchAllPages<Supplier>('/fornecedores'),
-      fetchAllPages<Transport>('/transportadoras'),
       canChooseVendor ? fetchAllPages<TenantUser>('/users').catch(() => null) : Promise.resolve(null),
       (uuid ?? duplicateSourceUuid) ? fetchOrder((uuid ?? duplicateSourceUuid)!) : Promise.resolve(null),
-    ]).then(([suppliers, transports, vendorUsers, order]) => {
+    ]).then(([vendorUsers, order]) => {
       if (!active) return;
-      setSuppliers(suppliers); setTransports(transports);
       setUsers(vendorUsers?.filter((entry) => entry.active) ?? []);
       if (order) {
         if (duplicateSourceUuid && (order.origem ?? 'interno') !== 'externo') {
@@ -103,6 +89,9 @@ export default function PedidoExternoForm() {
         setForm(orderToForm(order, Boolean(duplicateSourceUuid)));
         setVersion(duplicateSourceUuid ? null : order.version);
         setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
+        setSupplierLabel(order.fornecedor?.razao_social ?? '');
+        setVendorLabel(order.vendedor?.nome ?? '');
+        setTransportLabel(duplicateSourceUuid ? '' : order.transportadora?.razao_social ?? '');
       }
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
       .finally(() => { if (active) setFetching(false); });
@@ -120,9 +109,14 @@ export default function PedidoExternoForm() {
       setClienteLabel('');
       return;
     }
-    const client = option.data as { pgt_padrao?: string | null; local_entrega?: string | null; transportadora?: { uuid: string } | null } | undefined;
+    const client = option.data as Client | undefined;
     setForm((current) => applyClientToOrderHeader({ ...current, cliente_uuid: value }, client));
     setClienteLabel(option.label);
+    setTransportLabel(client?.transportadora?.razao_social ?? '');
+  }
+
+  function vendorFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
+    return Promise.resolve(filterLocalOptions(users.map((user) => ({ value: user.authUserId, label: user.name })), search, page));
   }
 
   async function handleLiberar() {
@@ -211,26 +205,20 @@ export default function PedidoExternoForm() {
               value={form.cliente_uuid || null}
               displayValue={clienteLabel}
               onChange={handleSelectClient}
-              fetcher={clientFetcher}
+              fetcher={clientOptionsFetcher}
               placeholder='Buscar por razão social ou CNPJ...'
               emptyMessage='Nenhum cliente encontrado.'
               errorMessage='Não foi possível carregar os clientes.'
             />
           </label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Fornecedor *</span>
-            <select disabled={locked} value={form.fornecedor_uuid} onChange={(e) => setForm((f) => ({ ...f, fornecedor_uuid: e.target.value }))} className={inputClass} required>
-              <option value=''></option>{suppliers.map((supplier) => <option key={supplier.uuid} value={supplier.uuid}>{supplier.razao_social}</option>)}
-            </select></label>
+            <AsyncCombobox disabled={locked} required value={form.fornecedor_uuid || null} displayValue={supplierLabel} onChange={(value, option) => { setForm((current) => ({ ...current, fornecedor_uuid: value ?? '' })); setSupplierLabel(option?.label ?? ''); }} fetcher={supplierOptionsFetcher} ariaLabel='Fornecedor' placeholder='Buscar por razão social ou CNPJ...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
             <input disabled={locked} type='date' value={form.data} onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))} className={inputClass} /></label>
           {canChooseVendor && <label className='flex flex-col gap-1'><span className={labelClass}>Vendedor</span>
-            <select disabled={locked} value={form.vendedor_uuid} onChange={(e) => setForm((f) => ({ ...f, vendedor_uuid: e.target.value }))} className={inputClass}>
-              <option value=''></option>{users.map((entry) => <option key={entry.authUserId} value={entry.authUserId}>{entry.name}</option>)}
-            </select></label>}
+            <AsyncCombobox disabled={locked} value={form.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setForm((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
-            <select disabled={locked} value={form.transportadora_uuid} onChange={(e) => setForm((f) => ({ ...f, transportadora_uuid: e.target.value }))} className={inputClass}>
-              <option value=''></option>{transports.map((entry) => <option key={entry.uuid} value={entry.uuid}>{entry.razao_social}</option>)}
-            </select></label>
+            <AsyncCombobox disabled={locked} value={form.transportadora_uuid || null} displayValue={transportLabel} onChange={(value, option) => { setForm((current) => ({ ...current, transportadora_uuid: value ?? '' })); setTransportLabel(option?.label ?? ''); }} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
         </div>
       </section>
 

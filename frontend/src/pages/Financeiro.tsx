@@ -12,6 +12,8 @@ import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useNavigate } from 'react-router-dom';
 import type { PaginatedResponse } from '@/types';
+import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
+import { filterLocalOptions } from '@/lib/relationOptions';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -380,6 +382,7 @@ function Faturados() {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search.trim());
   const [fornecedorUuid, setFornecedorUuid] = useState('');
+  const [fornecedorLabel, setFornecedorLabel] = useState('');
   const [fornecedores, setFornecedores] = useState<Array<Pick<Fornecedor, 'uuid' | 'razao_social'>>>([]);
   const [fornecedoresError, setFornecedoresError] = useState<string | null>(null);
   useEffect(() => {
@@ -394,15 +397,17 @@ function Faturados() {
     return data;
   }, [ano, fornecedorUuid, mes, debouncedSearch]);
   const query = usePaginatedQuery<Faturado>({ fetcher });
+  const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
+    fornecedores.map((fornecedor) => ({ value: fornecedor.uuid, label: fornecedor.razao_social })), term, page,
+  ));
 
   return <div className='space-y-4'>
     <div className='flex flex-wrap items-center gap-3'>
       <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
       <input type='search' aria-label='Buscar faturados' value={search} onChange={(event) => setSearch(event.target.value)} placeholder='NF, pedido, cliente ou fornecedor' className={`${inputCls} max-w-xs`} />
-      <select aria-label='Filtrar faturados por fornecedor' value={fornecedorUuid} onChange={(event) => setFornecedorUuid(event.target.value)} className={`${inputCls} max-w-xs`}>
-        <option value=''>Todos os fornecedores</option>
-        {fornecedores.map((fornecedor) => <option key={fornecedor.uuid} value={fornecedor.uuid}>{fornecedor.razao_social}</option>)}
-      </select>
+      <div className='min-w-56 max-w-xs flex-1'>
+        <AsyncCombobox key={`faturados-${fornecedores.length}`} ariaLabel='Filtrar faturados por fornecedor' value={fornecedorUuid || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorUuid(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} placeholder='Todos os fornecedores' className={inputCls} />
+      </div>
     </div>
     <WriteError message={fornecedoresError} />
     <DataTable<Faturado>
@@ -431,6 +436,7 @@ function Empresas() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const [ano, setAno] = useState(now.getFullYear());
   const [fornecedorId, setFornecedorId] = useState('');
+  const [fornecedorLabel, setFornecedorLabel] = useState('');
   const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
   const [grupos, setGrupos] = useState<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Comissao[] }[]>([]);
   const [loading, setLoading] = useState(false);
@@ -450,22 +456,18 @@ function Empresas() {
 
   useEffect(() => { load(); }, [load]);
 
-  const sel = 'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-primary';
+  const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
+    fornecedores.map((fornecedor) => ({ value: String(fornecedor.id), label: fornecedor.razao_social })), term, page,
+  ));
 
   return (
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center gap-2'>
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
         {podeVerFornecedores && (
-          <select
-            value={fornecedorId}
-            onChange={(e) => setFornecedorId(e.target.value)}
-            aria-label='Filtrar por empresa'
-            className={sel}
-          >
-            <option value=''>Todas as empresas</option>
-            {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
-          </select>
+          <div className='min-w-56'>
+            <AsyncCombobox key={`empresas-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por empresa' placeholder='Todas as empresas' />
+          </div>
         )}
       </div>
       <WriteError message={fornecedoresError} />
@@ -533,6 +535,7 @@ function ComissaoAlune() {
   const [ano, setAno] = useState(now.getFullYear());
   const [status, setStatus] = useState('');
   const [fornecedorId, setFornecedorId] = useState('');
+  const [fornecedorLabel, setFornecedorLabel] = useState('');
   const [comissoes, setComissoes] = useState<Comissao[]>([]);
   const [resumo, setResumo] = useState({ total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
   const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
@@ -629,6 +632,9 @@ function ComissaoAlune() {
   }
 
   const sel = 'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-primary';
+  const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
+    fornecedores.map((fornecedor) => ({ value: String(fornecedor.id), label: fornecedor.razao_social })), term, page,
+  ));
 
   return (
     <div className='space-y-5'>
@@ -636,10 +642,9 @@ function ComissaoAlune() {
         <div className='flex flex-wrap items-center gap-2'>
           <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
           {podeVerFornecedores && (
-            <select value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} aria-label='Filtrar por fornecedor' className={sel}>
-              <option value=''>Todos fornecedores</option>
-              {fornecedores.map((f) => <option key={f.id} value={f.id}>{f.razao_social}</option>)}
-            </select>
+            <div className='min-w-56'>
+              <AsyncCombobox key={`comissoes-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por fornecedor' placeholder='Todos fornecedores' />
+            </div>
           )}
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={sel}>
             <option value=''>Todos status</option>

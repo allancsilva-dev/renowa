@@ -38,7 +38,7 @@ describe('PedidoExternoForm — duplicação', () => {
     render(<PedidoExternoForm />);
 
     expect(await screen.findByRole('heading', { name: 'Duplicar pedido externo' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText(/Fornecedor/)).toHaveValue('forn-1'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Fornecedor' })).toHaveValue('Fornecedor Um'));
     expect(screen.getByRole('combobox', { name: 'Cliente' })).toHaveValue('');
     expect(screen.getByLabelText('Número do pedido *')).toHaveValue('');
     expect(screen.getByLabelText('Sistema onde foi digitado *')).toHaveValue('SAP');

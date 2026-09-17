@@ -16,6 +16,7 @@ const duplicateOrder = vi.fn();
 const fetchOrder = vi.fn();
 const fetchAllPages = vi.fn();
 const fetchProducts = vi.fn();
+const fetchSuppliers = vi.fn();
 const routerSearch = vi.hoisted(() => ({ value: '' }));
 const routerParams = vi.hoisted(() => ({ uuid: undefined as string | undefined }));
 const fetchOrderItemPhoto = vi.fn();
@@ -37,6 +38,9 @@ vi.mock('@/services/clients.service', () => ({
 }));
 vi.mock('@/services/products.service', () => ({
   fetchProducts: (...args: unknown[]) => fetchProducts(...args),
+}));
+vi.mock('@/services/suppliers.service', () => ({
+  fetchSuppliers: (...args: unknown[]) => fetchSuppliers(...args),
 }));
 vi.mock('@/lib/fetchAllPages', () => ({ fetchAllPages: (...args: unknown[]) => fetchAllPages(...args) }));
 vi.mock('@/services/productPhotos.service', () => ({
@@ -77,6 +81,10 @@ beforeEach(() => {
     data: fornecedor_uuid === 'forn-b' ? [PRODUTO_B] : [PRODUTO_A],
     meta: { page: 1, totalPages: 1 },
   }));
+  fetchSuppliers.mockResolvedValue({
+    data: [FORNECEDOR_A, FORNECEDOR_B],
+    meta: { page: 1, totalPages: 1 },
+  });
 });
 
 describe('PedidoForm — duplicação', () => {
@@ -126,7 +134,7 @@ async function montar() {
   render(<PedidoForm />);
   await waitFor(() => expect(screen.getByLabelText(/Fornecedor/)).toBeInTheDocument());
   return {
-    fornecedor: screen.getByLabelText(/Fornecedor/) as HTMLSelectElement,
+    fornecedor: screen.getByRole('combobox', { name: 'Fornecedor' }) as HTMLInputElement,
     produto: () => screen.getByLabelText('Buscar produto do item 1') as HTMLInputElement,
     caixas: () => screen.getByLabelText('Caixas') as HTMLInputElement,
     desconto: () => screen.getByLabelText('Desconto (%)') as HTMLInputElement,
@@ -138,6 +146,12 @@ async function montar() {
 async function escolherProduto(index = 0, nome = /AAA-1/) {
   const campos = screen.getAllByRole('combobox', { name: /Buscar produto do item/ });
   fireEvent.focus(campos[index]);
+  fireEvent.click(await screen.findByRole('option', { name: nome }));
+}
+
+async function escolherFornecedor(nome = 'Fornecedor A') {
+  const campo = screen.getByRole('combobox', { name: 'Fornecedor' });
+  fireEvent.focus(campo);
   fireEvent.click(await screen.findByRole('option', { name: nome }));
 }
 
@@ -169,7 +183,7 @@ describe('PedidoForm — troca de fornecedor', () => {
   it('mostra o valor unitário com desconto durante o preenchimento', async () => {
     const campos = await montar();
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await escolherFornecedor();
     await escolherProduto();
     expect(screen.getByLabelText('Unidades por caixa')).toHaveValue(12);
     expect(campos.caixas()).toHaveValue(1);
@@ -181,13 +195,13 @@ describe('PedidoForm — troca de fornecedor', () => {
   it('preserva as linhas e só desvincula o produto', async () => {
     const campos = await montar();
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await escolherFornecedor();
     await escolherProduto();
     fireEvent.change(campos.caixas(), { target: { value: '4' } });
     fireEvent.change(campos.desconto(), { target: { value: '10' } });
     expect(campos.ipi()).toHaveValue(10);
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-b' } });
+    await escolherFornecedor('Fornecedor B');
 
     expect(screen.getByText('Item 1')).toBeInTheDocument();
     expect(screen.queryByText('Item 2')).not.toBeInTheDocument();
@@ -202,10 +216,10 @@ describe('PedidoForm — troca de fornecedor', () => {
   it('reselecionar o mesmo fornecedor não mexe na linha', async () => {
     const campos = await montar();
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await escolherFornecedor();
     await escolherProduto();
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await escolherFornecedor();
 
     expect(campos.produto()).toHaveValue('AAA-1 — Produto A');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -214,10 +228,10 @@ describe('PedidoForm — troca de fornecedor', () => {
   it('linha manual não depende de fornecedor e fica intacta', async () => {
     const campos = await montar();
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await escolherFornecedor();
     fireEvent.change(campos.codigo(), { target: { value: 'MANUAL-9' } });
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-b' } });
+    await escolherFornecedor('Fornecedor B');
 
     expect(campos.codigo()).toHaveValue('MANUAL-9');
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -226,9 +240,9 @@ describe('PedidoForm — troca de fornecedor', () => {
   it('bloqueia o save enquanto a linha estiver sem produto e libera ao escolher outro', async () => {
     const campos = await montar();
 
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await escolherFornecedor();
     await escolherProduto();
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-b' } });
+    await escolherFornecedor('Fornecedor B');
 
     // Cliente é obrigatório e é checado antes dos itens no `submit()`.
     fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }));
@@ -261,7 +275,7 @@ describe('PedidoForm — código duplicado entre itens', () => {
 
   async function comDoisItens() {
     const campos = await montar();
-    fireEvent.change(campos.fornecedor, { target: { value: 'forn-a' } });
+    await escolherFornecedor();
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar item' }));
     return campos;
   }

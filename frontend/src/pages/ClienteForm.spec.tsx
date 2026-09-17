@@ -63,3 +63,32 @@ describe('ClienteForm — disponibilidade do CNPJ', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
+
+describe('ClienteForm — transportadora pesquisável', () => {
+  it('seleciona transportadora e exibe telefone e endereço', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url === '/transportadoras') return {
+        data: {
+          data: [{
+            uuid: 'trans-1', razao_social: 'Transportadora Norte', cnpj: null,
+            telefone: '(11) 99999-0000', endereco_completo: 'Rua Norte, 10',
+          }],
+          meta: { page: 1, totalPages: 1 },
+        },
+      } as never;
+      return { data: { data: { available: true } } } as never;
+    });
+    render(<ClienteForm />);
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Transportadora' }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith('/transportadoras', {
+      params: { search: '', page: 1, limit: 20 },
+    }));
+    fireEvent.click(await screen.findByRole('option', { name: /Transportadora Norte/ }));
+
+    expect(screen.getByRole('combobox', { name: 'Transportadora' })).toHaveValue('Transportadora Norte');
+    const details = screen.getAllByPlaceholderText('Selecione a transportadora');
+    expect(details[0]).toHaveValue('(11) 99999-0000');
+    expect(details[1]).toHaveValue('Rua Norte, 10');
+  });
+});
