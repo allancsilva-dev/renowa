@@ -3,30 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Search, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import Dialog from '@/components/ui/Dialog';
-import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
+import { AsyncCombobox } from '@/components/ui/AsyncCombobox';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { downloadProductsXlsxTemplate, fetchProducts, importProducts, type ImportProductsResult } from '@/services/products.service';
-import { fetchSuppliers } from '@/services/suppliers.service';
 import { getApiErrorMessage } from '@/lib/errors';
-import type { Product, Supplier } from '@/types';
+import type { Product } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
 import { CSV_TEMPLATE_HEADERS, downloadCsvTemplate } from '@/lib/csvTemplate';
 import { Can } from '@/components/Can';
+import { supplierOptionsFetcher } from '@/lib/relationOptions';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const INTEGER = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
-
-function supplierFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-  return fetchSuppliers({ search, page, limit: 20 }).then((result) => ({
-    options: result.data.map((supplier: Supplier) => ({
-      value: supplier.uuid,
-      label: supplier.razao_social,
-      description: supplier.cnpj ?? undefined,
-    })),
-    hasMore: result.meta.page < result.meta.totalPages,
-  }));
-}
 
 export default function Produtos() {
   const navigate = useNavigate();
@@ -155,7 +144,7 @@ export default function Produtos() {
                 setFornecedorFiltroUuid(value);
                 setFornecedorFiltroLabel(option?.label ?? '');
               }}
-              fetcher={supplierFetcher}
+              fetcher={supplierOptionsFetcher}
               placeholder='Filtrar por fornecedor...'
               emptyMessage='Nenhum fornecedor encontrado.'
               errorMessage='Não foi possível carregar os fornecedores.'
@@ -218,7 +207,7 @@ export default function Produtos() {
                   setImportFornecedorUuid(value);
                   setImportFornecedorLabel(option?.label ?? '');
                 }}
-                fetcher={supplierFetcher}
+                fetcher={supplierOptionsFetcher}
                 placeholder='Buscar fornecedor por nome ou CNPJ...'
                 emptyMessage='Nenhum fornecedor encontrado.'
                 errorMessage='Não foi possível carregar os fornecedores.'

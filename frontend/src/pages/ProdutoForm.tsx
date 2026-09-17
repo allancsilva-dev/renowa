@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/lib/apiClient';
-import type { ApiResponse, Product, Supplier } from '@/types';
+import type { ApiResponse, Product } from '@/types';
 import { getApiErrorMessage } from '@/lib/errors';
-import { fetchSuppliers } from '@/services/suppliers.service';
-import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
+import { AsyncCombobox } from '@/components/ui/AsyncCombobox';
 import ProductPhotoField from '@/components/products/ProductPhotoField';
 import { FotoDoProdutoNaoEnviadaError, salvarProdutoNovo } from '@/services/products.service';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
+import { supplierOptionsFetcher } from '@/lib/relationOptions';
 
 type FormFields = {
   codigo: string;
@@ -40,17 +40,6 @@ function toFields(p: Product): FormFields {
     fornecedor_uuid: p.fornecedor?.uuid ?? '',
     fornecedor_label: p.fornecedor?.razao_social ?? '',
   };
-}
-
-function supplierFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-  return fetchSuppliers({ search, page, limit: 20 }).then((result) => ({
-    options: result.data.map((supplier: Supplier) => ({
-      value: supplier.uuid,
-      label: supplier.razao_social,
-      description: supplier.cnpj ?? undefined,
-    })),
-    hasMore: result.meta.page < result.meta.totalPages,
-  }));
 }
 
 export default function ProdutoForm() {
@@ -92,7 +81,7 @@ export default function ProdutoForm() {
       .finally(() => setFetching(false));
   }, [uuid]);
 
-  const fetchSupplierOptions = useCallback(supplierFetcher, []);
+  const fetchSupplierOptions = useCallback(supplierOptionsFetcher, []);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const { name, value } = e.target;

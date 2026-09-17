@@ -15,21 +15,10 @@ import { Can } from '@/components/Can';
 import { useAuth } from '@/hooks/useAuth';
 import { canCancelarPedido } from '@/lib/orderPermissions';
 import { getApiErrorMessage } from '@/lib/errors';
-import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
-import { fetchSuppliers } from '@/services/suppliers.service';
+import { AsyncCombobox } from '@/components/ui/AsyncCombobox';
+import { supplierOptionsFetcher } from '@/lib/relationOptions';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
-
-function supplierFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-  return fetchSuppliers({ search, page, limit: 20 }).then((result) => ({
-    options: result.data.map((supplier) => ({
-      value: supplier.uuid,
-      label: supplier.razao_social,
-      description: supplier.cnpj ?? undefined,
-    })),
-    hasMore: result.meta.page < result.meta.totalPages,
-  }));
-}
 
 export default function Pedidos() {
   const navigate = useNavigate();
@@ -204,7 +193,7 @@ export default function Pedidos() {
                 setFornecedorFiltroUuid(value);
                 setFornecedorFiltroLabel(option?.label ?? '');
               }}
-              fetcher={supplierFetcher}
+              fetcher={supplierOptionsFetcher}
               placeholder='Filtrar por fornecedor...'
               emptyMessage='Nenhum fornecedor encontrado.'
               errorMessage='Não foi possível carregar os fornecedores.'
