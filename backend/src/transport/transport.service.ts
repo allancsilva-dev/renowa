@@ -46,8 +46,23 @@ export class TransportService {
 
     if (search) {
       qb.andWhere(
-        '(t.razao_social ILIKE :search OR t.cnpj ILIKE :search)',
-        { search: `%${search}%` },
+        `(
+          t.razao_social ILIKE :search
+          OR t.cnpj ILIKE :search
+          OR t.telefone ILIKE :search
+          OR t.endereco_completo ILIKE :search
+          OR (
+            :digits <> '' AND (
+              regexp_replace(COALESCE(t.cnpj, ''), '\\D', '', 'g') LIKE :digitsSearch
+              OR regexp_replace(COALESCE(t.telefone, ''), '\\D', '', 'g') LIKE :digitsSearch
+            )
+          )
+        )`,
+        {
+          search: `%${search}%`,
+          digits: search.replace(/\D/g, ''),
+          digitsSearch: `%${search.replace(/\D/g, '')}%`,
+        },
       );
     }
 

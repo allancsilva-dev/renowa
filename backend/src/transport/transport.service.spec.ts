@@ -89,3 +89,31 @@ describe('TransportService#create CNPJ', () => {
     expect(repo.save).not.toHaveBeenCalled();
   });
 });
+
+describe('TransportService#findAll busca', () => {
+  it('pesquisa razão, CNPJ, telefone e endereço, normalizando dígitos', async () => {
+    const query = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    };
+    const repo = { createQueryBuilder: jest.fn(() => query) };
+    const service = new TransportService(repo as any, {} as any);
+
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, '(11) 99999-0000');
+
+    const [sql, params] = query.andWhere.mock.calls[1];
+    expect(sql).toContain('t.razao_social ILIKE :search');
+    expect(sql).toContain('t.cnpj ILIKE :search');
+    expect(sql).toContain('t.telefone ILIKE :search');
+    expect(sql).toContain('t.endereco_completo ILIKE :search');
+    expect(params).toEqual({
+      search: '%(11) 99999-0000%',
+      digits: '11999990000',
+      digitsSearch: '%11999990000%',
+    });
+  });
+});

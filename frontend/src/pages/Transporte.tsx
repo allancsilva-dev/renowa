@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Eye, Pencil, Plus, Trash2, Upload } from 'lucide-react';
+import { Eye, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import ImportCsvDialog from '@/components/ImportCsvDialog';
 import { CSV_TEMPLATE_HEADERS } from '@/lib/csvTemplate';
@@ -15,6 +15,7 @@ import DetailDialog from '@/components/ui/DetailDialog';
 import { lookupCnpj } from '@/services/consultas.service';
 import { maskCnpj, maskTel, formatEnderecoCompleto } from '@/lib/format';
 import { getApiErrorMessage } from '@/lib/errors';
+import { useDebounce } from '@/hooks/useDebounce';
 
 interface NovaTransportadoraForm {
   razao_social: string;
@@ -35,6 +36,8 @@ const inputClass =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-[#2A9D8F] focus:ring-1 focus:ring-[#2A9D8F]/40 w-full';
 
 export default function Transporte() {
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search.trim());
   const [isOpen, setIsOpen] = useState(false);
   const [form, setForm] = useState<NovaTransportadoraForm>(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -54,8 +57,10 @@ export default function Transporte() {
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) =>
-      api.get<PaginatedResponse<Transport>>('/transportadoras', { params }).then((r) => r.data),
-    [],
+      api.get<PaginatedResponse<Transport>>('/transportadoras', {
+        params: { ...params, search: debouncedSearch || undefined },
+      }).then((r) => r.data),
+    [debouncedSearch],
   );
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<Transport>({ fetcher });
@@ -209,25 +214,38 @@ export default function Transporte() {
 
   return (
     <div className='space-y-4'>
-      <div className='flex justify-end gap-2'>
-        <Can permission='transportadoras.criar'>
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
-          >
-            <Upload className='h-4 w-4' />
-            Importar
-          </button>
-        </Can>
-        <Can permission='transportadoras.criar'>
-          <button
-            onClick={() => { renovarUuidDeCriacao(); setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); setCnpjMessage(null); }}
-            className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
-          >
-            <Plus className='h-4 w-4' />
-            Nova Transportadora
-          </button>
-        </Can>
+      <div className='flex flex-wrap items-center justify-between gap-4'>
+        <div className='relative min-w-64 flex-1 max-w-sm'>
+          <Search className='absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400' aria-hidden='true' />
+          <input
+            type='search'
+            aria-label='Buscar transportadoras'
+            placeholder='Razão, CNPJ, telefone ou endereço'
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className='w-full rounded-lg border bg-white py-2 pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary/40'
+          />
+        </div>
+        <div className='flex gap-2'>
+          <Can permission='transportadoras.criar'>
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors'
+            >
+              <Upload className='h-4 w-4' />
+              Importar
+            </button>
+          </Can>
+          <Can permission='transportadoras.criar'>
+            <button
+              onClick={() => { renovarUuidDeCriacao(); setIsOpen(true); setEditingUuid(null); setForm(emptyForm); setFormError(null); setCnpjMessage(null); }}
+              className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
+            >
+              <Plus className='h-4 w-4' />
+              Nova Transportadora
+            </button>
+          </Can>
+        </div>
       </div>
 
       {rowActionError && (
@@ -244,7 +262,7 @@ export default function Transporte() {
         onRetry={reload}
         meta={meta ?? undefined}
         onPageChange={goToPage}
-        emptyTitle='Nenhuma transportadora cadastrada'
+        emptyTitle={debouncedSearch ? 'Nenhuma transportadora encontrada' : 'Nenhuma transportadora cadastrada'}
       />
 
       {isImportOpen && (
