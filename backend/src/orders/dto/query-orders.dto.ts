@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { ORDER_ORIGENS, ORDER_STATUSES } from '../entities/order.entity';
 
@@ -31,4 +31,16 @@ export class ListOrdersQueryDto extends PaginationDto {
   @IsOptional()
   @IsUUID(undefined, { message: 'fornecedor_uuid inválido.' })
   fornecedor_uuid?: string;
+
+  /**
+   * Forma de pagamento. Sem `@IsIn`: a coluna é texto livre e ainda recebe
+   * valor arbitrário pelo import CSV e pelo push do sync, então restringir aqui
+   * tornaria o legado infiltrável. `@IsString` não é decorativo — com
+   * `enableImplicitConversion` (main.ts), `?pgt[]=a&pgt[]=b` chegaria como
+   * array e iria parar no bind do TypeORM; com ele, vira 400.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255, { message: 'pgt deve ter no máximo 255 caracteres.' })
+  pgt?: string;
 }

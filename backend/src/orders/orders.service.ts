@@ -26,6 +26,21 @@ type ReferenceTable = 'clientes' | 'usuarios' | 'fornecedores' | 'transportadora
 /** Referências de cabeçalho comuns ao pedido interno e ao externo. */
 type OrderHeaderRefs = Pick<CreateOrderDto, 'cliente_uuid' | 'vendedor_uuid' | 'fornecedor_uuid' | 'transportadora_uuid'>;
 
+/**
+ * Filtros da listagem de pedidos.
+ *
+ * Objeto, e não parâmetros posicionais: todos são `string | undefined`, então
+ * inserir um novo no meio trocaria silenciosamente o valor de outro — o
+ * compilador não acusa, e a lista sai filtrada pela coluna errada.
+ */
+export type OrderListFilters = {
+  status?: string;
+  search?: string;
+  origem?: string;
+  fornecedorUuid?: string;
+  pgt?: string;
+};
+
 /** Pedido com as notas fiscais emitidas — usado no detalhe do pedido (GET /pedidos/:uuid). */
 export type OrderDetalhe = Order & {
   notas: NotaFiscal[];
@@ -453,11 +468,9 @@ export class OrdersService {
     tenantId: string,
     pagination: PaginationDto,
     user: RequestUser,
-    status?: string,
-    search?: string,
-    origem?: string,
-    fornecedorUuid?: string,
+    filtros: OrderListFilters = {},
   ): Promise<PaginatedResponse<Order>> {
+    const { status, search, origem, fornecedorUuid, pgt } = filtros;
     const { page = 1, limit = 20 } = pagination;
     const qb = this.orderRepo.createQueryBuilder('o')
       .leftJoinAndSelect('o.cliente', 'c')
@@ -483,6 +496,11 @@ export class OrdersService {
     }
     if (fornecedorUuid) {
       qb.andWhere('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid });
+    }
+    // Igualdade exata, não ILIKE: a tela oferece a lista canônica, e casar por
+    // pedaço faria "PIX" trazer também "BOL/PIX".
+    if (pgt) {
+      qb.andWhere('o.pgt = :pgt', { pgt });
     }
     if (search) {
       qb.andWhere(

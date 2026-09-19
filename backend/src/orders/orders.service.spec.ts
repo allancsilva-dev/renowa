@@ -57,19 +57,16 @@ describe('OrdersService.findAll — filtros', () => {
     ['origem', 'externa'],
   ])('recusa %s fora do enum', async (campo, valor) => {
     const { service } = serviceParaLista();
-    const args = campo === 'status'
-      ? [valor, undefined, undefined]
-      : [undefined, undefined, valor];
 
     await expect(
-      service.findAll('tenant-a', { page: 1, limit: 20 }, admin, ...(args as [any, any, any])),
+      service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { [campo]: valor }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('aceita os valores do enum', async () => {
     const { service, qb } = serviceParaLista();
 
-    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, 'liberado', undefined, 'externo');
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { status: 'liberado', origem: 'externo' });
 
     expect(qb.andWhere).toHaveBeenCalledWith('o.status = :status', { status: 'liberado' });
     expect(qb.andWhere).toHaveBeenCalledWith('o.origem = :origem', { origem: 'externo' });
@@ -78,7 +75,7 @@ describe('OrdersService.findAll — filtros', () => {
   it('carrega fornecedor e inclui razão social/CNPJ na busca sem remover o escopo do tenant', async () => {
     const { service, qb } = serviceParaLista();
 
-    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, undefined, 'Acme');
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { search: 'Acme' });
 
     expect(qb.leftJoinAndSelect).toHaveBeenCalledWith('o.fornecedor', 'fornecedor');
     expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('fornecedor.razao_social ILIKE'), { search: '%Acme%' });
@@ -89,9 +86,18 @@ describe('OrdersService.findAll — filtros', () => {
   it('filtra pelo fornecedor selecionado', async () => {
     const { service, qb } = serviceParaLista();
 
-    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, undefined, undefined, undefined, 'forn-uuid');
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { fornecedorUuid: 'forn-uuid' });
 
     expect(qb.andWhere).toHaveBeenCalledWith('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid: 'forn-uuid' });
+    expect(qb.where).toHaveBeenCalledWith('o.tenant_id = :tenantId', { tenantId: 'tenant-a' });
+  });
+
+  it('filtra pela forma de pagamento sem afrouxar o escopo do tenant', async () => {
+    const { service, qb } = serviceParaLista();
+
+    await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { pgt: 'BOL/PIX' });
+
+    expect(qb.andWhere).toHaveBeenCalledWith('o.pgt = :pgt', { pgt: 'BOL/PIX' });
     expect(qb.where).toHaveBeenCalledWith('o.tenant_id = :tenantId', { tenantId: 'tenant-a' });
   });
 
@@ -122,6 +128,22 @@ describe('OrdersService.findAll — filtros', () => {
     it('mantém `search` e a paginação aceitos', async () => {
       const dto = plainToInstance(ListOrdersQueryDto, { page: 2, limit: 50, search: 'acme' });
       expect(await validate(dto, pipeOptions)).toEqual([]);
+    });
+
+    it('aceita pgt de texto livre e recusa array (parameter pollution) e valor longo demais', async () => {
+      const valido = plainToInstance(ListOrdersQueryDto, { pgt: 'BOL/PIX' });
+      expect(await validate(valido, pipeOptions)).toEqual([]);
+
+      const legado = plainToInstance(ListOrdersQueryDto, { pgt: 'Boleto 30/60' });
+      expect(await validate(legado, pipeOptions)).toEqual([]);
+
+      const array = await validate(plainToInstance(ListOrdersQueryDto, { pgt: ['a', 'b'] }), pipeOptions);
+      expect(array).toHaveLength(1);
+      expect(array[0].property).toBe('pgt');
+
+      const longo = await validate(plainToInstance(ListOrdersQueryDto, { pgt: 'x'.repeat(256) }), pipeOptions);
+      expect(longo).toHaveLength(1);
+      expect(longo[0].property).toBe('pgt');
     });
 
     it('aceita fornecedor_uuid válido e recusa valor que não é uuid', async () => {

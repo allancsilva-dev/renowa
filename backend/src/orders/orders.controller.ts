@@ -67,9 +67,13 @@ export class OrdersController {
   @Get()
   @RequirePermission('pedidos.ver')
   async findAll(@Query() query: ListOrdersQueryDto, @CurrentUser() user: RequestUser) {
-    return this.ordersService.findAll(
-      user.tenantId, query, user, query.status, query.search, query.origem, query.fornecedor_uuid,
-    );
+    return this.ordersService.findAll(user.tenantId, query, user, {
+      status: query.status,
+      search: query.search,
+      origem: query.origem,
+      fornecedorUuid: query.fornecedor_uuid,
+      pgt: query.pgt,
+    });
   }
 
   @Get(':uuid')

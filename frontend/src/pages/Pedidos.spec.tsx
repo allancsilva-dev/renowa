@@ -78,6 +78,19 @@ describe('Pedidos — menu de ações', () => {
     mocks.fetcher!({ page: 1, limit: 20 });
     expect(mocks.fetchOrders.mock.lastCall?.[0].fornecedor_uuid).toBeUndefined();
   });
+  it('envia a forma de pagamento escolhida e some com o parâmetro ao limpar', () => {
+    render(<Pedidos />);
+
+    fireEvent.change(screen.getByLabelText('Filtrar por forma de pagamento'), { target: { value: 'BOL/PIX' } });
+    mocks.fetcher!({ page: 1, limit: 20 });
+    expect(mocks.fetchOrders).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, pgt: 'BOL/PIX' }));
+
+    // String vazia não pode viajar: poluiria a URL com um campo que o registro
+    // LGPD trata como potencialmente PII.
+    fireEvent.change(screen.getByLabelText('Filtrar por forma de pagamento'), { target: { value: '' } });
+    mocks.fetcher!({ page: 1, limit: 20 });
+    expect(mocks.fetchOrders.mock.lastCall?.[0].pgt).toBeUndefined();
+  });
   it('usa três pontos verticais e abre detalhes', async () => {
     render(<Pedidos />);
     fireEvent.click(screen.getByRole('button', { name: 'Opções do pedido #10' }));

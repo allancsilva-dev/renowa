@@ -8,6 +8,7 @@ export async function fetchOrders(params: {
   search?: string;
   origem?: OrderOrigem;
   fornecedor_uuid?: string;
+  pgt?: string;
 }): Promise<PaginatedResponse<Order>> {
   const { data } = await api.get<PaginatedResponse<Order>>('/pedidos', { params });
   return data;

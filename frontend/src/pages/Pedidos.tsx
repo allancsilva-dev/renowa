@@ -10,6 +10,7 @@ import {
   type Order, type OrderStatus, type OrderOrigem,
 } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
+import { PAYMENT_METHODS } from '@/lib/paymentOptions';
 import { formatDate } from '@/lib/format';
 import { Can } from '@/components/Can';
 import { useAuth } from '@/hooks/useAuth';
@@ -25,6 +26,7 @@ export default function Pedidos() {
   const { hasPermission } = useAuth();
   const [statusFilter, setStatusFilter] = useState<OrderStatus | ''>('');
   const [origemFilter, setOrigemFilter] = useState<OrderOrigem | ''>('');
+  const [pgtFilter, setPgtFilter] = useState('');
   const [search, setSearch] = useState('');
   const [fornecedorFiltroUuid, setFornecedorFiltroUuid] = useState<string | null>(null);
   const [fornecedorFiltroLabel, setFornecedorFiltroLabel] = useState('');
@@ -42,8 +44,9 @@ export default function Pedidos() {
         origem: origemFilter || undefined,
         search: search || undefined,
         fornecedor_uuid: fornecedorFiltroUuid || undefined,
+        pgt: pgtFilter || undefined,
       }),
-    [statusFilter, origemFilter, search, fornecedorFiltroUuid],
+    [statusFilter, origemFilter, search, fornecedorFiltroUuid, pgtFilter],
   );
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<Order>({ fetcher });
@@ -182,6 +185,17 @@ export default function Pedidos() {
             <option value=''>Todas as origens</option>
             {(Object.keys(orderOrigemLabel) as OrderOrigem[]).map((o) => (
               <option key={o} value={o}>{orderOrigemLabel[o]}</option>
+            ))}
+          </select>
+          <select
+            value={pgtFilter}
+            onChange={(e) => setPgtFilter(e.target.value)}
+            aria-label='Filtrar por forma de pagamento'
+            className='rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40'
+          >
+            <option value=''>Todas as formas</option>
+            {PAYMENT_METHODS.map((metodo) => (
+              <option key={metodo} value={metodo}>{metodo}</option>
             ))}
           </select>
           <div className='w-64'>
