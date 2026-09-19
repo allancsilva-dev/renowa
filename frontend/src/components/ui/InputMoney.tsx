@@ -27,9 +27,11 @@ function parseFromInput(input: string): number | null {
     cleaned = cleaned.replace(/\./g, '').replace(',', '.');
   } else {
     const isDecimal = /^[+-]?\d+(?:\.\d+)?$/.test(cleaned);
-    const isGroupedInteger = /^[+-]?\d{1,3}(?:\.\d{3})+$/.test(cleaned);
+    // Ponto seguido de grupos de 3 dígitos é milhar (pt-BR): 1.500 → 1500. Zero à
+    // esquerda não abre grupo de milhar, então 0.500 segue decimal.
+    const isGroupedInteger = /^[+-]?[1-9]\d{0,2}(?:\.\d{3})+$/.test(cleaned);
     if (!isDecimal && !isGroupedInteger) return null;
-    if (isGroupedInteger && (cleaned.match(/\./g)?.length ?? 0) > 1) cleaned = cleaned.replace(/\./g, '');
+    if (isGroupedInteger) cleaned = cleaned.replace(/\./g, '');
   }
   try {
     return normalizeMoney(new Decimal(cleaned));
