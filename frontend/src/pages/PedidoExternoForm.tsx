@@ -10,6 +10,7 @@ import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
+import { paymentOptionsWith } from '@/lib/paymentOptions';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
 import { clientOptionsFetcher, filterLocalOptions, supplierOptionsFetcher, transportOptionsFetcher } from '@/lib/relationOptions';
 
@@ -231,8 +232,15 @@ export default function PedidoExternoForm() {
             <input disabled={locked} value={form.sistema_origem} onChange={(e) => setForm((f) => ({ ...f, sistema_origem: e.target.value }))} maxLength={120} className={inputClass} required /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Valor do pedido *</span>
             <InputMoney disabled={locked} value={form.valor} onChange={(value) => setForm((f) => ({ ...f, valor: value }))} /></label>
-          {(['pgt', 'prazo', 'local_entrega', 'tipo_faturamento'] as const).map((field) => <label key={field} className='flex flex-col gap-1'>
-            <span className={labelClass}>{{ pgt: 'Forma de pagamento', prazo: 'Prazo', local_entrega: 'Local de entrega', tipo_faturamento: 'Tipo de faturamento' }[field]}</span>
+          {/* Mesma regra do pedido interno: as options vêm de `form.pgt` a cada
+              render para não perder valor legado herdado do cliente. */}
+          <label className='flex flex-col gap-1'><span className={labelClass}>Forma de pagamento</span>
+            <select disabled={locked} value={form.pgt} onChange={(e) => setForm((f) => ({ ...f, pgt: e.target.value }))} className={inputClass}>
+              <option value=''></option>
+              {paymentOptionsWith(form.pgt).map((option) => <option key={option} value={option}>{option}</option>)}
+            </select></label>
+          {(['prazo', 'local_entrega', 'tipo_faturamento'] as const).map((field) => <label key={field} className='flex flex-col gap-1'>
+            <span className={labelClass}>{{ prazo: 'Prazo', local_entrega: 'Local de entrega', tipo_faturamento: 'Tipo de faturamento' }[field]}</span>
             <input disabled={locked} value={form[field]} onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))} className={inputClass} /></label>)}
           <label className='flex flex-col gap-1 md:col-span-3'><span className={labelClass}>Observações</span>
             <textarea disabled={locked} value={form.observacao} onChange={(e) => setForm((f) => ({ ...f, observacao: e.target.value }))} rows={3} className={`${inputClass} resize-y`} /></label>

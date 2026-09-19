@@ -32,7 +32,12 @@ vi.mock('@/services/orders.service', () => ({
 }));
 vi.mock('@/services/clients.service', () => ({
   fetchClients: vi.fn(async () => ({
-    data: [{ uuid: 'cli-1', razao_social: 'Cliente Um', cnpj: null }],
+    data: [
+      { uuid: 'cli-1', razao_social: 'Cliente Um', cnpj: null },
+      // Pagamento padrão fora da lista canônica: é o que clientes antigos e os
+      // importados por CSV têm de verdade.
+      { uuid: 'cli-2', razao_social: 'Cliente Legado', cnpj: null, pgt_padrao: 'Boleto 30/60' },
+    ],
     meta: { page: 1, totalPages: 1 },
   })),
 }));
@@ -121,6 +126,33 @@ describe('PedidoForm — duplicação', () => {
     expect(payload).toMatchObject({ cliente_uuid: 'cli-1', pgt: null, local_entrega: null, transportadora_uuid: null });
     expect(payload.itens[0]).toMatchObject({ foto_origem_item_uuid: '11111111-1111-4111-8111-111111111111' });
     expect(payload.itens[0].uuid).not.toBe('11111111-1111-4111-8111-111111111111');
+  });
+});
+
+describe('PedidoForm — forma de pagamento', () => {
+  it('oferece a lista canônica e mantém o valor legado herdado do cliente', async () => {
+    await montar();
+
+    const pagamento = screen.getByLabelText('Forma de pagamento') as HTMLSelectElement;
+    expect(pagamento.tagName).toBe('SELECT');
+    expect([...pagamento.options].map((o) => o.value))
+      .toEqual(['', 'BOL', 'BOL/BOL', 'BOL/CHEQUE', 'BOL/PIX', 'PIX']);
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Cliente' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Cliente Legado' }));
+
+    // Sem a opção extra derivada do estado vivo, o DOM cairia na opção vazia e o
+    // save apagaria o pagamento herdado sem nenhum aviso na tela.
+    await waitFor(() => expect(pagamento).toHaveValue('Boleto 30/60'));
+    expect([...pagamento.options].map((o) => o.value)).toContain('Boleto 30/60');
+  });
+
+  it('grava a opção escolhida na lista', async () => {
+    await montar();
+
+    fireEvent.change(screen.getByLabelText('Forma de pagamento'), { target: { value: 'BOL/PIX' } });
+
+    expect(screen.getByLabelText('Forma de pagamento')).toHaveValue('BOL/PIX');
   });
 });
 

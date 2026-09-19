@@ -8,6 +8,7 @@ import { lookupCnpj } from '@/services/consultas.service';
 import { getApiErrorMessage } from '@/lib/errors';
 import { AsyncCombobox, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
 import { transportOptionsFetcher } from '@/lib/relationOptions';
+import { paymentOptionsWith } from '@/lib/paymentOptions';
 
 const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO',
@@ -517,7 +518,14 @@ export default function ClienteForm() {
             <div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
               <div className='flex flex-col gap-1'>
                 <label htmlFor='pgt_padrao' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Pagamento padrão</label>
-                <input id='pgt_padrao' type='text' name='pgt_padrao' value={form.pgt_padrao} onChange={handleChange} className={inputClass} />
+                {/* Options derivadas do valor atual: cliente importado por CSV pode
+                    trazer texto livre, e perder isso no próximo save seria silencioso. */}
+                <select id='pgt_padrao' name='pgt_padrao' value={form.pgt_padrao} onChange={handleChange} className={inputClass}>
+                  <option value=''></option>
+                  {paymentOptionsWith(form.pgt_padrao).map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
               </div>
               <div className='flex flex-col gap-1'>
                 <label htmlFor='prazo' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Prazo</label>

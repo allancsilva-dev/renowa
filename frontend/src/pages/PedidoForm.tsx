@@ -12,6 +12,7 @@ import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
+import { paymentOptionsWith } from '@/lib/paymentOptions';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
 import { encontrarCodigosDuplicados, mensagemCodigosDuplicados } from '@/lib/orderItemCodes';
 import { deleteOrderItemPhoto, fetchOrderItemPhoto, fetchOrderItemPhotoDataUrl, uploadOrderItemPhoto } from '@/services/productPhotos.service';
@@ -422,8 +423,17 @@ export default function PedidoForm() {
             <input value={selectedTransport?.telefone ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>End. Transporte</span>
             <input value={selectedTransport?.endereco_completo ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} /></label>
-          {(['pgt', 'prazo', 'local_entrega', 'tipo_faturamento'] as const).map((field) => <label key={field} className='flex flex-col gap-1'>
-            <span className={labelClass}>{{ pgt: 'Forma de pagamento', prazo: 'Prazo', local_entrega: 'Local de entrega', tipo_faturamento: 'Tipo de faturamento' }[field]}</span>
+          {/* Lista fixa, mas as options saem de `header.pgt` a cada render: trocar
+              o cliente reescreve o campo com o `pgt_padrao` dele, que pode ser
+              texto livre antigo. Congelar a lista faria o select cair na opção
+              vazia e o save apagaria o pagamento sem avisar. */}
+          <label className='flex flex-col gap-1'><span className={labelClass}>Forma de pagamento</span>
+            <select disabled={locked} value={header.pgt} onChange={(e) => setHeader((h) => ({ ...h, pgt: e.target.value }))} className={inputClass}>
+              <option value=''></option>
+              {paymentOptionsWith(header.pgt).map((option) => <option key={option} value={option}>{option}</option>)}
+            </select></label>
+          {(['prazo', 'local_entrega', 'tipo_faturamento'] as const).map((field) => <label key={field} className='flex flex-col gap-1'>
+            <span className={labelClass}>{{ prazo: 'Prazo', local_entrega: 'Local de entrega', tipo_faturamento: 'Tipo de faturamento' }[field]}</span>
             <input disabled={locked} value={header[field]} onChange={(e) => setHeader((h) => ({ ...h, [field]: e.target.value }))} className={inputClass} /></label>)}
           <label className='flex flex-col gap-1 md:col-span-3'><span className={labelClass}>Observações</span>
             <textarea disabled={locked} value={header.observacao} onChange={(e) => setHeader((h) => ({ ...h, observacao: e.target.value }))} rows={3} className={`${inputClass} resize-y`} /></label>
