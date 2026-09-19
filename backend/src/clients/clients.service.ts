@@ -227,6 +227,12 @@ export class ClientsService {
           if (!razao_social) return { erro: 'Razão social é obrigatória.', chave };
           const uf = pick(row, 'uf');
           if (uf !== undefined && uf.length !== 2) return { erro: 'UF deve ter 2 letras.', chave };
+          // Mesmo teto do DTO: o CSV é a outra porta de entrada do campo, e sem
+          // limite aqui o import cria cliente que a API não consegue atualizar.
+          const pgt_padrao = pick(row, 'pgt_padrao', 'pagamento_padrao');
+          if (pgt_padrao !== undefined && pgt_padrao.length > 255) {
+            return { erro: 'Pagamento padrão deve ter no máximo 255 caracteres.', chave };
+          }
 
           const transportadora_id = await resolveTransportId(
             pick(row, 'transportadora_cnpj', 'transportadora cnpj'),
@@ -251,7 +257,7 @@ export class ClientsService {
               contato: pick(row, 'contato'),
               inscricao_estadual: pick(row, 'inscricao_estadual', 'inscrição_estadual', 'ie'),
               suframa: pick(row, 'suframa'),
-              pgt_padrao: pick(row, 'pgt_padrao', 'pagamento_padrao'),
+              pgt_padrao,
               prazo: pick(row, 'prazo'),
               local_entrega: pick(row, 'local_entrega'),
               observacao: pick(row, 'observacao', 'observação', 'obs'),

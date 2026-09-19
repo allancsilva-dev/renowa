@@ -10,6 +10,7 @@ import {
   IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -44,7 +45,11 @@ export class CreateOrderDto {
   // (permissão `pedidos.liberar`); 'cancelado' só por PATCH /pedidos/:uuid/status;
   // 'parcialmente_faturado'/'faturado' só pelo FaturamentoService.
   // Aceitá-lo aqui tornava `pedidos.liberar` contornável — ver order.entity.ts.
-  @IsOptional() @IsString() pgt?: string | null;
+  // 255 não é enfeite: a coluna é varchar sem tamanho e o campo ainda aceita
+  // texto livre (import CSV, push do sync). Sem limite, um payload de centenas
+  // de KB volta em toda listagem e em todo pull, e nunca casa com o filtro da
+  // tela. Continua sem @IsIn para não apagar valor legado.
+  @IsOptional() @IsString() @MaxLength(255) pgt?: string | null;
   @IsOptional() @IsString() prazo?: string | null;
   @IsOptional() @IsString() local_entrega?: string | null;
   @IsOptional() @IsString() observacao?: string | null;

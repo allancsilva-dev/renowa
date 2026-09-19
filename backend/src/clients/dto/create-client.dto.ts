@@ -4,6 +4,7 @@ import {
   IsString,
   IsUUID,
   Length,
+  MaxLength,
 } from 'class-validator';
 import { IsCep, IsCnpj } from '../../common/validators/brazilian-document.validators';
 
@@ -28,7 +29,11 @@ export class CreateClientDto {
   @IsOptional() @IsString() contato?: string;
   @IsOptional() @IsString() inscricao_estadual?: string;
   @IsOptional() @IsString() suframa?: string;
-  @IsOptional() @IsString() pgt_padrao?: string;
+  // 255 não é enfeite: a coluna é varchar sem tamanho e o campo ainda aceita
+  // texto livre (import CSV, push do sync). Sem limite, um payload de centenas
+  // de KB volta em toda listagem e em todo pull, e nunca casa com o filtro da
+  // tela. Continua sem @IsIn para não apagar valor legado.
+  @IsOptional() @IsString() @MaxLength(255) pgt_padrao?: string;
   @IsOptional() @IsString() prazo?: string;
   @IsOptional() @IsString() local_entrega?: string;
   @IsOptional() @IsString() observacao?: string;
