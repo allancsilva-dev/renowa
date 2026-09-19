@@ -56,10 +56,16 @@ const styles = StyleSheet.create({
   // Sem borda direita: a lateral esquerda colorida de DESC.% ocupa esse lugar.
   colVlrTb: { width: '7.5%', textAlign: 'right', paddingLeft: 3, paddingRight: 3 },
   colDescPerc: { width: '5.5%', textAlign: 'right', borderLeftWidth: 0.8, borderLeftColor: '#ff0000', borderRightWidth: 0.8, borderRightColor: '#ff0000', paddingLeft: 3, paddingRight: 3 },
-  colVlrComDesc: { width: '8%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3, fontFamily: 'Helvetica-Bold' },
+  // 9% e não 8%: o valor desta coluna imprime em corpo maior que o resto da
+  // linha (colVlrComDescValue) e em 8% um "R$ 12.345,67" quebrava. O 1% saiu de
+  // colTotalSemImp, que continua sobrando espaço em corpo 6.
+  colVlrComDesc: { width: '9%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3, fontFamily: 'Helvetica-Bold' },
+  // Só na célula do item: no cabeçalho, "VLR. COM DESC." acima de 5.5 quebra em
+  // duas linhas e engorda a faixa fixa de todas as páginas.
+  colVlrComDescValue: { fontSize: 7 },
   colIpi: { width: '5%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
   colVlrComImp: { width: '8.5%', textAlign: 'right', borderRightWidth: 0.5, borderRightColor: '#0D2B2B', paddingLeft: 3, paddingRight: 3 },
-  colTotalSemImp: { width: '9.5%', textAlign: 'right', paddingLeft: 3 },
+  colTotalSemImp: { width: '8.5%', textAlign: 'right', paddingLeft: 3 },
   valueOrange: { color: '#c55a11' }, valueRed: { color: '#ff0000' },
   rowPhotoCode: { fontFamily: 'Helvetica-Bold', marginBottom: 1 },
   rowPhotoImage: { height: 46, objectFit: 'contain' },
@@ -165,7 +171,7 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
         <Text style={[styles.colQtdTotal, styles.valueOrange]}>{qtyForDisplay(item.qtd_total)}</Text>
         <Text style={styles.colVlrTb}>{brl(item.preco_unitario)}</Text>
         <Text style={[styles.colDescPerc, styles.valueRed]}>{item.desconto_perc}%</Text>
-        <Text style={styles.colVlrComDesc}>{brl(item.valor_com_desconto)}</Text>
+        <Text style={[styles.colVlrComDesc, styles.colVlrComDescValue]}>{brl(item.valor_com_desconto)}</Text>
         <Text style={styles.colIpi}>{item.ipi_perc != null ? `${item.ipi_perc}%` : '—'}</Text>
         <Text style={styles.colVlrComImp}>{brl(item.valor_com_imposto)}</Text>
         <Text style={styles.colTotalSemImp}>{brl(item.total_item)}</Text>
