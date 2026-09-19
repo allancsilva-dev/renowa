@@ -4,6 +4,10 @@ Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
 export type DecimalValue = string;
 
+export function normalizeMoney(value: Decimal.Value | null | undefined): number {
+  return new Decimal(value ?? 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+}
+
 export function moneyString(value: Decimal.Value | null | undefined): DecimalValue {
   return new Decimal(value ?? 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
 }
@@ -17,7 +21,7 @@ export function sumMoney(values: Array<Decimal.Value | null | undefined>): Decim
 }
 
 export function moneyForDisplay(value: Decimal.Value | null | undefined): number {
-  return new Decimal(value ?? 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+  return normalizeMoney(value);
 }
 
 const QTY_FORMATTER = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 });

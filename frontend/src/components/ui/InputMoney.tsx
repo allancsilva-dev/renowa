@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import Decimal from 'decimal.js';
+import { normalizeMoney } from '@/lib/decimal';
 
 interface InputMoneyProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type' | 'inputMode'> {
   value: number | null;
@@ -18,13 +20,22 @@ function formatToBRL(value: number | null): string {
 
 function parseFromInput(input: string): number | null {
   if (!input || input.trim() === '') return null;
-  let cleaned = input.replace(/[R$\s]/g, '').trim();
+  let cleaned = input.replace(/R\$/gi, '').replace(/\s/g, '');
+  if (!cleaned) return null;
   if (cleaned.includes(',')) {
-    // Formato brasileiro: 1.500,50 → remove pontos de milhar, troca vírgula por ponto
+    if (!/^[+-]?(?:\d{1,3}(?:\.\d{3})*|\d+)(?:,\d+)?$/.test(cleaned)) return null;
     cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+  } else {
+    const isDecimal = /^[+-]?\d+(?:\.\d+)?$/.test(cleaned);
+    const isGroupedInteger = /^[+-]?\d{1,3}(?:\.\d{3})+$/.test(cleaned);
+    if (!isDecimal && !isGroupedInteger) return null;
+    if (isGroupedInteger && (cleaned.match(/\./g)?.length ?? 0) > 1) cleaned = cleaned.replace(/\./g, '');
   }
-  const parsed = parseFloat(cleaned);
-  return isNaN(parsed) ? null : parsed;
+  try {
+    return normalizeMoney(new Decimal(cleaned));
+  } catch {
+    return null;
+  }
 }
 
 export function InputMoney({
@@ -48,7 +59,7 @@ export function InputMoney({
   const handleFocus = () => {
     setIsFocused(true);
     if (value !== null) {
-      setDisplayValue(String(value).replace('.', ','));
+      setDisplayValue(String(normalizeMoney(value)).replace('.', ','));
     }
   };
 
