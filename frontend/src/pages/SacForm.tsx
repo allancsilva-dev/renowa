@@ -7,7 +7,7 @@ import {
 } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
-import { moneyForDisplay } from '@/lib/decimal';
+import { moneyForDisplay, normalizeMoney } from '@/lib/decimal';
 import { previewSacItem, previewSacTotal } from '@/lib/sacCalculation';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
@@ -142,7 +142,7 @@ export default function SacForm() {
         codigo: item.codigo.trim(),
         quantidade: Number(item.quantidade || 0),
         motivo: item.motivo.trim(),
-        valor_unitario: item.valor_unitario ?? 0,
+        valor_unitario: normalizeMoney(item.valor_unitario),
       })),
       ...(isEdit ? { version } : {}),
     };

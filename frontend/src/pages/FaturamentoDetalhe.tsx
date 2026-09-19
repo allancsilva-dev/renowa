@@ -12,7 +12,7 @@ import {
   finalizarFaturamento, reabrirFaturamento,
   type FaturamentoPedidoDetalhe as PedidoDetalhe, type NotaFiscal,
 } from '@/services/faturamento.service';
-import { moneyForDisplay } from '@/lib/decimal';
+import { moneyForDisplay, normalizeMoney } from '@/lib/decimal';
 import { formatDate } from '@/lib/format';
 import { getApiErrorMessage } from '@/lib/errors';
 import { orderStatusLabel, orderStatusColor, type OrderStatus } from '@/types';
@@ -84,7 +84,7 @@ export default function FaturamentoDetalhe() {
         version: editingNota.version,
         numero_nota: editForm.numero_nota.trim(),
         serie: editForm.serie.trim() || null,
-        valor: editForm.valor,
+        valor: normalizeMoney(editForm.valor),
         data_emissao: editForm.data_emissao || null,
         observacao: editForm.observacao.trim() || null,
       });

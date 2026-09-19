@@ -5,6 +5,7 @@ import { fetchAllPages } from '@/lib/fetchAllPages';
 import { fetchOrder, liberarOrder, saveExternalOrder } from '@/services/orders.service';
 import { orderStatusLabel, orderStatusColor, type Client, type Order, type OrderStatus } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
+import { normalizeMoney } from '@/lib/decimal';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
@@ -154,7 +155,7 @@ export default function PedidoExternoForm() {
       transportadora_uuid: form.transportadora_uuid || null,
       numero_pedido_externo: form.numero_pedido_externo.trim(),
       sistema_origem: form.sistema_origem.trim(),
-      valor: form.valor,
+      valor: normalizeMoney(form.valor),
       data: form.data || null, pgt: form.pgt || null, prazo: form.prazo || null,
       local_entrega: form.local_entrega || null, tipo_faturamento: form.tipo_faturamento || null,
       observacao: form.observacao || null,

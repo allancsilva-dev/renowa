@@ -8,7 +8,7 @@ import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { fetchFaturamentoPedidos, registrarNota, type FaturamentoPedidoRow } from '@/services/faturamento.service';
-import { moneyForDisplay } from '@/lib/decimal';
+import { moneyForDisplay, normalizeMoney } from '@/lib/decimal';
 import { getApiErrorMessage } from '@/lib/errors';
 import { orderStatusLabel, orderStatusColor, orderOrigemLabel, orderOrigemColor, type OrderStatus } from '@/types';
 
@@ -58,7 +58,7 @@ export default function Faturamento() {
         uuid: uuidDaNota,
         numero_nota: notaForm.numero_nota.trim(),
         serie: notaForm.serie.trim() || undefined,
-        valor: notaForm.valor,
+        valor: normalizeMoney(notaForm.valor),
         data_emissao: notaForm.data_emissao || undefined,
         observacao: notaForm.observacao.trim() || undefined,
       });

@@ -6,7 +6,7 @@ import { duplicateOrder, fetchOrder, liberarOrder, saveOrder } from '@/services/
 import { orderStatusLabel, orderStatusColor, type Client, type Order, type OrderStatus, type Product, type Transport } from '@/types';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption } from '@/components/ui/AsyncCombobox';
-import { moneyForDisplay, qtyForDisplay } from '@/lib/decimal';
+import { moneyForDisplay, normalizeMoney, qtyForDisplay } from '@/lib/decimal';
 import { previewItem, previewOrder } from '@/lib/orderCalculation';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
@@ -332,7 +332,7 @@ export default function PedidoForm() {
       itens: items.map((item) => ({
         uuid: item.uuid, produto_uuid: item.produto_uuid || undefined, codigo_manual: item.codigo_manual || null,
         descricao_manual: item.descricao_manual || null, qtd_caixas: Number(item.qtd_caixas || 0),
-        qtd_unitaria: Number(item.qtd_unitaria || 0), preco_unitario: item.preco_unitario ?? 0,
+        qtd_unitaria: Number(item.qtd_unitaria || 0), preco_unitario: normalizeMoney(item.preco_unitario),
         desconto_perc: Number(item.desconto_perc || 0),
         ipi_perc: Number(item.ipi_perc || 0),
         ...(item.fotoOrigemItemUuid ? { foto_origem_item_uuid: item.fotoOrigemItemUuid } : {}),
