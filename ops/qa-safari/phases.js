@@ -393,6 +393,99 @@
   };
 
   /* ---------------- P6 — pedido externo ---------------- */
+  /* FIX-0036: "Liberar pedido" descartava edição não salva. Só interação de
+     tela: cria o pedido pelo menu, edita, salva, "Salvar e liberar", confere no
+     detalhe (texto e status na tela) e cancela/exclui pelos botões do detalhe. */
+  P.p5b = async function () {
+    function field(re) {
+      return all('label').filter(function (l) { return Q.vis(l) && re.test(((l.querySelector('span') || l).innerText || '').trim()); })
+        .map(function (l) { return l.querySelector('input, textarea, select'); }).filter(Boolean)[0] || null;
+    }
+    async function pick(re) {
+      var el = field(re); if (!el) return 'sem campo';
+      el.click(); el.focus();
+      var opt = await waitFor(function () { var o = all('[role=option]').filter(Q.vis); return o[0] || null; }, 4000);
+      if (!opt) { Q.nativeSet(el, 'a', true); opt = await waitFor(function () { var o = all('[role=option]').filter(Q.vis); return o[0] || null; }, 6000); }
+      if (!opt) return 'sem opção';
+      var t = (opt.innerText || '').trim().slice(0, 50); opt.click(); await sleep(500); return t;
+    }
+    function obs() { return field(/^Observações$/); }
+    async function detalheMostra(texto) {
+      return !!(await waitFor(function () { return /^\/pedidos\/[0-9a-f-]{36}$/.test(location.pathname) && Q.bodyText().indexOf(texto) >= 0; }, 12000));
+    }
+    async function abrirEdicao() {
+      var e = await waitFor(function () { return btn(/^Editar$/); }, 8000);
+      if (!e) return false;
+      e.click();
+      return !!(await waitFor(function () { return /\/editar$/.test(location.pathname) && obs(); }, 10000));
+    }
+    var out = {};
+
+    /* 1. Criar pelo menu "Novo Pedido" → "Pedido interno" */
+    await go('/pedidos');
+    var menu = await waitFor(function () { return btn(/Novo Pedido/); }, 8000);
+    if (!ok('p5b: menu Novo Pedido', !!menu, '')) return out;
+    menu.click();
+    var interno = await waitFor(function () { return all('[role=menu] button, [role=menuitem]').filter(function (b) { return /Pedido interno/.test(b.innerText); })[0]; }, 4000);
+    interno.click();
+    await waitFor(function () { return location.pathname === '/pedidos/novo' && field(/^Cliente/); }, 10000);
+    out.cliente = await pick(/^Cliente/);
+    out.fornecedor = await pick(/^Fornecedor/);
+    ok('p5b: cliente e fornecedor escolhidos na lista', !/^sem/.test(out.cliente) && !/^sem/.test(out.fornecedor), out.cliente + ' / ' + out.fornecedor);
+    await sleep(800);
+    Q.nativeSet(field(/^Código$/), S + '-OBS');
+    Q.nativeSet(field(/^Descrição$/), 'Item ' + S);
+    Q.nativeSet(field(/^Caixas$/), '1');
+    Q.nativeSet(field(/^Unidades por caixa$/), '1');
+    Q.nativeSet(field(/^Preço unitário$/), '10,00');
+    Q.nativeSet(obs(), S + ' inicial');
+    await sleep(300);
+    btn(/^Salvar pedido$/).click();
+    ok('p5b: pedido criado e detalhe mostra a observação', await detalheMostra(S + ' inicial'), location.pathname + ' ' + (Q.screenErrors() || ''));
+    out.pedido = location.pathname;
+
+    /* 2. Editar → Salvar */
+    ok('p5b: abriu edição pelo botão Editar', await abrirEdicao(), location.pathname);
+    ok('p5b: edição carrega a observação gravada', obs().value === S + ' inicial', obs().value);
+    Q.nativeSet(obs(), S + ' salvo');
+    await sleep(300);
+    ok('p5b: com edição pendente o botão vira "Salvar e liberar"', !!btn(/^Salvar e liberar$/), '');
+    btn(/^Salvar pedido$/).click();
+    ok('p5b: Salvar — detalhe mostra a observação nova', await detalheMostra(S + ' salvo'), Q.screenErrors() || '');
+
+    /* 3. Editar → Salvar e liberar (sem clicar em Salvar) */
+    ok('p5b: reabriu edição', await abrirEdicao(), location.pathname);
+    ok('p5b: sem edição o botão diz "Liberar pedido"', !!btn(/^Liberar pedido$/), '');
+    Q.nativeSet(obs(), S + ' liberado');
+    await sleep(300);
+    var sl = btn(/^Salvar e liberar$/);
+    if (!ok('p5b: "Salvar e liberar" presente', !!sl, '')) return out;
+    sl.click();
+    ok('p5b: tela trava com aviso de liberado', !!(await waitFor(function () { return /já foi liberado e não pode mais ser editado/.test(Q.bodyText()); }, 12000)), Q.screenErrors() || '');
+    ok('p5b: campo segue com o texto digitado', obs().value === S + ' liberado', obs().value);
+
+    /* 4. Voltar ao detalhe e reabrir a edição: o texto tem de estar lá */
+    btn(/^Voltar$/).click();
+    ok('p5b: detalhe mostra a observação após liberar', await detalheMostra(S + ' liberado'), '');
+    ok('p5b: detalhe mostra status Liberado', /Liberado/.test(Q.bodyText()), '');
+    ok('p5b: edição reaberta mantém a observação', (await abrirEdicao()) && obs().value === S + ' liberado', obs() && obs().value);
+    btn(/^Voltar$/).click();
+    await waitFor(function () { return /^\/pedidos\/[0-9a-f-]{36}$/.test(location.pathname); }, 8000);
+    await settle();
+
+    /* 5. Limpeza pela tela: cancelar (se preciso) e excluir */
+    var cancelar = btn(/^Cancelar pedido$/);
+    if (cancelar) { cancelar.click(); await waitFor(function () { return /Cancelado/.test(Q.bodyText()); }, 8000); await settle(); }
+    var excluir = await waitFor(function () { var b = btn(/^Excluir pedido$/); return b && !b.disabled ? b : null; }, 6000);
+    if (excluir) excluir.click();
+    ok('p5b: pedido excluído pela tela', !!(await waitFor(function () { return location.pathname === '/pedidos'; }, 10000)), location.pathname + ' ' + (Q.screenErrors() || ''));
+    await settle();
+    var busca = field(/Buscar|Pesquisar/) || all('input[type=search], input[placeholder]').filter(Q.vis)[0];
+    if (busca) { Q.nativeSet(busca, S, true); await sleep(1500); await settle(); }
+    ok('p5b: listagem não mostra mais o pedido de teste', Q.bodyText().indexOf(S) < 0, busca ? 'buscado ' + S : 'sem campo de busca');
+    return out;
+  };
+
   P.p6 = async function () {
     await screen('/pedidos/externo/novo', 'Pedido externo — novo');
     var rep = await fillAll(document, { tag: 'pedido-externo', comboQuery: S });
