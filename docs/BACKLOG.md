@@ -994,3 +994,14 @@
 - **Risco se ficar pendente:** o incidente em que o rollback importa é justamente aquele em que não há tempo para rebuild.
 - **Status:** ABERTO
 - **Relacionado:** BACKLOG-0087, BACKLOG-0088, `DEPLOY_HOSTINGER.md`
+
+### BACKLOG-0093 — Avisar edição pendente também na navegação interna do app
+- **Prioridade:** P2
+- **Área:** frontend
+- **Origem:** FIX-0036 (2026-09-21). O `useUnsavedChanges` cobre fechar a aba e recarregar (`beforeunload`), mas não cobre clique em link ou menu dentro do SPA.
+- **Motivo:** o app usa `<BrowserRouter>` (`frontend/src/App.tsx`). O `useBlocker` do React Router exige data router (`createBrowserRouter` + `RouterProvider`). Hoje, clicar no menu com o pedido editado e não salvo ainda descarta a edição sem aviso.
+- **Dependências:** migrar o roteador para data router. É uma mudança transversal: rotas protegidas, layout e testes que mockam `react-router-dom`.
+- **Critério de aceite:** com edição pendente em `PedidoForm`/`PedidoExternoForm`, a navegação interna pede confirmação. O `isDirty` do hook existente alimenta o `useBlocker` sem duplicar a detecção. Os testes cobrem confirmar e cancelar.
+- **Risco se ficar pendente:** perda silenciosa de edição ao sair da tela pelo menu, a mesma classe de defeito do FIX-0036.
+- **Status:** ABERTO
+- **Relacionado:** FIX-0036
