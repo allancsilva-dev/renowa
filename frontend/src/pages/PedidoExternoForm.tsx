@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Unlock } from 'lucide-react';
 import { fetchAllPages } from '@/lib/fetchAllPages';
@@ -10,6 +10,7 @@ import { AsyncCombobox, type AsyncComboboxFetchResult, type AsyncComboboxOption 
 import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { paymentOptionsWith } from '@/lib/paymentOptions';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
@@ -40,6 +41,12 @@ const emptyForm: ExternalForm = {
 
 const inputClass = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 disabled:bg-slate-50 disabled:text-slate-400';
 const labelClass = 'text-xs font-semibold text-slate-600';
+
+/** Só o que o usuário edita: `status` é derivado (liberação/faturamento). */
+function editSnapshot(form: ExternalForm): string {
+  const { status: _status, ...fields } = form;
+  return JSON.stringify(fields);
+}
 
 function orderToForm(order: Order, duplicating = false): ExternalForm {
   return {
@@ -74,6 +81,11 @@ export default function PedidoExternoForm() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liberando, setLiberando] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  // Mesma regra do pedido interno: liberado (ou além) trava a edição. O backend
+  // já devolve 409; aqui só evitamos que o usuário preencha em vão.
+  const locked = isEdit && isPedidoLocked(form.status);
+  const { isDirty, markClean } = useUnsavedChanges(editSnapshot(form), !locked);
 
   useEffect(() => {
     let active = true;
@@ -88,7 +100,8 @@ export default function PedidoExternoForm() {
           setError('Somente pedido externo pode ser duplicado nesta tela.');
           return;
         }
-        setForm(orderToForm(order, Boolean(duplicateSourceUuid)));
+        const loaded = orderToForm(order, Boolean(duplicateSourceUuid));
+        setForm(loaded); markClean(editSnapshot(loaded));
         setVersion(duplicateSourceUuid ? null : order.version);
         setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
         setSupplierLabel(order.fornecedor?.razao_social ?? '');
@@ -98,12 +111,12 @@ export default function PedidoExternoForm() {
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
       .finally(() => { if (active) setFetching(false); });
     return () => { active = false; };
-  }, [canChooseVendor, duplicateSourceUuid, uuid]);
+  }, [canChooseVendor, duplicateSourceUuid, markClean, uuid]);
 
-  // Mesma regra do pedido interno: liberado (ou além) trava a edição. O backend
-  // já devolve 409; aqui só evitamos que o usuário preencha em vão.
-  const locked = isEdit && isPedidoLocked(form.status);
   const canLiberar = isEdit && canLiberarPedido(hasPermission, form.status);
+  // Campos congelam também durante save/liberação: digitado nessa janela não
+  // iria no payload e sumiria quando o pedido travasse ou a tela navegasse.
+  const fieldsDisabled = locked || loading || liberando;
 
   function handleSelectClient(value: string | null, option: AsyncComboboxOption | null) {
     if (!value || !option) {
@@ -121,12 +134,26 @@ export default function PedidoExternoForm() {
     return Promise.resolve(filterLocalOptions(users.map((user) => ({ value: user.authUserId, label: user.name })), search, page));
   }
 
+  /**
+   * Liberar trava o pedido: o que estiver digitado e não salvo é gravado antes,
+   * pelo mesmo caminho do "Salvar". A liberação usa a versão devolvida pelo
+   * save; se o save falhar, nada é liberado e o erro do save fica na tela.
+   */
   async function handleLiberar() {
     if (!uuid || version == null) return;
+    // "Liberar" é type=button: sem isto, pularia a validação nativa (required,
+    // min) que o "Salvar" recebe do submit.
+    if (isDirty && formRef.current && !formRef.current.reportValidity()) return;
     setLiberando(true);
     setError(null);
     try {
-      const updated = await liberarOrder(uuid, version);
+      let currentVersion = version;
+      if (isDirty) {
+        const saved = await persist();
+        if (!saved) return;
+        currentVersion = saved.version;
+      }
+      const updated = await liberarOrder(uuid, currentVersion);
       setForm((current) => ({ ...current, status: updated.status }));
       setVersion(updated.version);
     } catch (reason) {
@@ -138,12 +165,18 @@ export default function PedidoExternoForm() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError(null);
-    if (locked) return;
-    if (!form.cliente_uuid || !form.fornecedor_uuid) { setError('Selecione cliente e fornecedor.'); return; }
+    const saved = await persist();
+    if (saved) navigate(`/pedidos/${saved.uuid}`);
+  }
+
+  /** Grava o pedido. Devolve o gravado, ou `null` com o motivo em `error`. */
+  async function persist(): Promise<{ uuid: string; version: number } | null> {
+    if (locked) return null;
+    if (!form.cliente_uuid || !form.fornecedor_uuid) { setError('Selecione cliente e fornecedor.'); return null; }
     if (!form.numero_pedido_externo.trim() || !form.sistema_origem.trim()) {
-      setError('Informe o número do pedido e o sistema de origem.'); return;
+      setError('Informe o número do pedido e o sistema de origem.'); return null;
     }
-    if (form.valor == null || form.valor <= 0) { setError('Informe o valor do pedido.'); return; }
+    if (form.valor == null || form.valor <= 0) { setError('Informe o valor do pedido.'); return null; }
     setLoading(true);
     // `status` e `origem` ficam fora do payload: são derivados pelo servidor e o
     // ValidationPipe roda com forbidNonWhitelisted — mandá-los devolveria 400.
@@ -162,15 +195,18 @@ export default function PedidoExternoForm() {
       ...(isEdit ? { version } : {}),
     };
     try {
-      const saved = await saveExternalOrder(payload, uuid); navigate(`/pedidos/${saved.uuid}`);
-    } catch (reason) { setError(getApiErrorMessage(reason)); }
+      const saved = await saveExternalOrder(payload, uuid);
+      setVersion(saved.version);
+      markClean(editSnapshot(form));
+      return saved;
+    } catch (reason) { setError(getApiErrorMessage(reason)); return null; }
     finally { setLoading(false); }
   }
 
   if (fetching) return <p className='py-20 text-center text-sm text-slate-600'>Carregando pedido...</p>;
 
   return (
-    <form onSubmit={submit} className='mx-auto max-w-4xl space-y-5'>
+    <form ref={formRef} onSubmit={submit} className='mx-auto max-w-4xl space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div>
           <h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido externo' : duplicateSourceUuid ? 'Duplicar pedido externo' : 'Novo pedido externo'}</h1>
@@ -181,8 +217,8 @@ export default function PedidoExternoForm() {
         {isEdit && (
           <div className='flex items-center gap-2'>
             {canLiberar && (
-              <button type='button' onClick={handleLiberar} disabled={liberando} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
-                <Unlock className='h-4 w-4' />{liberando ? 'Liberando...' : 'Liberar pedido'}
+              <button type='button' onClick={handleLiberar} disabled={liberando || loading} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
+                <Unlock className='h-4 w-4' />{liberando ? 'Liberando...' : isDirty ? 'Salvar e liberar' : 'Liberar pedido'}
               </button>
             )}
             <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${orderStatusColor[form.status]}`}>{orderStatusLabel[form.status]}</span>
@@ -203,7 +239,7 @@ export default function PedidoExternoForm() {
             <AsyncCombobox
               ariaLabel='Cliente'
               required
-              disabled={locked}
+              disabled={fieldsDisabled}
               value={form.cliente_uuid || null}
               displayValue={clienteLabel}
               onChange={handleSelectClient}
@@ -214,13 +250,13 @@ export default function PedidoExternoForm() {
             />
           </label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Fornecedor *</span>
-            <AsyncCombobox disabled={locked} required value={form.fornecedor_uuid || null} displayValue={supplierLabel} onChange={(value, option) => { setForm((current) => ({ ...current, fornecedor_uuid: value ?? '' })); setSupplierLabel(option?.label ?? ''); }} fetcher={supplierOptionsFetcher} ariaLabel='Fornecedor' placeholder='Buscar por razão social ou CNPJ...' className={inputClass} /></label>
+            <AsyncCombobox disabled={fieldsDisabled} required value={form.fornecedor_uuid || null} displayValue={supplierLabel} onChange={(value, option) => { setForm((current) => ({ ...current, fornecedor_uuid: value ?? '' })); setSupplierLabel(option?.label ?? ''); }} fetcher={supplierOptionsFetcher} ariaLabel='Fornecedor' placeholder='Buscar por razão social ou CNPJ...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
-            <input disabled={locked} type='date' value={form.data} onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))} className={inputClass} /></label>
+            <input disabled={fieldsDisabled} type='date' value={form.data} onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))} className={inputClass} /></label>
           {canChooseVendor && <label className='flex flex-col gap-1'><span className={labelClass}>Vendedor</span>
-            <AsyncCombobox disabled={locked} value={form.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setForm((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
+            <AsyncCombobox disabled={fieldsDisabled} value={form.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setForm((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
-            <AsyncCombobox disabled={locked} value={form.transportadora_uuid || null} displayValue={transportLabel} onChange={(value, option) => { setForm((current) => ({ ...current, transportadora_uuid: value ?? '' })); setTransportLabel(option?.label ?? ''); }} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
+            <AsyncCombobox disabled={fieldsDisabled} value={form.transportadora_uuid || null} displayValue={transportLabel} onChange={(value, option) => { setForm((current) => ({ ...current, transportadora_uuid: value ?? '' })); setTransportLabel(option?.label ?? ''); }} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
         </div>
       </section>
 
@@ -228,29 +264,29 @@ export default function PedidoExternoForm() {
         <h2 className='mb-4 text-lg font-semibold text-slate-900'>Pedido de origem</h2>
         <div className='grid gap-4 md:grid-cols-3'>
           <label className='flex flex-col gap-1'><span className={labelClass}>Número do pedido *</span>
-            <input disabled={locked} value={form.numero_pedido_externo} onChange={(e) => setForm((f) => ({ ...f, numero_pedido_externo: e.target.value }))} maxLength={120} className={inputClass} required /></label>
+            <input disabled={fieldsDisabled} value={form.numero_pedido_externo} onChange={(e) => setForm((f) => ({ ...f, numero_pedido_externo: e.target.value }))} maxLength={120} className={inputClass} required /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Sistema onde foi digitado *</span>
-            <input disabled={locked} value={form.sistema_origem} onChange={(e) => setForm((f) => ({ ...f, sistema_origem: e.target.value }))} maxLength={120} className={inputClass} required /></label>
+            <input disabled={fieldsDisabled} value={form.sistema_origem} onChange={(e) => setForm((f) => ({ ...f, sistema_origem: e.target.value }))} maxLength={120} className={inputClass} required /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Valor do pedido *</span>
-            <InputMoney disabled={locked} value={form.valor} onChange={(value) => setForm((f) => ({ ...f, valor: value }))} /></label>
+            <InputMoney disabled={fieldsDisabled} value={form.valor} onChange={(value) => setForm((f) => ({ ...f, valor: value }))} /></label>
           {/* Mesma regra do pedido interno: as options vêm de `form.pgt` a cada
               render para não perder valor legado herdado do cliente. */}
           <label className='flex flex-col gap-1'><span className={labelClass}>Forma de pagamento</span>
-            <select disabled={locked} value={form.pgt} onChange={(e) => setForm((f) => ({ ...f, pgt: e.target.value }))} className={inputClass}>
+            <select disabled={fieldsDisabled} value={form.pgt} onChange={(e) => setForm((f) => ({ ...f, pgt: e.target.value }))} className={inputClass}>
               <option value=''></option>
               {paymentOptionsWith(form.pgt).map((option) => <option key={option} value={option}>{option}</option>)}
             </select></label>
           {(['prazo', 'local_entrega', 'tipo_faturamento'] as const).map((field) => <label key={field} className='flex flex-col gap-1'>
             <span className={labelClass}>{{ prazo: 'Prazo', local_entrega: 'Local de entrega', tipo_faturamento: 'Tipo de faturamento' }[field]}</span>
-            <input disabled={locked} value={form[field]} onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))} className={inputClass} /></label>)}
+            <input disabled={fieldsDisabled} value={form[field]} onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))} className={inputClass} /></label>)}
           <label className='flex flex-col gap-1 md:col-span-3'><span className={labelClass}>Observações</span>
-            <textarea disabled={locked} value={form.observacao} onChange={(e) => setForm((f) => ({ ...f, observacao: e.target.value }))} rows={3} className={`${inputClass} resize-y`} /></label>
+            <textarea disabled={fieldsDisabled} value={form.observacao} onChange={(e) => setForm((f) => ({ ...f, observacao: e.target.value }))} rows={3} className={`${inputClass} resize-y`} /></label>
         </div>
       </section>
 
       <div className='flex justify-end gap-3'>
         <button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button>
-        <button type='submit' disabled={loading || locked || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button>
+        <button type='submit' disabled={loading || liberando || locked || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button>
       </div>
     </form>
   );

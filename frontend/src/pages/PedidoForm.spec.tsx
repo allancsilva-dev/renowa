@@ -23,12 +23,13 @@ const fetchOrderItemPhoto = vi.fn();
 const fetchOrderItemPhotoDataUrl = vi.fn();
 const uploadOrderItemPhoto = vi.fn();
 const deleteOrderItemPhoto = vi.fn();
+const liberarOrder = vi.fn();
 
 vi.mock('@/services/orders.service', () => ({
   fetchOrder: (...args: unknown[]) => fetchOrder(...args),
   saveOrder: (...args: unknown[]) => saveOrder(...args),
   duplicateOrder: (...args: unknown[]) => duplicateOrder(...args),
-  liberarOrder: vi.fn(),
+  liberarOrder: (...args: unknown[]) => liberarOrder(...args),
 }));
 vi.mock('@/services/clients.service', () => ({
   fetchClients: vi.fn(async () => ({
@@ -465,5 +466,130 @@ describe('PedidoForm — foto específica na edição', () => {
 
     expect(uploadOrderItemPhoto).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Salvar pedido' })).toBeDisabled();
+  });
+});
+
+/**
+ * "Liberar pedido" chamava só PATCH /liberar: a observação (ou qualquer campo)
+ * digitada e não salva sumia, e a tela travava como se tivesse gravado.
+ */
+describe('PedidoForm — liberar com edição pendente', () => {
+  function pedido() {
+    return {
+      uuid: 'ped-lib', version: 3, origem: 'interno', status: 'em_aberto', data: '2026-09-15',
+      cliente: { uuid: 'cli-1', razao_social: 'Cliente Um' }, vendedor: null,
+      fornecedor: FORNECEDOR_A, transportadora: null, pgt: null, prazo: null,
+      local_entrega: null, tipo_faturamento: null, observacao: 'Antiga',
+      itens: [{
+        uuid: 'item-lib', produto: PRODUTO_A, foto_especifica: { uuid: 'foto-1', version: 4 },
+        codigo_manual: 'AAA-1', descricao_manual: 'Produto A', qtd_caixas: '2',
+        qtd_unitaria: '3', preco_unitario: '25.50', desconto_perc: '0', ipi_perc: '10',
+      }],
+    };
+  }
+
+  async function montar() {
+    routerParams.uuid = 'ped-lib';
+    fetchOrder.mockResolvedValue(pedido());
+    // Hidratação assíncrona da foto não é edição do usuário.
+    fetchOrderItemPhoto.mockResolvedValue({ uuid: 'foto-1', version: 4 });
+    fetchOrderItemPhotoDataUrl.mockResolvedValue('data:image/jpeg;base64,EXISTENTE');
+    liberarOrder.mockResolvedValue({ uuid: 'ped-lib', version: 5, status: 'liberado' });
+    render(<PedidoForm />);
+    await screen.findByAltText('Foto específica do item 1');
+  }
+
+  it('salva a observação digitada antes de liberar, com a versão devolvida pelo save', async () => {
+    await montar();
+    saveOrder.mockResolvedValue({ uuid: 'ped-lib', version: 4 });
+    fireEvent.change(screen.getByLabelText('Observações'), { target: { value: 'Nova observação' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
+
+    await waitFor(() => expect(liberarOrder).toHaveBeenCalledWith('ped-lib', 4));
+    expect(saveOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ observacao: 'Nova observação', version: 3 }), 'ped-lib',
+    );
+    expect(saveOrder.mock.invocationCallOrder[0]).toBeLessThan(liberarOrder.mock.invocationCallOrder[0]);
+    expect(await screen.findByText('Este pedido já foi liberado e não pode mais ser editado.')).toBeInTheDocument();
+  });
+
+  it('valor inválido pela validação nativa barra salvar e liberar, igual ao Salvar', async () => {
+    await montar();
+    // min='0' só é checado pelo navegador; persist() não repete essa regra.
+    fireEvent.change(screen.getByLabelText('Caixas'), { target: { value: '-1' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(saveOrder).not.toHaveBeenCalled();
+    expect(liberarOrder).not.toHaveBeenCalled();
+  });
+
+  function soltarFoto() {
+    const file = new File(['foto'], 'nova.jpg', { type: 'image/jpeg' });
+    const zone = screen.getByText('Foto deste pedido').closest('div')!.parentElement!;
+    fireEvent.drop(zone, { dataTransfer: { files: [file] } });
+    return file;
+  }
+
+  it('foto pendente sobe antes de liberar — o backend recusa foto em pedido liberado', async () => {
+    await montar();
+    saveOrder.mockResolvedValue({ uuid: 'ped-lib', version: 4 });
+    const file = soltarFoto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
+
+    await waitFor(() => expect(liberarOrder).toHaveBeenCalledWith('ped-lib', 4));
+    expect(uploadOrderItemPhoto).toHaveBeenCalledWith('ped-lib', 'item-lib', file);
+    expect(uploadOrderItemPhoto.mock.invocationCallOrder[0]).toBeLessThan(liberarOrder.mock.invocationCallOrder[0]);
+  });
+
+  it('falha no upload da foto: pedido salvo, mas não liberado, e segue pendente', async () => {
+    await montar();
+    saveOrder.mockResolvedValue({ uuid: 'ped-lib', version: 4 });
+    uploadOrderItemPhoto.mockRejectedValue(new Error('Falha no upload'));
+    soltarFoto();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
+
+    expect(await screen.findByText(/O pedido foi salvo, mas 1 operação/)).toBeInTheDocument();
+    expect(saveOrder).toHaveBeenCalled();
+    expect(liberarOrder).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Salvar e liberar' })).toBeEnabled();
+  });
+
+  it('congela os campos enquanto salva e libera', async () => {
+    await montar();
+    let concluirSave!: (value: unknown) => void;
+    saveOrder.mockReturnValue(new Promise((resolve) => { concluirSave = resolve; }));
+    fireEvent.change(screen.getByLabelText('Observações'), { target: { value: 'Nova observação' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
+
+    await waitFor(() => expect(screen.getByLabelText('Observações')).toBeDisabled());
+    concluirSave({ uuid: 'ped-lib', version: 4 });
+    await waitFor(() => expect(liberarOrder).toHaveBeenCalledWith('ped-lib', 4));
+  });
+
+  it('sem edição pendente só libera', async () => {
+    await montar();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Liberar pedido' }));
+
+    await waitFor(() => expect(liberarOrder).toHaveBeenCalledWith('ped-lib', 3));
+    expect(saveOrder).not.toHaveBeenCalled();
+  });
+
+  it('não libera quando o save falha', async () => {
+    await montar();
+    saveOrder.mockRejectedValue(new Error('Conflito de versão'));
+    fireEvent.change(screen.getByLabelText('Observações'), { target: { value: 'Nova observação' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(liberarOrder).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Observações')).toHaveValue('Nova observação');
   });
 });

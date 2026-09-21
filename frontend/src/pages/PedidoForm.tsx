@@ -11,6 +11,7 @@ import { previewItem, previewOrder } from '@/lib/orderCalculation';
 import { getApiErrorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { paymentOptionsWith } from '@/lib/paymentOptions';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
@@ -60,6 +61,19 @@ const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' 
 const inputClass = 'min-h-11 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 disabled:bg-slate-50 disabled:text-slate-400';
 const labelClass = 'text-xs font-semibold text-slate-600';
 
+/**
+ * Só o que o usuário edita. `status` é derivado (liberação/faturamento) e
+ * preview/versão da foto chegam depois do load, então não contam como edição;
+ * foto escolhida ou marcada para remoção ainda não gravada conta.
+ */
+function editSnapshot(header: HeaderForm, items: ItemForm[]): string {
+  const { status: _status, ...fields } = header;
+  return JSON.stringify({
+    fields,
+    items: items.map(({ foto, fotoPreview: _preview, fotoVersion: _version, ...item }) => ({ ...item, foto: Boolean(foto) })),
+  });
+}
+
 function orderToForm(order: Order, duplicating = false): { header: HeaderForm; items: ItemForm[] } {
   return {
     header: {
@@ -106,6 +120,11 @@ export default function PedidoForm() {
   const [liberando, setLiberando] = useState(false);
   const [persistedUuid, setPersistedUuid] = useState<string | null>(null);
   const photoPreviewUrls = useRef(new Set<string>());
+  const formRef = useRef<HTMLFormElement>(null);
+  // Pedido liberado (ou além) trava edição de dados comerciais e itens — o backend já bloqueia
+  // com 409, aqui só refletimos a mesma regra na UI para não deixar o usuário preencher em vão.
+  const locked = isEdit && isPedidoLocked(header.status);
+  const { isDirty, markClean } = useUnsavedChanges(editSnapshot(header, items), !locked);
 
   useEffect(() => () => {
     photoPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
@@ -125,7 +144,9 @@ export default function PedidoForm() {
           setError('Somente pedido interno pode ser duplicado nesta tela.');
           return;
         }
-        const mapped = orderToForm(order, Boolean(duplicateSourceUuid)); setHeader(mapped.header); setItems(mapped.items.length ? mapped.items : [newItem()]);
+        const mapped = orderToForm(order, Boolean(duplicateSourceUuid));
+        const loadedItems = mapped.items.length ? mapped.items : [newItem()];
+        setHeader(mapped.header); setItems(loadedItems); markClean(editSnapshot(mapped.header, loadedItems));
         setVersion(duplicateSourceUuid ? null : order.version); setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
         setSupplierLabel(order.fornecedor?.razao_social ?? '');
         setVendorLabel(order.vendedor?.nome ?? '');
@@ -143,20 +164,20 @@ export default function PedidoForm() {
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
       .finally(() => { if (active) setFetching(false); });
     return () => { active = false; };
-  }, [canChooseVendor, duplicateSourceUuid, uuid]);
+  }, [canChooseVendor, duplicateSourceUuid, markClean, uuid]);
 
   const totals = previewOrder(items);
   const itensSemProduto = items.filter((item) => item.precisa_produto).length;
   const readonlyClass = 'min-h-11 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500 outline-none';
 
-  // Pedido liberado (ou além) trava edição de dados comerciais e itens — o backend já bloqueia
-  // com 409, aqui só refletimos a mesma regra na UI para não deixar o usuário preencher em vão.
-  const locked = isEdit && isPedidoLocked(header.status);
   // Repetir um código soma a mesma linha duas vezes no total do pedido, na fila
   // de faturamento e na comissão. O backend recusa com 409 (guarda +
   // `uq_itens_pedido_codigo_manual`), mas o banner de erro é global e não diz
   // qual linha corrigir — aqui a linha repetida fica marcada enquanto digita.
   const duplicados = useMemo(() => encontrarCodigosDuplicados(items), [items]);
+  // Campos congelam também durante save/liberação: digitado nessa janela não
+  // iria no payload e sumiria quando o pedido travasse ou a tela navegasse.
+  const fieldsDisabled = locked || loading || liberando;
   const canLiberar = isEdit && canLiberarPedido(hasPermission, header.status);
 
   function handleSelectClient(value: string | null, option: AsyncComboboxOption | null) {
@@ -292,12 +313,27 @@ export default function PedidoForm() {
     });
   }
 
+  /**
+   * Liberar trava o pedido: o que estiver digitado e não salvo é gravado antes
+   * (mesmo caminho do "Salvar", fotos incluídas — o backend recusa foto em pedido
+   * liberado). A liberação usa a versão devolvida pelo save; se o save falhar,
+   * nada é liberado e o erro do save fica na tela.
+   */
   async function handleLiberar() {
     if (!uuid || version == null) return;
+    // "Liberar" é type=button: sem isto, pularia a validação nativa (required,
+    // min) que o "Salvar" recebe do submit.
+    if (isDirty && formRef.current && !formRef.current.reportValidity()) return;
     setLiberando(true);
     setError(null);
     try {
-      const updated = await liberarOrder(uuid, version);
+      let currentVersion = version;
+      if (isDirty) {
+        const saved = await persist();
+        if (!saved) return;
+        currentVersion = saved.version;
+      }
+      const updated = await liberarOrder(uuid, currentVersion);
       setHeader((current) => ({ ...current, status: updated.status }));
       setVersion(updated.version);
     } catch (reason) {
@@ -309,13 +345,22 @@ export default function PedidoForm() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault(); setError(null);
-    if (locked) return;
-    if (!header.cliente_uuid || !header.fornecedor_uuid) { setError('Selecione cliente e fornecedor.'); return; }
+    const saved = await persist();
+    if (saved) navigate(`/pedidos/${saved.uuid}`);
+  }
+
+  /**
+   * Grava cabeçalho, itens e operações de foto pendentes. Devolve o pedido
+   * gravado, ou `null` quando não gravou tudo (o motivo já está em `error`).
+   */
+  async function persist(): Promise<{ uuid: string; version: number } | null> {
+    if (locked) return null;
+    if (!header.cliente_uuid || !header.fornecedor_uuid) { setError('Selecione cliente e fornecedor.'); return null; }
     if (items.some((item) => !item.produto_uuid && !item.codigo_manual.trim() && !item.descricao_manual.trim())) {
-      setError('Cada item precisa de um produto ou de código/descrição manual.'); return;
+      setError('Cada item precisa de um produto ou de código/descrição manual.'); return null;
     }
     const codigosRepetidos = mensagemCodigosDuplicados(duplicados);
-    if (codigosRepetidos) { setError(codigosRepetidos); return; }
+    if (codigosRepetidos) { setError(codigosRepetidos); return null; }
     setLoading(true);
     // `status` fica fora do payload: o backend não aceita mais status no corpo
     // de create/update (é derivado — liberação/cancelamento/faturamento têm
@@ -362,25 +407,28 @@ export default function PedidoForm() {
         const firstFailure = photoResults.find((result) => result.status === 'rejected');
         const detail = firstFailure?.status === 'rejected' ? ` ${getApiErrorMessage(firstFailure.reason)}` : '';
         setError(`O pedido foi salvo, mas ${failed} operação(ões) de foto não foram concluídas.${detail} Tente salvar novamente para repetir somente as pendentes.`);
-        return;
+        return null;
       }
-      navigate(`/pedidos/${saved.uuid}`);
-    } catch (reason) { setError(getApiErrorMessage(reason)); }
+      // Baseline = o que foi enviado, com as fotos já resolvidas. Algo digitado
+      // durante o save continua pendente.
+      markClean(editSnapshot(header, items.map((item) => ({ ...item, foto: null, fotoRemover: false, fotoOrigemItemUuid: null }))));
+      return saved;
+    } catch (reason) { setError(getApiErrorMessage(reason)); return null; }
     finally { setLoading(false); }
   }
 
   if (fetching) return <p className='py-20 text-center text-sm text-slate-600'>Carregando pedido...</p>;
 
   return (
-    <form onSubmit={submit} className='mx-auto max-w-6xl space-y-5'>
+    <form ref={formRef} onSubmit={submit} className='mx-auto max-w-6xl space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div><h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido' : duplicateSourceUuid ? 'Duplicar pedido' : 'Novo pedido'}</h1>
           <p className='mt-1 text-sm text-slate-600'>O servidor recalcula quantidades, descontos, IPI e totais ao salvar.</p></div>
         {isEdit && (
           <div className='flex items-center gap-2'>
             {canLiberar && (
-              <button type='button' onClick={handleLiberar} disabled={liberando} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
-                <Unlock className='h-4 w-4' />{liberando ? 'Liberando...' : 'Liberar pedido'}
+              <button type='button' onClick={handleLiberar} disabled={liberando || loading || duplicados.uuids.size > 0} className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>
+                <Unlock className='h-4 w-4' />{liberando ? 'Liberando...' : isDirty ? 'Salvar e liberar' : 'Liberar pedido'}
               </button>
             )}
             <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${orderStatusColor[header.status]}`}>{orderStatusLabel[header.status]}</span>
@@ -401,7 +449,7 @@ export default function PedidoForm() {
             <AsyncCombobox
               ariaLabel='Cliente'
               required
-              disabled={locked}
+              disabled={fieldsDisabled}
               value={header.cliente_uuid || null}
               displayValue={clienteLabel}
               onChange={handleSelectClient}
@@ -412,13 +460,13 @@ export default function PedidoForm() {
             />
           </label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Fornecedor *</span>
-            <AsyncCombobox disabled={locked} required value={header.fornecedor_uuid || null} displayValue={supplierLabel} onChange={handleSelectSupplier} fetcher={supplierOptionsFetcher} ariaLabel='Fornecedor' placeholder='Buscar por razão social ou CNPJ...' className={inputClass} /></label>
+            <AsyncCombobox disabled={fieldsDisabled} required value={header.fornecedor_uuid || null} displayValue={supplierLabel} onChange={handleSelectSupplier} fetcher={supplierOptionsFetcher} ariaLabel='Fornecedor' placeholder='Buscar por razão social ou CNPJ...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
-            <input disabled={locked} type='date' value={header.data} onChange={(e) => setHeader((h) => ({ ...h, data: e.target.value }))} className={inputClass} /></label>
+            <input disabled={fieldsDisabled} type='date' value={header.data} onChange={(e) => setHeader((h) => ({ ...h, data: e.target.value }))} className={inputClass} /></label>
           {canChooseVendor && <label className='flex flex-col gap-1'><span className={labelClass}>Vendedor</span>
-            <AsyncCombobox disabled={locked} value={header.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setHeader((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
+            <AsyncCombobox disabled={fieldsDisabled} value={header.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setHeader((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
-            <AsyncCombobox disabled={locked} value={header.transportadora_uuid || null} displayValue={transportLabel} onChange={handleSelectTransport} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
+            <AsyncCombobox disabled={fieldsDisabled} value={header.transportadora_uuid || null} displayValue={transportLabel} onChange={handleSelectTransport} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Tel. Transporte</span>
             <input value={selectedTransport?.telefone ?? ''} readOnly placeholder='Selecione a transportadora' className={readonlyClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>End. Transporte</span>
@@ -428,56 +476,56 @@ export default function PedidoForm() {
               texto livre antigo. Congelar a lista faria o select cair na opção
               vazia e o save apagaria o pagamento sem avisar. */}
           <label className='flex flex-col gap-1'><span className={labelClass}>Forma de pagamento</span>
-            <select disabled={locked} value={header.pgt} onChange={(e) => setHeader((h) => ({ ...h, pgt: e.target.value }))} className={inputClass}>
+            <select disabled={fieldsDisabled} value={header.pgt} onChange={(e) => setHeader((h) => ({ ...h, pgt: e.target.value }))} className={inputClass}>
               <option value=''></option>
               {paymentOptionsWith(header.pgt).map((option) => <option key={option} value={option}>{option}</option>)}
             </select></label>
           {(['prazo', 'local_entrega', 'tipo_faturamento'] as const).map((field) => <label key={field} className='flex flex-col gap-1'>
             <span className={labelClass}>{{ prazo: 'Prazo', local_entrega: 'Local de entrega', tipo_faturamento: 'Tipo de faturamento' }[field]}</span>
-            <input disabled={locked} value={header[field]} onChange={(e) => setHeader((h) => ({ ...h, [field]: e.target.value }))} className={inputClass} /></label>)}
+            <input disabled={fieldsDisabled} value={header[field]} onChange={(e) => setHeader((h) => ({ ...h, [field]: e.target.value }))} className={inputClass} /></label>)}
           <label className='flex flex-col gap-1 md:col-span-3'><span className={labelClass}>Observações</span>
-            <textarea disabled={locked} value={header.observacao} onChange={(e) => setHeader((h) => ({ ...h, observacao: e.target.value }))} rows={3} className={`${inputClass} resize-y`} /></label>
+            <textarea disabled={fieldsDisabled} value={header.observacao} onChange={(e) => setHeader((h) => ({ ...h, observacao: e.target.value }))} rows={3} className={`${inputClass} resize-y`} /></label>
         </div>
       </section>
 
       <section className='rounded-lg border border-slate-200 bg-white p-5 shadow-sm'>
         <div className='mb-4 flex items-center justify-between'><h2 className='text-lg font-semibold text-slate-900'>Itens</h2>
-          {items.length === 1 && <AddItemButton disabled={locked} onClick={addItem} />}</div>
+          {items.length === 1 && <AddItemButton disabled={fieldsDisabled} onClick={addItem} />}</div>
         {itensSemProduto > 0 && (
           <div role='status' className='mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'>
             O fornecedor mudou: {itensSemProduto === 1 ? '1 item precisa' : `${itensSemProduto} itens precisam`} de um novo produto. Quantidades e percentuais foram preservados.
           </div>
         )}
         <div className='space-y-4'>{items.map((item, index) => { const calculated = previewItem(item); return <div key={item.uuid} className={`rounded-lg border p-4 ${duplicados.uuids.has(item.uuid) ? 'border-red-300 bg-red-50/40' : item.precisa_produto ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
-          <div className='mb-3 flex justify-between'><strong className='text-sm text-slate-800'>Item {index + 1}</strong><button type='button' aria-label={`Remover item ${index + 1}`} disabled={items.length === 1 || locked}
+          <div className='mb-3 flex justify-between'><strong className='text-sm text-slate-800'>Item {index + 1}</strong><button type='button' aria-label={`Remover item ${index + 1}`} disabled={items.length === 1 || fieldsDisabled}
             onClick={() => setItems((current) => current.filter((entry) => entry.uuid !== item.uuid))} className='rounded-md p-2 text-slate-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-40'><Trash2 className='h-4 w-4' /></button></div>
           <div className='grid gap-3 md:grid-cols-4'>
-            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><AsyncCombobox disabled={locked || !header.fornecedor_uuid} value={item.produto_uuid || null} displayValue={item.produto_uuid ? `${item.codigo_manual ? `${item.codigo_manual} — ` : ''}${item.descricao_manual}` : ''} ariaLabel={`Buscar produto do item ${index + 1}`} ariaInvalid={item.precisa_produto} placeholder={header.fornecedor_uuid ? 'Busque por código ou descrição' : 'Selecione o fornecedor primeiro'} emptyMessage='Nenhum produto desse fornecedor encontrado.' fetcher={productFetcher} onChange={(value, option) => chooseProduct(item.uuid, value, option)} className={`${inputClass}${item.precisa_produto ? ' border-amber-400' : ''}`} /></label>
+            <label className='flex flex-col gap-1 md:col-span-2'><span className={labelClass}>Produto cadastrado</span><AsyncCombobox disabled={fieldsDisabled || !header.fornecedor_uuid} value={item.produto_uuid || null} displayValue={item.produto_uuid ? `${item.codigo_manual ? `${item.codigo_manual} — ` : ''}${item.descricao_manual}` : ''} ariaLabel={`Buscar produto do item ${index + 1}`} ariaInvalid={item.precisa_produto} placeholder={header.fornecedor_uuid ? 'Busque por código ou descrição' : 'Selecione o fornecedor primeiro'} emptyMessage='Nenhum produto desse fornecedor encontrado.' fetcher={productFetcher} onChange={(value, option) => chooseProduct(item.uuid, value, option)} className={`${inputClass}${item.precisa_produto ? ' border-amber-400' : ''}`} /></label>
             <div className='flex flex-col gap-1'>
-              <label className='flex flex-col gap-1'><span className={labelClass}>Código</span><input disabled={locked} value={item.codigo_manual} aria-invalid={duplicados.uuids.has(item.uuid) || undefined} aria-describedby={duplicados.uuids.has(item.uuid) ? `item-${item.uuid}-codigo-erro` : undefined} onChange={(e) => updateItem(item.uuid, { codigo_manual: e.target.value })} className={`${inputClass}${duplicados.uuids.has(item.uuid) ? ' border-red-400' : ''}`} /></label>
+              <label className='flex flex-col gap-1'><span className={labelClass}>Código</span><input disabled={fieldsDisabled} value={item.codigo_manual} aria-invalid={duplicados.uuids.has(item.uuid) || undefined} aria-describedby={duplicados.uuids.has(item.uuid) ? `item-${item.uuid}-codigo-erro` : undefined} onChange={(e) => updateItem(item.uuid, { codigo_manual: e.target.value })} className={`${inputClass}${duplicados.uuids.has(item.uuid) ? ' border-red-400' : ''}`} /></label>
               {duplicados.uuids.has(item.uuid) && <span id={`item-${item.uuid}-codigo-erro`} className='text-xs text-red-700'>Este item já está no pedido. Cada código só pode aparecer uma vez.</span>}
             </div>
-            <label className='flex flex-col gap-1'><span className={labelClass}>Descrição</span><input disabled={locked} value={item.descricao_manual} onChange={(e) => updateItem(item.uuid, { descricao_manual: e.target.value })} className={inputClass} /></label>
-            <label className='flex flex-col gap-1'><span className={labelClass}>Caixas</span><input disabled={locked} type='number' min='0' step='0.001' value={item.qtd_caixas} onChange={(e) => updateItem(item.uuid, { qtd_caixas: e.target.value })} className={inputClass} required /></label>
-            <label className='flex flex-col gap-1'><span className={labelClass}>Unidades por caixa</span><input disabled={locked} type='number' min='0' step='0.001' value={item.qtd_unitaria} onChange={(e) => updateItem(item.uuid, { qtd_unitaria: e.target.value })} className={inputClass} required /></label>
-            <label className='flex flex-col gap-1'><span className={labelClass}>Preço unitário</span><InputMoney disabled={locked} value={item.preco_unitario} onChange={(value) => updateItem(item.uuid, { preco_unitario: value })} /></label>
-            <label className='flex flex-col gap-1'><span className={labelClass}>Desconto (%)</span><input disabled={locked} type='number' min='0' max='100' step='0.01' value={item.desconto_perc} onChange={(e) => updateItem(item.uuid, { desconto_perc: e.target.value })} className={inputClass} /></label>
-            <label className='flex flex-col gap-1'><span className={labelClass}>IPI (%)</span><input disabled={locked} type='number' min='0' max='100' step='0.01' value={item.ipi_perc} onChange={(e) => updateItem(item.uuid, { ipi_perc: e.target.value })} className={inputClass} /></label>
+            <label className='flex flex-col gap-1'><span className={labelClass}>Descrição</span><input disabled={fieldsDisabled} value={item.descricao_manual} onChange={(e) => updateItem(item.uuid, { descricao_manual: e.target.value })} className={inputClass} /></label>
+            <label className='flex flex-col gap-1'><span className={labelClass}>Caixas</span><input disabled={fieldsDisabled} type='number' min='0' step='0.001' value={item.qtd_caixas} onChange={(e) => updateItem(item.uuid, { qtd_caixas: e.target.value })} className={inputClass} required /></label>
+            <label className='flex flex-col gap-1'><span className={labelClass}>Unidades por caixa</span><input disabled={fieldsDisabled} type='number' min='0' step='0.001' value={item.qtd_unitaria} onChange={(e) => updateItem(item.uuid, { qtd_unitaria: e.target.value })} className={inputClass} required /></label>
+            <label className='flex flex-col gap-1'><span className={labelClass}>Preço unitário</span><InputMoney disabled={fieldsDisabled} value={item.preco_unitario} onChange={(value) => updateItem(item.uuid, { preco_unitario: value })} /></label>
+            <label className='flex flex-col gap-1'><span className={labelClass}>Desconto (%)</span><input disabled={fieldsDisabled} type='number' min='0' max='100' step='0.01' value={item.desconto_perc} onChange={(e) => updateItem(item.uuid, { desconto_perc: e.target.value })} className={inputClass} /></label>
+            <label className='flex flex-col gap-1'><span className={labelClass}>IPI (%)</span><input disabled={fieldsDisabled} type='number' min='0' max='100' step='0.01' value={item.ipi_perc} onChange={(e) => updateItem(item.uuid, { ipi_perc: e.target.value })} className={inputClass} /></label>
             <OrderItemPhotoField
               index={index}
               fotoPreview={item.fotoPreview}
               willCopy={Boolean(item.fotoOrigemItemUuid)}
-              locked={locked}
+              locked={fieldsDisabled}
               onChoose={(file) => chooseItemPhoto(item.uuid, file)}
               onRemove={() => removeItemPhoto(item)}
             />
             <div className='md:col-span-3 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700'><span>{qtyForDisplay(item.qtd_caixas || 0)} cx × {qtyForDisplay(item.qtd_unitaria || 0)} un = <strong>{qtyForDisplay(calculated.qtd_total)}</strong></span><span>Valor unitário com desconto: <strong>{BRL.format(moneyForDisplay(calculated.valor_com_desconto))}</strong></span><span>Sem IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_sem_imposto))}</strong></span><span>Com IPI: <strong>{BRL.format(moneyForDisplay(calculated.total_com_imposto))}</strong></span></div>
           </div></div>; })}</div>
         <div className='mt-5 flex justify-end gap-8 border-t border-slate-200 pt-4 text-right'><div><span className='block text-xs text-slate-600'>Total sem imposto</span><strong>{BRL.format(moneyForDisplay(totals.semImposto))}</strong></div><div><span className='block text-xs text-slate-600'>Total com imposto</span><strong className='text-lg text-slate-900'>{BRL.format(moneyForDisplay(totals.comImposto))}</strong></div></div>
-        {items.length > 1 && <div className='mt-4 flex justify-end'><AddItemButton disabled={locked} onClick={addItem} /></div>}
+        {items.length > 1 && <div className='mt-4 flex justify-end'><AddItemButton disabled={fieldsDisabled} onClick={addItem} /></div>}
       </section>
 
-      <div className='flex justify-end gap-3'><button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button><button type='submit' disabled={loading || locked || duplicados.uuids.size > 0 || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button></div>
+      <div className='flex justify-end gap-3'><button type='button' onClick={() => navigate(uuid ? `/pedidos/${uuid}` : '/pedidos')} className='min-h-11 rounded-lg border border-slate-300 px-5 text-sm font-medium text-slate-700'>Voltar</button><button type='submit' disabled={loading || liberando || locked || duplicados.uuids.size > 0 || (isEdit && version == null)} className='min-h-11 rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60'>{loading ? 'Salvando...' : 'Salvar pedido'}</button></div>
     </form>
   );
 }
