@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { encontrarCodigosDuplicados, mensagemCodigosDuplicados, type ItemComCodigo } from './orderItemCodes';
+import {
+  encontrarCodigosDuplicados, mensagemCodigosDuplicados, mensagemLinhaDuplicada, type ItemComCodigo,
+} from './orderItemCodes';
 
 const item = (uuid: string, codigo_manual = '', produto_uuid = ''): ItemComCodigo =>
   ({ uuid, codigo_manual, produto_uuid });
@@ -52,7 +54,46 @@ describe('encontrarCodigosDuplicados', () => {
   });
 });
 
+describe('encontrarCodigosDuplicados — produto repetido (BACKLOG-0097)', () => {
+  it('mesmo produto com códigos editados diferentes é repetição de produto', () => {
+    const d = encontrarCodigosDuplicados([item('a', 'QAA', 'prod-1'), item('b', 'QAB', 'prod-1')]);
+
+    expect([...d.uuids]).toEqual(['b']);
+    expect(d.motivos.get('b')).toBe('produto');
+    expect(d.codigos).toEqual([]);
+    expect(d.produtoRepetido).toBe(true);
+  });
+
+  it('mesmo código em produtos diferentes continua sendo repetição de código', () => {
+    const d = encontrarCodigosDuplicados([item('a', 'ABC', 'prod-1'), item('b', 'ABC', 'prod-2')]);
+
+    expect(d.motivos.get('b')).toBe('codigo');
+    expect(d.produtoRepetido).toBe(false);
+  });
+
+  it('quando código e produto repetem, a linha é marcada uma vez, por código', () => {
+    const d = encontrarCodigosDuplicados([item('a', 'ABC', 'prod-1'), item('b', 'ABC', 'prod-1')]);
+
+    expect(d.uuids.size).toBe(1);
+    expect(d.motivos.get('b')).toBe('codigo');
+  });
+
+  it('texto da linha diz o que repetiu', () => {
+    expect(mensagemLinhaDuplicada('produto')).toContain('Cada produto');
+    expect(mensagemLinhaDuplicada('codigo')).toContain('Cada código');
+  });
+});
+
 describe('mensagemCodigosDuplicados', () => {
+  it('cita código e produto quando os dois repetem em linhas diferentes', () => {
+    const mensagem = mensagemCodigosDuplicados(encontrarCodigosDuplicados([
+      item('a', 'ABC'), item('b', 'ABC'), item('c', 'X1', 'prod-1'), item('d', 'X2', 'prod-1'),
+    ]));
+
+    expect(mensagem).toContain('ABC');
+    expect(mensagem).toContain('Cada produto');
+  });
+
   it('devolve null sem repetição', () => {
     expect(mensagemCodigosDuplicados(encontrarCodigosDuplicados([item('a', 'ABC')]))).toBeNull();
   });

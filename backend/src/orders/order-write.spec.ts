@@ -324,6 +324,21 @@ describe('assertCodigosItensUnicos — código repetido no mesmo pedido', () => 
     ], { substituiTodos: true })).rejects.toThrow(ConflictException);
   });
 
+  // BACKLOG-0097: mesmo produto, códigos editados diferentes. O índice
+  // `uq_itens_pedido_produto` recusa; a mensagem tem de culpar o produto.
+  it('produto repetido com códigos diferentes nomeia o produto, não o código', async () => {
+    const { manager } = managerCom({
+      catalogo: [{ id: 7, codigo: 'COD-1', descricao: 'Cadeira' }],
+    });
+
+    await expect(assertCodigosItensUnicos(manager, TENANT, 10, [
+      { uuid: 'i-1', produto_id: 7, codigo_manual: 'QAA' },
+      { uuid: 'i-2', produto_id: 7, codigo_manual: 'QAB' },
+    ], { substituiTodos: true })).rejects.toThrow(
+      'O produto "Cadeira" está repetido nos itens 1 e 2 do pedido. Cada produto só pode aparecer uma vez no mesmo pedido.',
+    );
+  });
+
   /**
    * O caso que índice nenhum pega: o código do produto vive em `produtos`, e
    * índice não cruza tabela. Só a resolução do catálogo aqui enxerga.

@@ -108,12 +108,13 @@ export interface ItemCodigoInput {
 interface ItemComCodigo {
   produto_id: number | null;
   codigo: string | null;
-  rotulo: string | null;
-  /** Decide o fecho da mensagem: item sem código é identificado pelo produto. */
-  tipo: 'codigo' | 'produto';
+  /** Descrição do produto do catálogo, para a mensagem de produto repetido. */
+  produtoDescricao: string | null;
   /** Posição 1-based no payload; `null` para irmão já gravado. */
   posicao: number | null;
 }
+
+type ConflitoItem = 'codigo' | 'produto';
 
 /**
  * Código do item é a chave de negócio DENTRO do pedido: repetir uma linha infla
@@ -161,8 +162,7 @@ export async function assertCodigosItensUnicos(
     return {
       produto_id: item.produto_id ?? null,
       codigo,
-      rotulo: codigo ? `Código ${codigo}` : doCatalogo ? `O produto "${doCatalogo.descricao}"` : null,
-      tipo: codigo ? 'codigo' : 'produto',
+      produtoDescricao: doCatalogo?.descricao ?? null,
       posicao: indice + 1,
     };
   });
@@ -188,10 +188,7 @@ export async function assertCodigosItensUnicos(
       irmaos.push({
         produto_id: row.produto_id,
         codigo,
-        rotulo: codigo
-          ? `Código ${codigo}`
-          : row.produto_descricao ? `O produto "${row.produto_descricao}"` : null,
-        tipo: codigo ? 'codigo' : 'produto',
+        produtoDescricao: row.produto_descricao,
         posicao: null,
       });
     }
@@ -205,12 +202,14 @@ export async function assertCodigosItensUnicos(
   for (const entrada of [...irmaos, ...candidatos]) {
     if (entrada.codigo) {
       const anterior = porCodigo.get(entrada.codigo);
-      if (anterior) recusar(entrada, anterior);
+      if (anterior) recusar(entrada, anterior, 'codigo');
       porCodigo.set(entrada.codigo, entrada);
     }
     if (entrada.produto_id != null) {
       const anterior = porProduto.get(entrada.produto_id);
-      if (anterior) recusar(entrada, anterior);
+      // Checado mesmo quando os códigos diferem: `uq_itens_pedido_produto`
+      // recusa o mesmo produto em duas linhas, com ou sem código editado.
+      if (anterior) recusar(entrada, anterior, 'produto');
       porProduto.set(entrada.produto_id, entrada);
     }
   }
@@ -221,9 +220,15 @@ export async function assertCodigosItensUnicos(
  * número que faça sentido para quem está olhando a tela, então a mensagem cai
  * para a forma sem posição.
  */
-function recusar(entrada: ItemComCodigo, anterior: ItemComCodigo): never {
-  const rotulo = entrada.rotulo ?? anterior.rotulo ?? 'Este item';
-  const regra = entrada.tipo === 'codigo' ? 'Cada código' : 'Cada produto';
+function recusar(entrada: ItemComCodigo, anterior: ItemComCodigo, conflito: ConflitoItem): never {
+  // A mensagem nomeia o que de fato repetiu. Antes, produto repetido com
+  // códigos editados diferentes saía como "Código X está repetido" — o usuário
+  // procurava um código duplicado que não existia.
+  const descricao = entrada.produtoDescricao ?? anterior.produtoDescricao;
+  const rotulo = conflito === 'codigo'
+    ? `Código ${entrada.codigo}`
+    : descricao ? `O produto "${descricao}"` : 'Este produto';
+  const regra = conflito === 'codigo' ? 'Cada código' : 'Cada produto';
   if (entrada.posicao != null && anterior.posicao != null) {
     throw new ConflictException(
       `${rotulo} está repetido nos itens ${anterior.posicao} e ${entrada.posicao} do pedido. `

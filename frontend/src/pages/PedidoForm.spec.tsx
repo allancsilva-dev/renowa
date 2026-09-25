@@ -369,6 +369,26 @@ describe('PedidoForm — código duplicado entre itens', () => {
     expect(salvar()).toBeDisabled();
   });
 
+  // BACKLOG-0097: editar o código não tira a repetição — o backend recusa o
+  // mesmo produto em duas linhas (`uq_itens_pedido_produto`).
+  it('mesmo produto com códigos editados diferentes continua bloqueado, por produto', async () => {
+    await comDoisItens();
+    await escolherCliente();
+    await escolherProduto(0);
+    await escolherProduto(1);
+
+    fireEvent.change(codigos()[0], { target: { value: 'QAA' } });
+    fireEvent.change(codigos()[1], { target: { value: 'QAB' } });
+
+    expect(screen.getByText(/Este produto já está em outro item/)).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Buscar produto do item 2' })).toHaveAttribute('aria-invalid', 'true');
+    expect(salvar()).toBeDisabled();
+
+    fireEvent.submit(salvar().closest('form')!);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cada produto só pode aparecer uma vez.');
+    expect(saveOrder).not.toHaveBeenCalled();
+  });
+
   it('remover a linha repetida reabilita o save', async () => {
     await comDoisItens();
 
