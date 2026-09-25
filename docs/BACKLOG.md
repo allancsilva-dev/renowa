@@ -1005,3 +1005,43 @@
 - **Risco se ficar pendente:** perda silenciosa de edição ao sair da tela pelo menu, a mesma classe de defeito do FIX-0036.
 - **Status:** ABERTO
 - **Relacionado:** FIX-0036
+
+### BACKLOG-0094 — Busca de Pedidos: CNPJ só com dígitos não acha CNPJ gravado com máscara
+- **Prioridade:** P2
+- **Área:** backend
+- **Origem:** FIX-0037 (2026-09-25). A tela Pedidos usa `ILIKE` direto em `c.cnpj`/`fornecedor.cnpj` (`backend/src/orders/orders.service.ts`).
+- **Motivo:** o CNPJ é gravado como foi digitado. No banco de dev, buscar `55566677000183` contra `55.566.677/0001-83` com `ILIKE` retorna 0 linhas.
+- **Critério de aceite:** trocar o filtro de texto de Pedidos por `applySearch` (`backend/src/common/persistence/search-filter.ts`), mantendo `sistema_origem` e o nº externo. Teste cobrindo CNPJ com máscara e só com dígitos.
+- **Risco se ficar pendente:** o usuário busca pelo CNPJ copiado de uma nota e não acha o pedido.
+- **Status:** CONCLUÍDO (2026-09-25) — FIX-0038.
+- **Relacionado:** FIX-0037, FIX-0038
+
+### BACKLOG-0095 — Joins de cliente sem `tenant_id` nas listagens do Financeiro e custo do `regexp_replace`
+- **Prioridade:** P3
+- **Área:** backend / banco
+- **Origem:** revisão do FIX-0037 (2026-09-25).
+- **Motivo:** (1) em comissões, parceiros e inadimplência, o `leftJoinAndSelect` de `cliente` não tem condição de `tenant_id`. Isso não vaza dados hoje, porque a linha raiz já é filtrada por tenant e a FK aponta para o mesmo tenant, mas é defesa em profundidade que falta. (2) A comparação de CNPJ por dígitos usa `regexp_replace` sem índice. Com o volume atual, filtrado por tenant e período, o custo é irrelevante.
+- **Critério de aceite:** join de cliente com `cliente.tenant_id = :tenantId`. Se o volume crescer, normalizar o CNPJ na gravação (só dígitos) ou criar índice de expressão.
+- **Risco se ficar pendente:** baixo.
+- **Status:** Parte (1) **NÃO PROCEDIA** (2026-09-25, FIX-0039). Toda relação N:1 usa `@JoinColumn` composta `(tenant_id, id)`, e o TypeORM já gera o `ON` com `"cliente"."tenant_id"="o"."tenant_id" AND …`. A condição extra que o FIX-0038 adicionou era redundante e foi removida. O invariante passou a ser travado por `backend/src/common/persistence/tenant-relations.spec.ts`, que falha se uma FK para tabela de tenant for simples; a falha foi provada quebrando `Client.transportadora` de propósito. Parte (2) **ABERTA, com gatilho**: um índice agora não seria usado, porque a busca é `OR` entre `ILIKE '%…%'` de várias colunas (seq scan por tenant de qualquer forma); o dev tem 59 pedidos. Dispara quando a listagem com busca passar de 300 ms p95 ou quando um tenant passar de 20k pedidos. Caminho: `CREATE EXTENSION pg_trgm` (disponível, não instalada) + coluna gerada `cnpj_digitos` + índice GIN trigram em **todas** as colunas da busca, validado com `EXPLAIN ANALYZE`.
+- **Relacionado:** FIX-0037, FIX-0038, BACKLOG-0096
+
+### BACKLOG-0096 — Joins sem `tenant_id` nas consultas de detalhe e no SAC
+- **Prioridade:** P3
+- **Área:** backend
+- **Origem:** revisão do FIX-0038 (2026-09-25).
+- **Motivo:** o FIX-0038 pôs condição de tenant só nos joins das listagens com busca. Continuam sem ela: `orders.service.ts` `findOne` (cliente, transportadora, fornecedor, vendedor, produto), `faturamento.service.ts` `findPedidoDetalhe` (cliente, fornecedor) e `sac.service.ts` (joins de `c.cliente` nas duas listagens). Não vaza dados hoje: a linha raiz é filtrada por tenant e a FK aponta para o mesmo tenant. Pôr a condição só em 2 dos 7 joins do `findOne` daria falsa sensação de cobertura, por isso ficou para uma passada única.
+- **Critério de aceite:** todo join N:1 dessas consultas com `<alias>.tenant_id = :tenantId` e teste conferindo a condição.
+- **Risco se ficar pendente:** baixo (defesa em profundidade).
+- **Status:** **FECHADO — NÃO PROCEDE** (2026-09-25, FIX-0039). A premissa estava errada: as relações usam FK composta com `tenant_id`, e o SQL gerado pelo TypeORM para `findOne` já sai com `LEFT JOIN "clientes" "cliente" ON "cliente"."tenant_id"="o"."tenant_id" AND "cliente"."id"="o"."cliente_id"`. O mesmo vale para `vendedor`, `itens` e `foto_especifica`. A proteção contra regressão é o teste de invariante citado no BACKLOG-0095.
+- **Relacionado:** BACKLOG-0095, FIX-0038
+
+### BACKLOG-0097 — QA Safari p5: itens do pedido saem com código repetido e a fase cai em pedido de outra rodada
+- **Prioridade:** P2
+- **Área:** frontend / QA
+- **Origem:** corrida `p0`–`p14` do FIX-0038 (2026-09-25, stamp `QA235406`).
+- **Motivo:** a tela mostrou `QAA-…` e `QAB-…` nos dois itens (asserção "cada item recebeu código próprio" passou), mas o `POST /pedidos` chegou com `QAB-…` nos itens 1 e 2 → 409. Pode ser escrita perdida em re-render do `PedidoForm` (família do BACKLOG-0066) ou o driver preenchendo o item errado; não diagnosticado. Além disso, a `p5` aceita "pedido salvo sem mensagem de erro" apesar do 409 e, quando não acha o stamp, pega o primeiro pedido interno da lista (`|| arr.filter(...)[0]`), o que contamina `p7c`, `p9` e `p14`. Sobra no banco de dev: 6 pedidos `QA889263` (nº 44–47, 49, 50); o nº 50 tem faturamento finalizado manualmente e precisa ser reaberto antes de excluir a nota.
+- **Critério de aceite:** achar a causa do código repetido (app ou driver) e corrigir. A `p5` falha quando o `POST` não é 201 e nunca usa pedido sem o stamp da rodada. Limpar os pedidos `QA889263`.
+- **Risco se ficar pendente:** se o defeito for do app, o usuário perde o código digitado no item 1. A corrida de QA não prova Pedido, Faturamento nem PDF.
+- **Status:** **CONCLUÍDO** (2026-09-25, FIX-0039). Causa: os dois itens tinham o mesmo produto do catálogo e códigos editados diferentes. O front só olhava o produto quando faltava código; o backend e o índice `uq_itens_pedido_produto` recusam, com mensagem que culpava o código. Não havia perda de código digitado. Pedidos antigos `QA889263` continuam no banco de dev, porque limpar depende de decisão do usuário.
+- **Relacionado:** FIX-0038, BACKLOG-0066
