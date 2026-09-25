@@ -83,6 +83,42 @@ describe('OrdersService.findAll — filtros', () => {
     expect(qb.where).toHaveBeenCalledWith('o.tenant_id = :tenantId', { tenantId: 'tenant-a' });
   });
 
+  describe('busca (BACKLOG-0094)', () => {
+    const searchCall = (qb: any) => qb.andWhere.mock.calls.find(([sql]: [string]) => sql.includes('ILIKE'));
+
+    it.each(['55566677000183', '55.566.677/0001-83'])('CNPJ %s compara também só pelos dígitos', async (search) => {
+      const { service, qb } = serviceParaLista();
+
+      await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { search });
+
+      const [where, params] = searchCall(qb);
+      expect(where).toContain("regexp_replace(c.cnpj, '\\D', '', 'g') LIKE :searchDigits");
+      expect(where).toContain("regexp_replace(fornecedor.cnpj, '\\D', '', 'g') LIKE :searchDigits");
+      for (const expr of ['CAST(o.numero_pedido AS TEXT)', 'o.numero_pedido_externo', 'o.sistema_origem', 'c.razao_social']) {
+        expect(where).toContain(`${expr} ILIKE :search`);
+      }
+      expect(params).toEqual({ search: `%${search}%`, searchDigits: '%55566677000183%' });
+    });
+
+    it('número curto não vira busca por dígitos de CNPJ', async () => {
+      const { service, qb } = serviceParaLista();
+
+      await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { search: '12' });
+
+      expect(searchCall(qb)[1]).toEqual({ search: '%12%' });
+    });
+
+    it('% digitado é literal e busca só com espaços não filtra', async () => {
+      const { service, qb } = serviceParaLista();
+      await service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { search: '50%' });
+      expect(searchCall(qb)[1]).toEqual({ search: '%50\\%%' });
+
+      const vazio = serviceParaLista();
+      await vazio.service.findAll('tenant-a', { page: 1, limit: 20 }, admin, { search: '   ' });
+      expect(searchCall(vazio.qb)).toBeUndefined();
+    });
+  });
+
   it('filtra pelo fornecedor selecionado', async () => {
     const { service, qb } = serviceParaLista();
 

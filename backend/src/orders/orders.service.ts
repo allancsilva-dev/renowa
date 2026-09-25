@@ -19,6 +19,7 @@ import {
 } from './order-write';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { decimal, money } from '../common/decimal/decimal';
+import { applySearch } from '../common/persistence/search-filter';
 import { isVendorOnly, vendorOwnershipWhere } from './order-ownership';
 
 type ReferenceTable = 'clientes' | 'usuarios' | 'fornecedores' | 'transportadoras' | 'produtos';
@@ -502,14 +503,13 @@ export class OrdersService {
     if (pgt) {
       qb.andWhere('o.pgt = :pgt', { pgt });
     }
-    if (search) {
-      qb.andWhere(
-        '(CAST(o.numero_pedido AS TEXT) ILIKE :search OR o.numero_pedido_externo ILIKE :search'
-        + ' OR o.sistema_origem ILIKE :search OR c.razao_social ILIKE :search OR c.cnpj ILIKE :search'
-        + ' OR fornecedor.razao_social ILIKE :search OR fornecedor.cnpj ILIKE :search)',
-        { search: `%${search}%` },
-      );
-    }
+    applySearch(qb, search, {
+      text: [
+        'CAST(o.numero_pedido AS TEXT)', 'o.numero_pedido_externo', 'o.sistema_origem',
+        'c.razao_social', 'fornecedor.razao_social',
+      ],
+      cnpj: ['c.cnpj', 'fornecedor.cnpj'],
+    });
     const [data, total] = await qb.orderBy('o.created_at', 'DESC')
       .skip((page - 1) * limit).take(limit).getManyAndCount();
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };

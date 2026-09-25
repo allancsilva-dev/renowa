@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronDown, EllipsisVertical, Plus } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
+import { useDebounce } from '@/hooks/useDebounce';
 import { fetchOrders, updateOrderStatus } from '@/services/orders.service';
 import {
   orderStatusLabel, orderStatusColor, orderOrigemLabel, orderOrigemColor,
@@ -28,6 +29,9 @@ export default function Pedidos() {
   const [origemFilter, setOrigemFilter] = useState<OrderOrigem | ''>('');
   const [pgtFilter, setPgtFilter] = useState('');
   const [search, setSearch] = useState('');
+  // Cada busca com dígitos de CNPJ custa regexp_replace por linha no backend:
+  // espera o usuário parar de digitar antes de consultar.
+  const debouncedSearch = useDebounce(search.trim());
   const [fornecedorFiltroUuid, setFornecedorFiltroUuid] = useState<string | null>(null);
   const [fornecedorFiltroLabel, setFornecedorFiltroLabel] = useState('');
   const [novoMenuAberto, setNovoMenuAberto] = useState(false);
@@ -42,11 +46,11 @@ export default function Pedidos() {
         ...params,
         status: statusFilter || undefined,
         origem: origemFilter || undefined,
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         fornecedor_uuid: fornecedorFiltroUuid || undefined,
         pgt: pgtFilter || undefined,
       }),
-    [statusFilter, origemFilter, search, fornecedorFiltroUuid, pgtFilter],
+    [statusFilter, origemFilter, debouncedSearch, fornecedorFiltroUuid, pgtFilter],
   );
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<Order>({ fetcher });

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Pedidos from './Pedidos';
 import type { Order } from '@/types';
 
@@ -78,6 +78,23 @@ describe('Pedidos — menu de ações', () => {
     mocks.fetcher!({ page: 1, limit: 20 });
     expect(mocks.fetchOrders.mock.lastCall?.[0].fornecedor_uuid).toBeUndefined();
   });
+  it('envia a busca aparada só depois do debounce', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Pedidos />);
+      fireEvent.change(screen.getByLabelText('Buscar pedidos'), { target: { value: ' 55566677000183 ' } });
+
+      mocks.fetcher!({ page: 1, limit: 20 });
+      expect(mocks.fetchOrders.mock.lastCall?.[0].search).toBeUndefined();
+
+      act(() => { vi.advanceTimersByTime(400); });
+      mocks.fetcher!({ page: 1, limit: 20 });
+      expect(mocks.fetchOrders).toHaveBeenLastCalledWith(expect.objectContaining({ search: '55566677000183' }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('envia a forma de pagamento escolhida e some com o parâmetro ao limpar', () => {
     render(<Pedidos />);
 
