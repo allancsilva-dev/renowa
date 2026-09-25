@@ -293,9 +293,10 @@
   P.p4b = async function () {
     if (!ok('cliente da p4 disponível para editar', !!st.ids.cliente, st.ids.cliente || '')) return 'sem cliente';
     await screen('/clientes/' + st.ids.cliente + '/editar', 'Cliente — remover transportadora');
-    var transportadora = document.querySelector('[name="transportadora_uuid"]');
+    /* virou AsyncCombobox (33d06a8): sem `name`, limpa-se digitando vazio */
+    var transportadora = document.querySelector('input[role=combobox][aria-label="Transportadora"]');
     if (!ok('campo Transportadora encontrado na edição', !!transportadora)) return 'sem transportadora';
-    Q.nativeSet(transportadora, '');
+    await Q.clearCombobox(transportadora);
     var semTransporte = await Q.submitForm(document);
     ok('submit sem transportadora clicou', semTransporte.ok, semTransporte.why || '');
     await waitFor(function () { return location.pathname === '/clientes'; }, 9000);
@@ -344,6 +345,16 @@
     var rep2 = await fillAll(document, { tag: 'pedido-itens', comboQuery: S, skip: /Fornecedor|Cliente/i, passes: 2 });
     ok('itens preenchidos', rep2.length > 0, rep2.length + ' campos');
 
+    /* O preenchimento genérico escolhe o MESMO produto em todo item, e o backend
+       recusa produto repetido (uq_itens_pedido_produto) mesmo com códigos
+       diferentes — BACKLOG-0097. Item 1 fica com o produto (a p8 exige a foto
+       dele no papel); os demais viram item manual. */
+    var produtos = all('input[role=combobox]').filter(function (el) {
+      return Q.vis(el) && /^Buscar produto do item (\d+)$/.test(el.getAttribute('aria-label') || '')
+        && el.getAttribute('aria-label') !== 'Buscar produto do item 1';
+    });
+    for (var pi = 0; pi < produtos.length; pi++) await Q.clearCombobox(produtos[pi]);
+
     /* códigos distintos por linha: o vínculo automático de foto exige match único */
     var cods = all('input').filter(function (el) {
       return Q.vis(el) && !el.disabled && /^C[oó]digo$/i.test((el.closest('label') && el.closest('label').innerText || '').trim());
@@ -358,20 +369,35 @@
       esperado.push(c);
       await sleep(150);
     }
-    ok('cada item recebeu código próprio', esperado.length >= 1, esperado.join(', '));
-    var vazios = Q.emptyControls(document);
+    await sleep(300);
+    /* relê a tela: setar o valor não prova que o React guardou */
+    var naTela = cods.map(function (el) { return el.value; });
+    ok('cada item recebeu código próprio', esperado.length >= 2 && naTela.join('|') === esperado.join('|'),
+      'digitado=' + esperado.join(',') + ' tela=' + naTela.join(','));
+    ok('form não acusa item repetido', !/já está (no pedido|em outro item)/.test(Q.bodyText()),
+      (Q.bodyText().match(/[^\n]*já está (no pedido|em outro item)[^\n]*/) || [''])[0]);
+    /* os combobox de produto limpos acima ficam vazios de propósito (item manual) */
+    var limpos = produtos.length;
+    var vazios = Q.emptyControls(document).filter(function (label) {
+      if (label === 'Produto cadastrado' && limpos > 0) { limpos -= 1; return false; }
+      return true;
+    });
     ok('nenhum campo ficou vazio (pedido interno)', vazios.length === 0, vazios.join(', '));
 
+    var marca = Q.netMark();
     var s = await Q.submitForm(document);
     ok('submit do pedido clicou', s.ok, s.why || '');
     await waitFor(function () { return /^\/pedidos(\/[0-9a-f-]{36})?$/.test(location.pathname); }, 12000);
+    var post = Q.lastNet('POST', /\/api\/pedidos$/, marca);
+    if (!ok('POST /pedidos respondeu 201', post && post.status === 201, post ? post.status : 'sem POST')) return 'POST falhou';
     var e = Q.screenErrors();
     ok('pedido salvo sem mensagem de erro', !e, e || '');
 
-    var l = await api('GET', '/pedidos?limit=50');
+    /* só o pedido desta rodada: cair em pedido de outra rodada contaminava
+       p7c/p9/p14 (BACKLOG-0097) */
+    var l = await api('GET', '/pedidos?limit=50&search=' + encodeURIComponent(S));
     var arr = (l.body && l.body.data) || [];
-    var row = arr.filter(function (o) { return o.origem !== 'externo' && JSON.stringify(o).indexOf(S) >= 0; })[0]
-      || arr.filter(function (o) { return o.origem !== 'externo'; })[0];
+    var row = arr.filter(function (o) { return o.origem !== 'externo' && JSON.stringify(o).indexOf(S) >= 0; })[0];
     ok('pedido interno persistido na API', !!row, l.status + ' n=' + arr.length);
     if (!row) return 'não salvou';
     st.ids.pedido = row.uuid; st.ids.pedidoNumero = row.numero_pedido; Q.flush();
@@ -389,6 +415,18 @@
     ok('desconto digitado (10%) foi salvo', num(it0.desconto_perc) === 10, 'desconto=' + it0.desconto_perc);
     ok('IPI digitado (10%) foi salvo', num(it0.ipi_perc) === 10, 'ipi=' + it0.ipi_perc);
     st.ids.itemCodigos = esperado; Q.flush();
+
+    /* BACKLOG-0094: CNPJ digitado só com dígitos acha o pedido cujo CNPJ foi gravado com máscara */
+    var cnpjCli = (det.cliente && det.cliente.cnpj) || '';
+    var digitos = cnpjCli.replace(/\D/g, '');
+    if (ok('cliente do pedido tem CNPJ para buscar', digitos.length >= 5, cnpjCli)) {
+      var buscas = [digitos, cnpjCli];
+      for (var b = 0; b < buscas.length; b++) {
+        var r = await api('GET', '/pedidos?limit=50&search=' + encodeURIComponent(buscas[b]));
+        var achou = ((r.body && r.body.data) || []).some(function (o) { return o.uuid === row.uuid; });
+        ok('busca de Pedidos por CNPJ "' + buscas[b] + '" acha o pedido', achou, r.status + ' gravado=' + cnpjCli);
+      }
+    }
     return { uuid: row.uuid, numero: row.numero_pedido, itens: itens.length, codigos: esperado, vazios: vazios };
   };
 
@@ -482,7 +520,13 @@
     await settle();
     var busca = field(/Buscar|Pesquisar/) || all('input[type=search], input[placeholder]').filter(Q.vis)[0];
     if (busca) { Q.nativeSet(busca, S, true); await sleep(1500); await settle(); }
-    ok('p5b: listagem não mostra mais o pedido de teste', Q.bodyText().indexOf(S) < 0, busca ? 'buscado ' + S : 'sem campo de busca');
+    /* Pelo uuid, não pelo stamp: o pedido da p5 (mesmo stamp, cliente "QA Teste S")
+       continua vivo e aparece na mesma busca de propósito. */
+    var uuidB = String(out.pedido || '').split('/').pop();
+    var lista = await api('GET', '/pedidos?limit=50&search=' + encodeURIComponent(S));
+    var aindaLa = ((lista.body && lista.body.data) || []).some(function (o) { return o.uuid === uuidB; });
+    ok('p5b: listagem não mostra mais o pedido de teste', lista.status === 200 && !aindaLa,
+      (busca ? 'buscado ' + S : 'sem campo de busca') + ' uuid=' + uuidB);
     return out;
   };
 
@@ -673,11 +717,27 @@
   /* ---------------- P9 — faturamento ---------------- */
   P.p9 = async function () {
     await screen('/faturamento', 'Faturamento');
-    var rep0 = await fillAll(document, { tag: 'faturamento-filtros' });
+    /* a busca fica de fora do preenchimento genérico: texto aleatório (ou o CNPJ
+       que valueFor gera pelo placeholder) esvaziaria a fila */
+    var rep0 = await fillAll(document, { tag: 'faturamento-filtros', skip: /Buscar|pedido, CNPJ/i });
     ok('filtros do faturamento aceitos sem erro', !Q.screenErrors(), Q.screenErrors() || '');
     await sleep(800);
 
-    var emitir = btn(/Registrar nota|Emitir|Faturar/i);
+    /* busca pelo número do pedido-alvo e registra a nota NA linha dele */
+    var linhaAlvo = null;
+    var busca = document.querySelector('input[type=search][aria-label="Buscar pedidos a faturar"]');
+    ok('barra de busca do faturamento existe', !!busca);
+    var uuidAlvo = st.ids.pedidoLiberado || st.ids.pedido;
+    if (busca && uuidAlvo) {
+      var pb = (await api('GET', '/pedidos/' + uuidAlvo)).body || {};
+      var numAlvo = pb.numero_pedido != null ? pb.numero_pedido : (pb.data || {}).numero_pedido;
+      Q.nativeSet(busca, String(numAlvo)); await sleep(1200); await settle();
+      var reNum = new RegExp('#' + numAlvo + '(?!\\d)');
+      linhaAlvo = all('tbody tr').filter(function (tr) { return Q.vis(tr) && reNum.test(tr.innerText); })[0] || null;
+      ok('busca por nº do pedido acha o pedido no faturamento', !!linhaAlvo, '#' + numAlvo);
+    }
+
+    var emitir = linhaAlvo ? btn(/Registrar nota/i, linhaAlvo) : btn(/Registrar nota|Emitir|Faturar/i);
     ok('ação de emitir nota existe', !!emitir, emitir && emitir.innerText);
     if (emitir) {
       emitir.click(); await sleep(900); await settle();

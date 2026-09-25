@@ -280,6 +280,28 @@
     return { ok: true, picked: label };
   }
 
+  /* AsyncCombobox: digitar no campo chama onChange(null) (handleInputChange).
+     Sem blur, pelo mesmo motivo do fillCombobox; Escape fecha a lista aberta. */
+  async function clearCombobox(el) {
+    el.click(); el.focus();
+    nativeSet(el, '', true);
+    await sleep(300);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await sleep(200);
+  }
+
+  /* Registro de rede mais recente que casa método + URL, a partir de `desde`
+     (índice de st.net). Sucesso de save se prova pelo status HTTP: o texto da
+     tela não pega toda mensagem de erro (ERR_RE não casa "está repetido"). */
+  function netMark() { return st.net.length; }
+  function lastNet(method, re, desde) {
+    for (var i = st.net.length - 1; i >= (desde || 0); i--) {
+      var rec = st.net[i];
+      if (String(rec.m).toUpperCase() === method && re.test(rec.u)) return rec;
+    }
+    return null;
+  }
+
   /* Preenche todo controle visível e habilitado dentro de `root`.
      Devolve o relatório campo por campo. */
   async function fillAll(root, opts) {
@@ -383,6 +405,7 @@
     btnByText: btnByText, ok: ok, note: note, api: api, go: go, settle: settle, dlg: dlg,
     fillAll: fillAll, fillComplete: fillComplete, fillCombobox: fillCombobox, emptyControls: emptyControls,
     submitForm: submitForm, screenErrors: screenErrors, bodyText: bodyText,
+    clearCombobox: clearCombobox, netMark: netMark, lastNet: lastNet,
     cnpj: cnpj, today: today, jpegBlob: jpegBlob, STAMP: STAMP, phases: phases,
     /* Primitivas de campo: uma fase que precisa sobrescrever UM campo depois do
        preenchimento genérico usa estas, em vez de reimplementar o setter nativo

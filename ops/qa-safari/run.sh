@@ -82,6 +82,9 @@ case "${1:-}" in
     ;;
   all)
     "$0" reset >/dev/null
+    # STAMP é calculado na injeção a partir do estado salvo: sem reinjetar depois
+    # do reset, a rodada herda o stamp (e os CNPJs/códigos) da anterior.
+    "$0" inject >/dev/null
     FASES=(p0 p1 p2 p3 p3b p4 p4b p5 p5b p6 p6b p7 p8 p7c p8b p9 p10 p11 p12 p13 p14)
     for f in $FASES; do
       print -r -- "── $f"
