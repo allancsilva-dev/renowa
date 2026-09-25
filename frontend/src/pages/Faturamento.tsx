@@ -5,6 +5,7 @@ import DataTable from '@/components/tables/DataTable';
 import Dialog from '@/components/ui/Dialog';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
+import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
 import { fetchFaturamentoPedidos, registrarNota, type FaturamentoPedidoRow } from '@/services/faturamento.service';
@@ -30,9 +31,12 @@ export default function Faturamento() {
   // renova na abertura do diálogo e sobrevive a quantas tentativas forem.
   const { uuid: uuidDaNota, renovar: renovarUuidDaNota } = useUuidDeCriacao();
 
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search.trim());
+
   const fetcher = useCallback(
-    (params: { page: number; limit: number }) => fetchFaturamentoPedidos(params),
-    [],
+    (params: { page: number; limit: number }) => fetchFaturamentoPedidos({ ...params, search: debouncedSearch || undefined }),
+    [debouncedSearch],
   );
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<FaturamentoPedidoRow>({ fetcher });
@@ -158,6 +162,15 @@ export default function Faturamento() {
         <p className='text-sm text-slate-500 mt-1'>Pedidos liberados aguardando ou em processo de faturamento.</p>
       </div>
 
+      <input
+        type='search'
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder='Nº pedido, CNPJ ou razão social'
+        aria-label='Buscar pedidos a faturar'
+        className='min-h-11 w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+      />
+
       <DataTable
         columns={columns}
         data={data}
@@ -166,8 +179,8 @@ export default function Faturamento() {
         onRetry={reload}
         meta={meta ?? undefined}
         onPageChange={goToPage}
-        emptyTitle='Nenhum pedido para faturar'
-        emptyDescription='Pedidos liberados aparecem aqui para registro de notas fiscais.'
+        emptyTitle={debouncedSearch ? 'Nenhum pedido encontrado para a busca' : 'Nenhum pedido para faturar'}
+        emptyDescription={debouncedSearch ? 'Confira o número do pedido, o CNPJ ou a razão social.' : 'Pedidos liberados aparecem aqui para registro de notas fiscais.'}
       />
 
       {notaPedido && (

@@ -120,6 +120,28 @@ describe('FaturamentoService', () => {
       });
     });
 
+    it('sem busca não adiciona filtro de texto', async () => {
+      const service = filaComPedidos([]);
+      await service.findPedidos(tenantId, { page: 1, limit: 20 });
+      const qb = (service as any).orderRepo.createQueryBuilder.mock.results[0].value;
+      expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('ILIKE'), expect.anything());
+    });
+
+    it('busca por nº do pedido (interno/externo), razão social e CNPJ de cliente e fornecedor', async () => {
+      const service = filaComPedidos([]);
+      await service.findPedidos(tenantId, { page: 1, limit: 20, search: '12.345.678/0001-90' });
+      const qb = (service as any).orderRepo.createQueryBuilder.mock.results[0].value;
+      const [where, params] = qb.andWhere.mock.calls.find(([sql]: [string]) => sql.includes('ILIKE'));
+      for (const expr of [
+        'CAST(o.numero_pedido AS TEXT)', 'o.numero_pedido_externo', 'cliente.razao_social',
+        'fornecedor.razao_social', 'cliente.cnpj', 'fornecedor.cnpj',
+      ]) {
+        expect(where).toContain(`${expr} ILIKE :search`);
+      }
+      expect(where).toContain("regexp_replace(fornecedor.cnpj, '\\D', '', 'g') LIKE :searchDigits");
+      expect(params).toEqual({ search: '%12.345.678/0001-90%', searchDigits: '%12345678000190%' });
+    });
+
     it('trata pedido legado sem `origem` como interno', async () => {
       const service = filaComPedidos([buildOrder({ id: 1, origem: null } as unknown as Partial<Order>)]);
 

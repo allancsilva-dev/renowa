@@ -46,6 +46,7 @@ export interface FaturamentoFinalizacao {
 export async function fetchFaturamentoPedidos(params: {
   page?: number;
   limit?: number;
+  search?: string;
 }): Promise<PaginatedResponse<FaturamentoPedidoRow>> {
   const { data } = await api.get<PaginatedResponse<FaturamentoPedidoRow>>('/faturamento/pedidos', { params });
   return data;

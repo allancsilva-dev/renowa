@@ -10,6 +10,7 @@ import { UpdateNotaFiscalDto } from './dto/update-nota-fiscal.dto';
 import { FinalizarFaturamentoDto, ReabrirFaturamentoDto } from './dto/finalizar-faturamento.dto';
 import { FaturamentoFinalizacao } from './entities/faturamento-finalizacao.entity';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
+import { applySearch } from '../common/persistence/search-filter';
 import { decimal, money, percentageOf } from '../common/decimal/decimal';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 
@@ -62,6 +63,10 @@ export class FaturamentoService {
       .where('o.tenant_id = :tenantId', { tenantId })
       .andWhere('o.deleted_at IS NULL')
       .andWhere("o.status IN ('liberado', 'parcialmente_faturado')");
+    applySearch(qb, pagination.search, {
+      text: ['CAST(o.numero_pedido AS TEXT)', 'o.numero_pedido_externo', 'cliente.razao_social', 'fornecedor.razao_social'],
+      cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
+    });
 
     const [orders, total] = await qb
       .orderBy('o.created_at', 'DESC')
