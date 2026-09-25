@@ -12,6 +12,7 @@ import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto'
 import { PaginationDto } from '../common/dto/pagination.dto';
 import {
   LancamentosQueryDto, MovimentacoesQueryDto, ComissoesQueryDto, ParceirosQueryDto, FaturadosQueryDto,
+  VendasPorEmpresaQueryDto,
 } from './dto/query-financeiro.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
@@ -164,16 +165,15 @@ export class FinanceController {
   @Get('comissoes/por-empresa')
   @RequirePermission('financeiro.ver')
   async vendasPorEmpresa(
-    @Query('fornecedor_id') fornecedor_id: string,
-    @Query('mes') mes: string,
-    @Query('ano') ano: string,
+    @Query() query: VendasPorEmpresaQueryDto,
     @CurrentUser() user: RequestUser,
   ) {
     return this.financeService.getVendasPorEmpresa(
       user.tenantId,
-      mes ? Number(mes) : undefined,
-      ano ? Number(ano) : undefined,
-      fornecedor_id ? Number(fornecedor_id) : undefined,
+      query.mes ? Number(query.mes) : undefined,
+      query.ano ? Number(query.ano) : undefined,
+      query.fornecedor_id ? Number(query.fornecedor_id) : undefined,
+      query.search || undefined,
     );
   }
 
@@ -188,6 +188,7 @@ export class FinanceController {
       mes: query.mes ? Number(query.mes) : undefined,
       ano: query.ano ? Number(query.ano) : undefined,
       status: query.status || undefined,
+      search: query.search || undefined,
     });
   }
 
@@ -248,6 +249,7 @@ export class FinanceController {
       nome_parceiro: query.nome_parceiro || undefined,
       mes: query.mes ? Number(query.mes) : undefined,
       ano: query.ano ? Number(query.ano) : undefined,
+      search: query.search || undefined,
     });
   }
 

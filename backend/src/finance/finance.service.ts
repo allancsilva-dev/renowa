@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository, SelectQueryBuilder } from 'typeorm';
 import { FinanceMovement } from './entities/finance-movement.entity';
 import { Commission } from './entities/commission.entity';
 import { Inadimplencia } from './entities/inadimplencia.entity';
@@ -14,6 +14,7 @@ import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-ina
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { decimal, money, percentageOf, sumMoney } from '../common/decimal/decimal';
 import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
+import { applySearch } from '../common/persistence/search-filter';
 
 @Injectable()
 export class FinanceService {
@@ -64,13 +65,13 @@ export class FinanceService {
     if (filters.mes) qb.andWhere(`EXTRACT(MONTH FROM ${effectiveDate}) = :mes`, { mes: filters.mes });
     if (filters.ano) qb.andWhere(`EXTRACT(YEAR FROM ${effectiveDate}) = :ano`, { ano: filters.ano });
     if (filters.fornecedor_uuid) qb.andWhere('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid: filters.fornecedor_uuid });
-    if (filters.search) {
-      qb.andWhere(
-        '(n.numero_nota ILIKE :search OR n.serie ILIKE :search OR CAST(pedido.numero_pedido AS TEXT) ILIKE :search'
-        + ' OR cliente.razao_social ILIKE :search OR fornecedor.razao_social ILIKE :search OR fornecedor.cnpj ILIKE :search)',
-        { search: `%${filters.search}%` },
-      );
-    }
+    applySearch(qb, filters.search, {
+      text: [
+        'n.numero_nota', 'n.serie', 'CAST(pedido.numero_pedido AS TEXT)', 'pedido.numero_pedido_externo',
+        'cliente.razao_social', 'fornecedor.razao_social',
+      ],
+      cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
+    });
     const total = await qb.getCount();
     const data = await qb.select([
       'n.uuid AS uuid', 'n.version AS version', 'n.numero_nota AS numero_nota', 'n.serie AS serie',
@@ -330,10 +331,24 @@ export class FinanceService {
     });
   }
 
+  /**
+   * Comissão criada pela nota copia só o número interno do pedido
+   * (`numero_pedido`); o número externo mora no pedido. O join só entra com
+   * busca e é N:1, então não multiplica linhas nem mexe na paginação.
+   */
+  private applyComissaoSearch(qb: SelectQueryBuilder<Commission>, search?: string): void {
+    if (!search?.trim()) return;
+    qb.leftJoin('c.pedido', 'pedido', 'pedido.tenant_id = c.tenant_id');
+    applySearch(qb, search, {
+      text: ['c.numero_pedido', 'c.numero_nfe', 'pedido.numero_pedido_externo', 'cliente.razao_social', 'fornecedor.razao_social'],
+      cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
+    });
+  }
+
   async findAllComissoes(
     tenantId: string,
     pagination: PaginationDto,
-    filters?: { fornecedor_id?: number; mes?: number; ano?: number; status?: string },
+    filters?: { fornecedor_id?: number; mes?: number; ano?: number; status?: string; search?: string },
   ): Promise<PaginatedResponse<Commission>> {
     const { page = 1, limit = 50 } = pagination;
 
@@ -354,6 +369,7 @@ export class FinanceService {
     if (filters?.status) {
       qb.andWhere('c.status = :status', { status: filters.status });
     }
+    this.applyComissaoSearch(qb, filters?.search);
     if (filters?.mes && filters?.ano) {
       qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes: filters.mes })
         .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
@@ -412,6 +428,7 @@ export class FinanceService {
     mes?: number,
     ano?: number,
     fornecedor_id?: number,
+    search?: string,
   ): Promise<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Commission[] }[]> {
     const qb = this.comissaoRepo
       .createQueryBuilder('c')
@@ -426,6 +443,7 @@ export class FinanceService {
       .andWhere('c.fornecedor_id IS NOT NULL');
 
     if (fornecedor_id) qb.andWhere('c.fornecedor_id = :fornecedor_id', { fornecedor_id });
+    this.applyComissaoSearch(qb, search);
     if (mes && ano) {
       qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes })
         .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
@@ -522,7 +540,7 @@ export class FinanceService {
   async findAllParceiros(
     tenantId: string,
     pagination: PaginationDto,
-    filters?: { nome_parceiro?: string; mes?: number; ano?: number },
+    filters?: { nome_parceiro?: string; mes?: number; ano?: number; search?: string },
   ): Promise<PaginatedResponse<Parceiro>> {
     const { page = 1, limit = 50 } = pagination;
 
@@ -540,6 +558,13 @@ export class FinanceService {
     if (filters?.nome_parceiro) {
       qb.andWhere('LOWER(p.nome_parceiro) LIKE :nome', { nome: `%${filters.nome_parceiro.toLowerCase()}%` });
     }
+    applySearch(qb, filters?.search, {
+      text: [
+        'p.numero_pedido', 'p.numero_nfe', 'p.nome_parceiro', 'p.empresa_parceiro',
+        'cliente.razao_social', 'fornecedor.razao_social',
+      ],
+      cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
+    });
     if (filters?.mes && filters?.ano) {
       qb.andWhere('EXTRACT(MONTH FROM p.data_pedido) = :mes', { mes: filters.mes })
         .andWhere('EXTRACT(YEAR FROM p.data_pedido) = :ano', { ano: filters.ano });
@@ -616,6 +641,10 @@ export class FinanceService {
       .leftJoinAndSelect('i.cliente', 'c')
       .where('i.tenant_id = :tenantId', { tenantId })
       .andWhere('i.deleted_at IS NULL');
+    applySearch(qb, pagination.search, {
+      text: ['c.razao_social', 'i.empresa_devedora'],
+      cnpj: ['c.cnpj'],
+    });
 
     const [data, total] = await qb
       .orderBy('i.created_at', 'DESC')

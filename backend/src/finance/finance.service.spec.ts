@@ -129,6 +129,90 @@ describe('FinanceService — listagem de comissões', () => {
   });
 });
 
+describe('FinanceService — busca nas listagens', () => {
+  function chainQb(methods: string[]) {
+    const qb: any = {};
+    for (const method of methods) qb[method] = jest.fn().mockReturnValue(qb);
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    qb.getMany = jest.fn().mockResolvedValue([]);
+    return qb;
+  }
+  const searchCall = (qb: any) => qb.andWhere.mock.calls.find(([sql]: [string]) => sql.includes('ILIKE'));
+
+  it('comissões: sem busca não faz join com pedido nem filtra texto', async () => {
+    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { search: '  ' });
+
+    expect(qb.leftJoin).not.toHaveBeenCalled();
+    expect(searchCall(qb)).toBeUndefined();
+  });
+
+  it('comissões: busca nº pedido interno e externo, NF, razão social e CNPJ', async () => {
+    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { search: 'PED-77' });
+
+    expect(qb.leftJoin).toHaveBeenCalledWith('c.pedido', 'pedido', 'pedido.tenant_id = c.tenant_id');
+    const [where, params] = searchCall(qb);
+    for (const expr of ['c.numero_pedido', 'c.numero_nfe', 'pedido.numero_pedido_externo', 'cliente.razao_social', 'fornecedor.razao_social', 'cliente.cnpj', 'fornecedor.cnpj']) {
+      expect(where).toContain(`${expr} ILIKE :search`);
+    }
+    expect(params).toEqual({ search: '%PED-77%' });
+  });
+
+  it('vendas por empresa aplica a mesma busca de comissões', async () => {
+    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'orderBy']);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.getVendasPorEmpresa('tenant-a', 9, 2026, undefined, 'Acme');
+
+    expect(qb.leftJoin).toHaveBeenCalledWith('c.pedido', 'pedido', 'pedido.tenant_id = c.tenant_id');
+    expect(searchCall(qb)[1]).toEqual({ search: '%Acme%' });
+  });
+
+  it('parceiros: busca nº pedido, NF, parceiro, razão social e CNPJ', async () => {
+    const qb = chainQb(['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'skip', 'take']);
+    const service = new FinanceService({} as any, {} as any, {} as any, { createQueryBuilder: () => qb } as any, {} as any);
+
+    await service.findAllParceiros('tenant-a', { page: 1, limit: 50 }, { search: '123456' });
+
+    const [where, params] = searchCall(qb);
+    for (const expr of ['p.numero_pedido', 'p.numero_nfe', 'p.nome_parceiro', 'p.empresa_parceiro', 'cliente.cnpj', 'fornecedor.cnpj']) {
+      expect(where).toContain(`${expr} ILIKE :search`);
+    }
+    expect(params).toEqual({ search: '%123456%', searchDigits: '%123456%' });
+  });
+
+  it('inadimplência: busca razão social, CNPJ do cliente e empresa devedora', async () => {
+    const qb = chainQb(['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'skip', 'take']);
+    const service = new FinanceService({} as any, {} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any);
+
+    await service.findAllInadimplencia('tenant-a', { page: 1, limit: 20, search: 'Acme' });
+
+    expect(searchCall(qb)).toEqual([
+      '(c.razao_social ILIKE :search OR i.empresa_devedora ILIKE :search OR c.cnpj ILIKE :search)',
+      { search: '%Acme%' },
+    ]);
+  });
+
+  it('faturados: busca também CNPJ do cliente e nº externo do pedido', async () => {
+    const qb = chainQb(['innerJoin', 'leftJoin', 'where', 'andWhere', 'select', 'orderBy', 'addOrderBy', 'offset', 'limit']);
+    qb.getCount = jest.fn().mockResolvedValue(0);
+    qb.getRawMany = jest.fn().mockResolvedValue([]);
+    const dataSource = { getRepository: () => ({ createQueryBuilder: () => qb }) } as any;
+    const service = new FinanceService({} as any, {} as any, {} as any, {} as any, dataSource);
+
+    await service.findFaturados('tenant-a', { page: 1, limit: 20 }, { search: 'x' });
+
+    const [where] = searchCall(qb);
+    expect(where).toContain('cliente.cnpj ILIKE :search');
+    expect(where).toContain('pedido.numero_pedido_externo ILIKE :search');
+  });
+});
+
 describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo de caixa', () => {
   const tenantId = 'tenant-a';
   const uuid = 'a1a1a1a1-1111-1111-1111-111111111111';

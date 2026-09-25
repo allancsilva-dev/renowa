@@ -43,3 +43,74 @@ describe('Financeiro — Faturados', () => {
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/faturados', expect.objectContaining({ params: expect.objectContaining({ mes: expect.any(Number), ano: expect.any(Number) }) })));
   });
 });
+
+describe('Financeiro — busca por nº pedido, CNPJ ou razão social', () => {
+  const vazio = { data: { data: [], meta: { total: 0, page: 1, limit: 100, totalPages: 0 } } };
+
+  function mockPadrao(overrides: (url: string, config?: { params?: Record<string, unknown> }) => unknown = () => undefined) {
+    mocks.get.mockImplementation(async (url: string, config?: { params?: Record<string, unknown> }) => {
+      const resposta = overrides(url, config);
+      if (resposta !== undefined) return resposta;
+      if (url.startsWith('/financeiro/fluxo-caixa')) {
+        return { data: { data: { receitas: '0.00', custos: '0.00', saldo: '0.00', lancamentos: [] } } };
+      }
+      return vazio;
+    });
+  }
+
+  it('Inadimplência envia a busca ao servidor e mostra estado vazio da busca', async () => {
+    mockPadrao();
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Inadimplência' }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Buscar inadimplência' }), { target: { value: ' Acme & Filhos ' } });
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/inadimplencia', { params: { limit: 100, search: 'Acme & Filhos' } }));
+    expect(await screen.findByText('Nenhum registro encontrado para a busca.')).toBeInTheDocument();
+  });
+
+  it('Empresas codifica o CNPJ com máscara na URL', async () => {
+    mockPadrao();
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Empresas' }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Buscar vendas por empresa' }), { target: { value: '12.345.678/0001-90' } });
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(expect.stringContaining('search=12.345.678%2F0001-90')));
+  });
+
+  it('Comissão envia a busca na listagem, não no resumo do período', async () => {
+    mockPadrao((url) => (url.startsWith('/financeiro/comissoes/resumo') ? { data: { total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' } } : undefined));
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Comissão' }));
+    fireEvent.change(await screen.findByRole('searchbox', { name: 'Buscar comissões' }), { target: { value: '1234' } });
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(expect.stringMatching(/^\/financeiro\/comissoes\?.*search=1234/)));
+    expect(mocks.get).not.toHaveBeenCalledWith(expect.stringMatching(/comissoes\/resumo.*search=/));
+  });
+
+  it('Parceiros descarta resposta de busca antiga que chega depois da atual', async () => {
+    let liberarAntiga: (value: unknown) => void = () => {};
+    const parceiro = (nome: string) => ({ data: { data: [{
+      uuid: nome, version: 1, nome_parceiro: nome, empresa_parceiro: null, cliente: null, fornecedor: null,
+      numero_pedido: null, numero_nfe: null, data_pedido: '2026-09-01', valor_pedido: '0.00', valor_comissao: '10.00', status: 'pendente',
+    }], meta: { total: 1, page: 1, limit: 100, totalPages: 1 } } });
+    mockPadrao((url, config) => {
+      if (url !== '/financeiro/parceiros') return undefined;
+      if (!config?.params?.search) return vazio;
+      if (config.params.search === 'antiga') return new Promise((resolve) => { liberarAntiga = resolve; });
+      return parceiro('Parceiro Atual');
+    });
+
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Parceiros' }));
+    const busca = await screen.findByRole('searchbox', { name: 'Buscar parceiros' });
+    fireEvent.change(busca, { target: { value: 'antiga' } });
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/parceiros', expect.objectContaining({ params: expect.objectContaining({ search: 'antiga' }) })));
+    fireEvent.change(busca, { target: { value: 'atual' } });
+    expect(await screen.findByText('Parceiro Atual')).toBeInTheDocument();
+
+    liberarAntiga(parceiro('Parceiro Antigo'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('Parceiro Antigo')).not.toBeInTheDocument();
+    expect(screen.getByText('Parceiro Atual')).toBeInTheDocument();
+  });
+});

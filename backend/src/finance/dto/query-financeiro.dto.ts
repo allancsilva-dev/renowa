@@ -58,3 +58,11 @@ export class FaturadosQueryDto extends PaginationDto {
   @IsOptional() @IsString() ano?: string;
   @IsOptional() @IsUUID() fornecedor_uuid?: string;
 }
+
+/** Sem paginação: a rota agrupa tudo do período por fornecedor. */
+export class VendasPorEmpresaQueryDto {
+  @IsOptional() @IsString() fornecedor_id?: string;
+  @IsOptional() @IsString() mes?: string;
+  @IsOptional() @IsString() ano?: string;
+  @IsOptional() @IsString() search?: string;
+}

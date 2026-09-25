@@ -1,4 +1,4 @@
-import { cloneElement, useState, useEffect, useCallback, useId } from 'react';
+import { cloneElement, useState, useEffect, useCallback, useId, useRef } from 'react';
 import { Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2 } from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
@@ -135,6 +135,40 @@ function FiltroMesAno({
       </select>
     </div>
   );
+}
+
+const BUSCA_PLACEHOLDER = 'Nº pedido, CNPJ ou razão social';
+
+/** Busca das abas, filtrada no servidor; o debounce evita uma requisição por tecla. */
+function useBusca() {
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search.trim());
+  return { search, setSearch, debouncedSearch };
+}
+
+function BuscaInput({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  return (
+    <input
+      type='search'
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={BUSCA_PLACEHOLDER}
+      className={`${inputCls} max-w-xs`}
+    />
+  );
+}
+
+/**
+ * Cada busca digitada dispara uma requisição; sem esta guarda, a resposta de
+ * um termo antigo que chega por último sobrescreve a lista do termo atual.
+ */
+function useRequisicaoAtual() {
+  const ultima = useRef(0);
+  return useCallback(() => {
+    const id = ++ultima.current;
+    return () => id === ultima.current;
+  }, []);
 }
 
 function BtnPrimary({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
@@ -404,7 +438,7 @@ function Faturados() {
   return <div className='space-y-4'>
     <div className='flex flex-wrap items-center gap-3'>
       <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
-      <input type='search' aria-label='Buscar faturados' value={search} onChange={(event) => setSearch(event.target.value)} placeholder='NF, pedido, cliente ou fornecedor' className={`${inputCls} max-w-xs`} />
+      <input type='search' aria-label='Buscar faturados' value={search} onChange={(event) => setSearch(event.target.value)} placeholder='NF, nº pedido, CNPJ ou razão social' className={`${inputCls} max-w-xs`} />
       <div className='min-w-56 max-w-xs flex-1'>
         <AsyncCombobox key={`faturados-${fornecedores.length}`} ariaLabel='Filtrar faturados por fornecedor' value={fornecedorUuid || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorUuid(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} placeholder='Todos os fornecedores' className={inputCls} />
       </div>
@@ -442,17 +476,22 @@ function Empresas() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { search, setSearch, debouncedSearch } = useBusca();
+  const novaRequisicao = useRequisicaoAtual();
+
   const load = useCallback(() => {
+    const atual = novaRequisicao();
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ mes: String(mes), ano: String(ano) });
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
+    if (debouncedSearch) params.set('search', debouncedSearch);
     api
       .get(`/financeiro/comissoes/por-empresa?${params.toString()}`)
-      .then((r) => setGrupos((r.data as { data: typeof grupos }).data ?? r.data ?? []))
-      .catch(() => { setGrupos([]); setError('Não foi possível carregar vendas por empresa.'); })
-      .finally(() => setLoading(false));
-  }, [mes, ano, fornecedorId]);
+      .then((r) => { if (atual()) setGrupos((r.data as { data: typeof grupos }).data ?? r.data ?? []); })
+      .catch(() => { if (atual()) { setGrupos([]); setError('Não foi possível carregar vendas por empresa.'); } })
+      .finally(() => { if (atual()) setLoading(false); });
+  }, [mes, ano, fornecedorId, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -464,6 +503,7 @@ function Empresas() {
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center gap-2'>
         <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+        <BuscaInput value={search} onChange={setSearch} label='Buscar vendas por empresa' />
         {podeVerFornecedores && (
           <div className='min-w-56'>
             <AsyncCombobox key={`empresas-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por empresa' placeholder='Todas as empresas' />
@@ -552,24 +592,31 @@ function ComissaoAlune() {
   const [savingPagamento, setSavingPagamento] = useState(false);
   const [pagamentoError, setPagamentoError] = useState<string | null>(null);
 
+  const { search, setSearch, debouncedSearch } = useBusca();
+  const novaRequisicao = useRequisicaoAtual();
+
   const load = useCallback(() => {
+    const atual = novaRequisicao();
     setLoading(true);
     setError(null);
     const params = new URLSearchParams({ mes: String(mes), ano: String(ano), limit: '100' });
     if (status) params.set('status', status);
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
+    if (debouncedSearch) params.set('search', debouncedSearch);
 
+    // O resumo é do período inteiro: a busca filtra só a lista.
     Promise.all([
       api.get(`/financeiro/comissoes?${params}`),
       api.get(`/financeiro/comissoes/resumo?mes=${mes}&ano=${ano}`),
     ])
       .then(([r1, r2]) => {
+        if (!atual()) return;
         setComissoes((r1.data as { data: Comissao[] }).data ?? r1.data ?? []);
         setResumo((r2.data as { data: typeof resumo }).data ?? r2.data ?? { total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
       })
-      .catch(() => setError('Não foi possível carregar comissões.'))
-      .finally(() => setLoading(false));
-  }, [mes, ano, status, fornecedorId]);
+      .catch(() => { if (atual()) setError('Não foi possível carregar comissões.'); })
+      .finally(() => { if (atual()) setLoading(false); });
+  }, [mes, ano, status, fornecedorId, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -641,6 +688,7 @@ function ComissaoAlune() {
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div className='flex flex-wrap items-center gap-2'>
           <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+          <BuscaInput value={search} onChange={setSearch} label='Buscar comissões' />
           {podeVerFornecedores && (
             <div className='min-w-56'>
               <AsyncCombobox key={`comissoes-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por fornecedor' placeholder='Todos fornecedores' />
@@ -805,14 +853,18 @@ function Parceiros() {
   const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
   const [error, setError] = useState<string | null>(null);
 
+  const { search, setSearch, debouncedSearch } = useBusca();
+  const novaRequisicao = useRequisicaoAtual();
+
   const load = useCallback(() => {
+    const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    api.get(`/financeiro/parceiros?mes=${mes}&ano=${ano}&limit=100`)
-      .then((r) => setParceiros((r.data as { data: Parceiro[] }).data ?? r.data ?? []))
-      .catch(() => { setParceiros([]); setError('Não foi possível carregar parceiros.'); })
-      .finally(() => setLoading(false));
-  }, [mes, ano]);
+    api.get('/financeiro/parceiros', { params: { mes, ano, limit: 100, search: debouncedSearch || undefined } })
+      .then((r) => { if (atual()) setParceiros((r.data as { data: Parceiro[] }).data ?? r.data ?? []); })
+      .catch(() => { if (atual()) { setParceiros([]); setError('Não foi possível carregar parceiros.'); } })
+      .finally(() => { if (atual()) setLoading(false); });
+  }, [mes, ano, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -853,7 +905,10 @@ function Parceiros() {
   return (
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
-        <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+        <div className='flex flex-wrap items-center gap-2'>
+          <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+          <BuscaInput value={search} onChange={setSearch} label='Buscar parceiros' />
+        </div>
         <Can permission='financeiro.editar'>
           <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
         </Can>
@@ -1151,14 +1206,18 @@ function InadimplenciaTab() {
   const { uuid: uuidDeCriacao, renovar: renovarUuidDeCriacao } = useUuidDeCriacao();
   const [writeError, setWriteError] = useState<string | null>(null);
 
+  const { search, setSearch, debouncedSearch } = useBusca();
+  const novaRequisicao = useRequisicaoAtual();
+
   const load = useCallback(() => {
+    const atual = novaRequisicao();
     setLoading(true);
     setWriteError(null);
-    api.get('/financeiro/inadimplencia?limit=100')
-      .then((r) => setItems((r.data as { data: Inadimplencia[] }).data ?? r.data ?? []))
-      .catch(() => { setItems([]); setWriteError('Não foi possível carregar a inadimplência.'); })
-      .finally(() => setLoading(false));
-  }, []);
+    api.get('/financeiro/inadimplencia', { params: { limit: 100, search: debouncedSearch || undefined } })
+      .then((r) => { if (atual()) setItems((r.data as { data: Inadimplencia[] }).data ?? r.data ?? []); })
+      .catch(() => { if (atual()) { setItems([]); setWriteError('Não foi possível carregar a inadimplência.'); } })
+      .finally(() => { if (atual()) setLoading(false); });
+  }, [debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1200,10 +1259,11 @@ function InadimplenciaTab() {
 
   return (
     <div className='space-y-5'>
-      <div className='flex items-center justify-between'>
+      <div className='flex flex-wrap items-center justify-between gap-3'>
+        <BuscaInput value={search} onChange={setSearch} label='Buscar inadimplência' />
         {items.length > 0 && (
           <span className='text-sm font-medium text-red-600'>
-            Total em aberto: {BRL.format(moneyForDisplay(total))}
+            {debouncedSearch ? 'Total em aberto na busca' : 'Total em aberto'}: {BRL.format(moneyForDisplay(total))}
           </span>
         )}
         <div className='ml-auto'>
@@ -1215,6 +1275,10 @@ function InadimplenciaTab() {
 
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
+      ) : items.length === 0 && debouncedSearch ? (
+        <div className='rounded-xl bg-white border border-slate-100 shadow-sm py-14 text-center'>
+          <p className='text-slate-600 font-medium'>Nenhum registro encontrado para a busca.</p>
+        </div>
       ) : items.length === 0 ? (
         <div className='rounded-xl bg-white border border-slate-100 shadow-sm py-14 text-center'>
           <CheckCircle2 className='mx-auto mb-3 h-8 w-8 text-teal-500' />
