@@ -54,6 +54,29 @@ describe('Financeiro — Faturados', () => {
       params: expect.objectContaining({ data_inicio: '2026-01-01', data_fim: '2026-02-01' }),
     })));
   });
+
+  it('mantém o intervalo válido ao cruzar as extremidades', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } } });
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Faturados' }));
+
+    const inicio = await screen.findByLabelText('Data inicial');
+    const fim = screen.getByLabelText('Data final');
+    fireEvent.change(inicio, { target: { value: '2027-01-15' } });
+
+    expect(inicio).toHaveValue('2027-01-15');
+    expect(fim).toHaveValue('2027-01-15');
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/faturados', expect.objectContaining({
+      params: expect.objectContaining({ data_inicio: '2027-01-15', data_fim: '2027-01-15' }),
+    })));
+
+    fireEvent.change(fim, { target: { value: '2026-12-20' } });
+    expect(inicio).toHaveValue('2026-12-20');
+    expect(fim).toHaveValue('2026-12-20');
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/faturados', expect.objectContaining({
+      params: expect.objectContaining({ data_inicio: '2026-12-20', data_fim: '2026-12-20' }),
+    })));
+  });
 });
 
 describe('Financeiro — intervalo nas demais abas', () => {

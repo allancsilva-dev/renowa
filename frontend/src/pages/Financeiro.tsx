@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import type { PaginatedResponse } from '@/types';
 import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
 import { filterLocalOptions } from '@/lib/relationOptions';
+import EmptyState from '@/components/feedback/EmptyState';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -105,6 +106,11 @@ const inputCls =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 w-full';
 const labelCls = 'text-xs font-semibold uppercase tracking-wide text-slate-500';
 
+interface Periodo {
+  inicio: string;
+  fim: string;
+}
+
 function writeErrorMessage(error: unknown): string {
   const apiError = error as {
     response?: { status?: number; data?: { error?: { code?: string; message?: string } } };
@@ -140,24 +146,32 @@ function FiltroMesAno({
 }
 
 function FiltroIntervaloDatas({
-  dataInicio, setDataInicio, dataFim, setDataFim,
+  value, onChange,
 }: {
-  dataInicio: string;
-  setDataInicio: (data: string) => void;
-  dataFim: string;
-  setDataFim: (data: string) => void;
+  value: Periodo;
+  onChange: (periodo: Periodo) => void;
 }) {
+  function changeInicio(inicio: string) {
+    if (!inicio) return;
+    onChange({ inicio, fim: inicio > value.fim ? inicio : value.fim });
+  }
+
+  function changeFim(fim: string) {
+    if (!fim) return;
+    onChange({ inicio: fim < value.inicio ? fim : value.inicio, fim });
+  }
+
   return (
-    <>
-      <label className='flex flex-col gap-1'>
+    <div className='grid min-w-0 grid-cols-2 gap-2 xl:w-72 xl:shrink-0'>
+      <label className='flex min-w-0 flex-col gap-1'>
         <span className={labelCls}>Data inicial</span>
-        <input type='date' required aria-label='Data inicial' value={dataInicio} onChange={(event) => { if (event.target.value) setDataInicio(event.target.value); }} className={inputCls} />
+        <input type='date' required aria-label='Data inicial' value={value.inicio} max={value.fim} onChange={(event) => changeInicio(event.target.value)} className={`${inputCls} min-h-11`} />
       </label>
-      <label className='flex flex-col gap-1'>
+      <label className='flex min-w-0 flex-col gap-1'>
         <span className={labelCls}>Data final</span>
-        <input type='date' required aria-label='Data final' value={dataFim} onChange={(event) => { if (event.target.value) setDataFim(event.target.value); }} className={inputCls} />
+        <input type='date' required aria-label='Data final' value={value.fim} min={value.inicio} onChange={(event) => changeFim(event.target.value)} className={`${inputCls} min-h-11`} />
       </label>
-    </>
+    </div>
   );
 }
 
@@ -170,16 +184,39 @@ function useBusca() {
   return { search, setSearch, debouncedSearch };
 }
 
-function BuscaInput({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+function BuscaInput({ value, onChange, label, placeholder = BUSCA_PLACEHOLDER }: { value: string; onChange: (value: string) => void; label: string; placeholder?: string }) {
   return (
-    <input
-      type='search'
-      aria-label={label}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      placeholder={BUSCA_PLACEHOLDER}
-      className={`${inputCls} max-w-xs`}
-    />
+    <label className='flex min-w-0 flex-col gap-1 xl:min-w-64 xl:max-w-sm xl:flex-1'>
+      <span className={labelCls}>Busca</span>
+      <input
+        type='search'
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className={`${inputCls} min-h-11`}
+      />
+    </label>
+  );
+}
+
+function FinanceToolbar({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className='grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end'>
+      <div className='grid min-w-0 grid-cols-1 items-end gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-end'>
+        {children}
+      </div>
+      {action && <div className='justify-self-end'>{action}</div>}
+    </div>
+  );
+}
+
+function RelationFilter({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className='flex min-w-0 flex-col gap-1 xl:w-56 xl:shrink-0'>
+      <span className={labelCls}>{label}</span>
+      {children}
+    </div>
   );
 }
 
@@ -321,12 +358,13 @@ function FluxoCaixa() {
 
   return (
     <div className='space-y-5'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
-        <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      <FinanceToolbar action={(
         <Can permission='financeiro.editar'>
           <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
         </Can>
-      </div>
+      )}>
+        <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      </FinanceToolbar>
       <WriteError message={error} />
 
       {loading ? (
@@ -446,8 +484,7 @@ function useFornecedoresFiltro() {
 
 function Faturados() {
   const navigate = useNavigate();
-  const [dataInicio, setDataInicio] = useState(currentMonthStart);
-  const [dataFim, setDataFim] = useState(currentMonthEnd);
+  const [periodo, setPeriodo] = useState<Periodo>({ inicio: currentMonthStart, fim: currentMonthEnd });
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search.trim());
   const [fornecedorUuid, setFornecedorUuid] = useState('');
@@ -461,23 +498,23 @@ function Faturados() {
   }, []);
   const fetcher = useCallback(async ({ page, limit }: { page: number; limit: number }) => {
     const { data } = await api.get<PaginatedResponse<Faturado>>('/financeiro/faturados', {
-      params: { page, limit, data_inicio: dataInicio, data_fim: dataFim, search: debouncedSearch || undefined, fornecedor_uuid: fornecedorUuid || undefined },
+      params: { page, limit, data_inicio: periodo.inicio, data_fim: periodo.fim, search: debouncedSearch || undefined, fornecedor_uuid: fornecedorUuid || undefined },
     });
     return data;
-  }, [dataFim, dataInicio, fornecedorUuid, debouncedSearch]);
+  }, [periodo, fornecedorUuid, debouncedSearch]);
   const query = usePaginatedQuery<Faturado>({ fetcher });
   const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
     fornecedores.map((fornecedor) => ({ value: fornecedor.uuid, label: fornecedor.razao_social })), term, page,
   ));
 
   return <div className='space-y-4'>
-    <div className='flex flex-wrap items-center gap-3'>
-      <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
-      <input type='search' aria-label='Buscar faturados' value={search} onChange={(event) => setSearch(event.target.value)} placeholder='NF, nº pedido, CNPJ ou razão social' className={`${inputCls} max-w-xs`} />
-      <div className='min-w-56 max-w-xs flex-1'>
+    <FinanceToolbar>
+      <FiltroIntervaloDatas value={periodo} onChange={setPeriodo} />
+      <BuscaInput value={search} onChange={setSearch} label='Buscar faturados' placeholder='NF, nº pedido, CNPJ ou razão social' />
+      <RelationFilter label='Fornecedor'>
         <AsyncCombobox key={`faturados-${fornecedores.length}`} ariaLabel='Filtrar faturados por fornecedor' value={fornecedorUuid || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorUuid(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} placeholder='Todos os fornecedores' className={inputCls} />
-      </div>
-    </div>
+      </RelationFilter>
+    </FinanceToolbar>
     <WriteError message={fornecedoresError} />
     <DataTable<Faturado>
       columns={[
@@ -502,8 +539,7 @@ function Faturados() {
 }
 
 function Empresas() {
-  const [dataInicio, setDataInicio] = useState(currentMonthStart);
-  const [dataFim, setDataFim] = useState(currentMonthEnd);
+  const [periodo, setPeriodo] = useState<Periodo>({ inicio: currentMonthStart, fim: currentMonthEnd });
   const [fornecedorId, setFornecedorId] = useState('');
   const [fornecedorLabel, setFornecedorLabel] = useState('');
   const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
@@ -518,7 +554,7 @@ function Empresas() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ data_inicio: dataInicio, data_fim: dataFim });
+    const params = new URLSearchParams({ data_inicio: periodo.inicio, data_fim: periodo.fim });
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
     if (debouncedSearch) params.set('search', debouncedSearch);
     api
@@ -526,7 +562,7 @@ function Empresas() {
       .then((r) => { if (atual()) setGrupos((r.data as { data: typeof grupos }).data ?? r.data ?? []); })
       .catch(() => { if (atual()) { setGrupos([]); setError('Não foi possível carregar vendas por empresa.'); } })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [dataInicio, dataFim, fornecedorId, debouncedSearch, novaRequisicao]);
+  }, [periodo, fornecedorId, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -536,23 +572,24 @@ function Empresas() {
 
   return (
     <div className='space-y-5'>
-      <div className='flex flex-wrap items-center gap-2'>
-        <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
+      <FinanceToolbar>
+        <FiltroIntervaloDatas value={periodo} onChange={setPeriodo} />
         <BuscaInput value={search} onChange={setSearch} label='Buscar vendas por empresa' />
         {podeVerFornecedores && (
-          <div className='min-w-56'>
+          <RelationFilter label='Empresa'>
             <AsyncCombobox key={`empresas-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por empresa' placeholder='Todas as empresas' />
-          </div>
+          </RelationFilter>
         )}
-      </div>
+      </FinanceToolbar>
       <WriteError message={fornecedoresError} />
       <WriteError message={error} />
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
       ) : grupos.length === 0 ? (
-        <div className='py-10 text-center text-sm text-slate-400'>
-          {fornecedorId ? 'Esta empresa não teve vendas no período' : 'Nenhuma venda registrada no período'}
-        </div>
+        <EmptyState
+          title={fornecedorId ? 'Esta empresa não teve vendas no período' : 'Nenhuma venda registrada no período'}
+          description='Ajuste o período ou os filtros para consultar outras vendas.'
+        />
       ) : (
         grupos.map((g) => (
           <div key={g.fornecedor_id} className='space-y-2'>
@@ -606,8 +643,7 @@ function ComissaoAlune() {
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('financeiro.editar');
 
-  const [dataInicio, setDataInicio] = useState(currentMonthStart);
-  const [dataFim, setDataFim] = useState(currentMonthEnd);
+  const [periodo, setPeriodo] = useState<Periodo>({ inicio: currentMonthStart, fim: currentMonthEnd });
   const [status, setStatus] = useState('');
   const [fornecedorId, setFornecedorId] = useState('');
   const [fornecedorLabel, setFornecedorLabel] = useState('');
@@ -631,7 +667,7 @@ function ComissaoAlune() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ data_inicio: dataInicio, data_fim: dataFim, limit: '100' });
+    const params = new URLSearchParams({ data_inicio: periodo.inicio, data_fim: periodo.fim, limit: '100' });
     if (status) params.set('status', status);
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
     if (debouncedSearch) params.set('search', debouncedSearch);
@@ -639,7 +675,7 @@ function ComissaoAlune() {
     // O resumo é do período inteiro: a busca filtra só a lista.
     Promise.all([
       api.get(`/financeiro/comissoes?${params}`),
-      api.get(`/financeiro/comissoes/resumo?data_inicio=${dataInicio}&data_fim=${dataFim}`),
+      api.get(`/financeiro/comissoes/resumo?data_inicio=${periodo.inicio}&data_fim=${periodo.fim}`),
     ])
       .then(([r1, r2]) => {
         if (!atual()) return;
@@ -648,7 +684,7 @@ function ComissaoAlune() {
       })
       .catch(() => { if (atual()) setError('Não foi possível carregar comissões.'); })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [dataInicio, dataFim, status, fornecedorId, debouncedSearch, novaRequisicao]);
+  }, [periodo, status, fornecedorId, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -710,30 +746,30 @@ function ComissaoAlune() {
     }
   }
 
-  const sel = 'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-primary';
   const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
     fornecedores.map((fornecedor) => ({ value: String(fornecedor.id), label: fornecedor.razao_social })), term, page,
   ));
 
   return (
     <div className='space-y-5'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
-        <div className='flex flex-wrap items-center gap-2'>
-          <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
-          <BuscaInput value={search} onChange={setSearch} label='Buscar comissões' />
-          {podeVerFornecedores && (
-            <div className='min-w-56'>
-              <AsyncCombobox key={`comissoes-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por fornecedor' placeholder='Todos fornecedores' />
-            </div>
-          )}
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className={sel}>
+      <FinanceToolbar>
+        <FiltroIntervaloDatas value={periodo} onChange={setPeriodo} />
+        <BuscaInput value={search} onChange={setSearch} label='Buscar comissões' />
+        {podeVerFornecedores && (
+          <RelationFilter label='Fornecedor'>
+            <AsyncCombobox key={`comissoes-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por fornecedor' placeholder='Todos fornecedores' className={`${inputCls} min-h-11`} />
+          </RelationFilter>
+        )}
+        <label className='flex min-w-0 flex-col gap-1 xl:w-36 xl:shrink-0'>
+          <span className={labelCls}>Status</span>
+          <select aria-label='Filtrar por status' value={status} onChange={(e) => setStatus(e.target.value)} className={`${inputCls} h-11`}>
             <option value=''>Todos status</option>
             <option value='em_aberto'>Em aberto</option>
             <option value='pago'>Pago</option>
             <option value='bloqueado'>Bloqueado</option>
           </select>
-        </div>
-      </div>
+        </label>
+      </FinanceToolbar>
       <WriteError message={fornecedoresError} />
       <WriteError message={error} />
 
@@ -863,8 +899,7 @@ function ComissaoAlune() {
 // ─── Tab: Parceiros ───────────────────────────────────────────────────────────
 
 function Parceiros() {
-  const [dataInicio, setDataInicio] = useState(currentMonthStart);
-  const [dataFim, setDataFim] = useState(currentMonthEnd);
+  const [periodo, setPeriodo] = useState<Periodo>({ inicio: currentMonthStart, fim: currentMonthEnd });
   const [parceiros, setParceiros] = useState<Parceiro[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -891,11 +926,11 @@ function Parceiros() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    api.get('/financeiro/parceiros', { params: { data_inicio: dataInicio, data_fim: dataFim, limit: 100, search: debouncedSearch || undefined } })
+    api.get('/financeiro/parceiros', { params: { data_inicio: periodo.inicio, data_fim: periodo.fim, limit: 100, search: debouncedSearch || undefined } })
       .then((r) => { if (atual()) setParceiros((r.data as { data: Parceiro[] }).data ?? r.data ?? []); })
       .catch(() => { if (atual()) { setParceiros([]); setError('Não foi possível carregar parceiros.'); } })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [dataInicio, dataFim, debouncedSearch, novaRequisicao]);
+  }, [periodo, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -935,21 +970,20 @@ function Parceiros() {
 
   return (
     <div className='space-y-5'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
-        <div className='flex flex-wrap items-center gap-2'>
-          <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
-          <BuscaInput value={search} onChange={setSearch} label='Buscar parceiros' />
-        </div>
+      <FinanceToolbar action={(
         <Can permission='financeiro.editar'>
           <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Lançamento</BtnPrimary>
         </Can>
-      </div>
+      )}>
+        <FiltroIntervaloDatas value={periodo} onChange={setPeriodo} />
+        <BuscaInput value={search} onChange={setSearch} label='Buscar parceiros' />
+      </FinanceToolbar>
       <WriteError message={error} />
 
       {loading ? (
         <div className='py-8 text-center text-sm text-slate-400'>Carregando...</div>
       ) : Object.keys(grupos).length === 0 ? (
-        <div className='py-10 text-center text-sm text-slate-400'>Nenhum parceiro no período</div>
+        <EmptyState title='Nenhum parceiro no período' description='Ajuste o período ou a busca para consultar outros lançamentos.' />
       ) : (
         Object.values(grupos).map((g) => (
           <div key={g.nome} className='space-y-2'>
@@ -1155,12 +1189,13 @@ function Custos() {
 
   return (
     <div className='space-y-5'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
-        <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      <FinanceToolbar action={(
         <Can permission='financeiro.editar'>
           <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Novo Custo</BtnPrimary>
         </Can>
-      </div>
+      )}>
+        <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      </FinanceToolbar>
 
       <WriteError message={writeError} />
 
@@ -1290,17 +1325,16 @@ function InadimplenciaTab() {
 
   return (
     <div className='space-y-5'>
-      <div className='flex flex-wrap items-center justify-between gap-3'>
+      <FinanceToolbar action={(
+        <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Registrar</BtnPrimary>
+      )}>
         <BuscaInput value={search} onChange={setSearch} label='Buscar inadimplência' />
         {items.length > 0 && (
-          <span className='text-sm font-medium text-red-600'>
+          <span className='flex min-h-11 items-center text-sm font-medium text-red-600 xl:shrink-0'>
             {debouncedSearch ? 'Total em aberto na busca' : 'Total em aberto'}: {BRL.format(moneyForDisplay(total))}
           </span>
         )}
-        <div className='ml-auto'>
-          <BtnPrimary onClick={() => setShowForm(true)}><Plus className='h-4 w-4' />Registrar</BtnPrimary>
-        </div>
-      </div>
+      </FinanceToolbar>
 
       <WriteError message={writeError} />
 
