@@ -56,6 +56,57 @@ describe('Financeiro — Faturados', () => {
   });
 });
 
+describe('Financeiro — intervalo nas demais abas', () => {
+  const vazio = { data: { data: [], meta: { total: 0, page: 1, limit: 100, totalPages: 0 } } };
+
+  function mockVazio() {
+    mocks.get.mockImplementation(async (url: string) => {
+      if (url.startsWith('/financeiro/fluxo-caixa')) {
+        return { data: { data: { receitas: '0.00', custos: '0.00', saldo: '0.00', lancamentos: [] } } };
+      }
+      if (url.startsWith('/financeiro/comissoes/resumo')) {
+        return { data: { data: { total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00', bloqueado: '0.00' } } };
+      }
+      return vazio;
+    });
+  }
+
+  it('Empresas envia intervalo selecionado', async () => {
+    mockVazio();
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Empresas' }));
+    fireEvent.change(await screen.findByLabelText('Data inicial'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Data final'), { target: { value: '2026-02-01' } });
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(expect.stringMatching(/^\/financeiro\/comissoes\/por-empresa\?.*data_inicio=2026-01-01.*data_fim=2026-02-01/)));
+  });
+
+  it('Parceiros envia intervalo selecionado', async () => {
+    mockVazio();
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Parceiros' }));
+    fireEvent.change(await screen.findByLabelText('Data inicial'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Data final'), { target: { value: '2026-02-01' } });
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/parceiros', expect.objectContaining({
+      params: expect.objectContaining({ data_inicio: '2026-01-01', data_fim: '2026-02-01' }),
+    })));
+  });
+
+  it('Comissão usa mesmo intervalo na lista e no resumo', async () => {
+    mockVazio();
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Comissão' }));
+    fireEvent.change(await screen.findByLabelText('Data inicial'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Data final'), { target: { value: '2026-02-01' } });
+
+    await waitFor(() => {
+      expect(mocks.get).toHaveBeenCalledWith(expect.stringMatching(/^\/financeiro\/comissoes\?.*data_inicio=2026-01-01.*data_fim=2026-02-01/));
+      expect(mocks.get).toHaveBeenCalledWith('/financeiro/comissoes/resumo?data_inicio=2026-01-01&data_fim=2026-02-01');
+    });
+  });
+});
+
 describe('Financeiro — busca por nº pedido, CNPJ ou razão social', () => {
   const vazio = { data: { data: [], meta: { total: 0, page: 1, limit: 100, totalPages: 0 } } };
 

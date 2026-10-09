@@ -146,6 +146,57 @@ describe('FinanceService — listagem de comissões', () => {
     expect(qb.orderBy).toHaveBeenCalledWith('data_ordem', 'DESC');
     expect(qb.orderBy).not.toHaveBeenCalledWith(expect.stringContaining('('), expect.anything());
   });
+
+  it('prioriza intervalo inclusivo sobre mês e ano', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, {
+      data_inicio: '2026-01-01', data_fim: '2026-02-01', mes: 9, ano: 2026,
+    });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('>= :dataInicio'), { dataInicio: '2026-01-01' });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('<= :dataFim'), { dataFim: '2026-02-01' });
+    expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('EXTRACT(MONTH'), expect.anything());
+  });
+
+  it('usa mesmo intervalo no resumo', async () => {
+    const qb = chainableQueryBuilder({ total: null, faturado: null, pendente: null, pago: null, bloqueado: null });
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.getResumoComissoes('tenant-a', { data_inicio: '2026-01-01', data_fim: '2026-02-01' });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('>= :dataInicio'), { dataInicio: '2026-01-01' });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('<= :dataFim'), { dataFim: '2026-02-01' });
+  });
+
+  it('usa mesmo intervalo nas vendas por empresa', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy']) qb[method] = jest.fn().mockReturnValue(qb);
+    qb.getMany = jest.fn().mockResolvedValue([]);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.getVendasPorEmpresa('tenant-a', { data_inicio: '2026-01-01', data_fim: '2026-02-01' });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('>= :dataInicio'), { dataInicio: '2026-01-01' });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('<= :dataFim'), { dataFim: '2026-02-01' });
+  });
+
+  it('filtra parceiros inclusivamente pela data do pedido', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'skip', 'take']) qb[method] = jest.fn().mockReturnValue(qb);
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    const service = new FinanceService({} as any, {} as any, {} as any, { createQueryBuilder: () => qb } as any, {} as any);
+
+    await service.findAllParceiros('tenant-a', { page: 1, limit: 50 }, { data_inicio: '2026-01-01', data_fim: '2026-02-01' });
+
+    expect(qb.andWhere).toHaveBeenCalledWith('p.data_pedido >= :dataInicio', { dataInicio: '2026-01-01' });
+    expect(qb.andWhere).toHaveBeenCalledWith('p.data_pedido <= :dataFim', { dataFim: '2026-02-01' });
+  });
 });
 
 describe('FinanceService — busca nas listagens', () => {
@@ -186,7 +237,7 @@ describe('FinanceService — busca nas listagens', () => {
     const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'orderBy']);
     const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
 
-    await service.getVendasPorEmpresa('tenant-a', 9, 2026, undefined, 'Acme');
+    await service.getVendasPorEmpresa('tenant-a', { mes: 9, ano: 2026, search: 'Acme' });
 
     expect(qb.leftJoin).toHaveBeenCalledWith('c.pedido', 'pedido', 'pedido.tenant_id = c.tenant_id');
     expect(searchCall(qb)[1]).toEqual({ search: '%Acme%' });

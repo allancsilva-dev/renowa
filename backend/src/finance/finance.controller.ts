@@ -12,12 +12,21 @@ import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto'
 import { PaginationDto } from '../common/dto/pagination.dto';
 import {
   LancamentosQueryDto, MovimentacoesQueryDto, ComissoesQueryDto, ParceirosQueryDto, FaturadosQueryDto,
-  VendasPorEmpresaQueryDto,
+  ResumoComissoesQueryDto, VendasPorEmpresaQueryDto,
 } from './dto/query-financeiro.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { VersionDto } from '../common/dto/version.dto';
+
+function validateDateRange(query: { data_inicio?: string; data_fim?: string }): void {
+  if (Boolean(query.data_inicio) !== Boolean(query.data_fim)) {
+    throw new BadRequestException('Informe data_inicio e data_fim juntas.');
+  }
+  if (query.data_inicio && query.data_fim && query.data_inicio > query.data_fim) {
+    throw new BadRequestException('data_inicio não pode ser posterior a data_fim.');
+  }
+}
 
 @Controller('financeiro')
 export class FinanceController {
@@ -57,12 +66,7 @@ export class FinanceController {
   @Get('faturados')
   @RequirePermission('financeiro.ver')
   async faturados(@Query() query: FaturadosQueryDto, @CurrentUser() user: RequestUser) {
-    if (Boolean(query.data_inicio) !== Boolean(query.data_fim)) {
-      throw new BadRequestException('Informe data_inicio e data_fim juntas.');
-    }
-    if (query.data_inicio && query.data_fim && query.data_inicio > query.data_fim) {
-      throw new BadRequestException('data_inicio não pode ser posterior a data_fim.');
-    }
+    validateDateRange(query);
     return this.financeService.findFaturados(user.tenantId, query, {
       mes: query.mes ? Number(query.mes) : undefined,
       ano: query.ano ? Number(query.ano) : undefined,
@@ -159,15 +163,16 @@ export class FinanceController {
   @Get('comissoes/resumo')
   @RequirePermission('financeiro.ver')
   async resumoComissoes(
-    @Query('mes') mes: string,
-    @Query('ano') ano: string,
+    @Query() query: ResumoComissoesQueryDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.financeService.getResumoComissoes(
-      user.tenantId,
-      mes ? Number(mes) : undefined,
-      ano ? Number(ano) : undefined,
-    );
+    validateDateRange(query);
+    return this.financeService.getResumoComissoes(user.tenantId, {
+      mes: query.mes ? Number(query.mes) : undefined,
+      ano: query.ano ? Number(query.ano) : undefined,
+      data_inicio: query.data_inicio,
+      data_fim: query.data_fim,
+    });
   }
 
   @Get('comissoes/por-empresa')
@@ -176,13 +181,15 @@ export class FinanceController {
     @Query() query: VendasPorEmpresaQueryDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.financeService.getVendasPorEmpresa(
-      user.tenantId,
-      query.mes ? Number(query.mes) : undefined,
-      query.ano ? Number(query.ano) : undefined,
-      query.fornecedor_id ? Number(query.fornecedor_id) : undefined,
-      query.search || undefined,
-    );
+    validateDateRange(query);
+    return this.financeService.getVendasPorEmpresa(user.tenantId, {
+      mes: query.mes ? Number(query.mes) : undefined,
+      ano: query.ano ? Number(query.ano) : undefined,
+      data_inicio: query.data_inicio,
+      data_fim: query.data_fim,
+      fornecedor_id: query.fornecedor_id ? Number(query.fornecedor_id) : undefined,
+      search: query.search || undefined,
+    });
   }
 
   @Get('comissoes')
@@ -191,10 +198,13 @@ export class FinanceController {
     @Query() query: ComissoesQueryDto,
     @CurrentUser() user: RequestUser,
   ) {
+    validateDateRange(query);
     return this.financeService.findAllComissoes(user.tenantId, query, {
       fornecedor_id: query.fornecedor_id ? Number(query.fornecedor_id) : undefined,
       mes: query.mes ? Number(query.mes) : undefined,
       ano: query.ano ? Number(query.ano) : undefined,
+      data_inicio: query.data_inicio,
+      data_fim: query.data_fim,
       status: query.status || undefined,
       search: query.search || undefined,
     });
@@ -263,10 +273,13 @@ export class FinanceController {
     @Query() query: ParceirosQueryDto,
     @CurrentUser() user: RequestUser,
   ) {
+    validateDateRange(query);
     return this.financeService.findAllParceiros(user.tenantId, query, {
       nome_parceiro: query.nome_parceiro || undefined,
       mes: query.mes ? Number(query.mes) : undefined,
       ano: query.ano ? Number(query.ano) : undefined,
+      data_inicio: query.data_inicio,
+      data_fim: query.data_fim,
       search: query.search || undefined,
     });
   }

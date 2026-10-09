@@ -139,6 +139,28 @@ function FiltroMesAno({
   );
 }
 
+function FiltroIntervaloDatas({
+  dataInicio, setDataInicio, dataFim, setDataFim,
+}: {
+  dataInicio: string;
+  setDataInicio: (data: string) => void;
+  dataFim: string;
+  setDataFim: (data: string) => void;
+}) {
+  return (
+    <>
+      <label className='flex flex-col gap-1'>
+        <span className={labelCls}>Data inicial</span>
+        <input type='date' required aria-label='Data inicial' value={dataInicio} onChange={(event) => { if (event.target.value) setDataInicio(event.target.value); }} className={inputCls} />
+      </label>
+      <label className='flex flex-col gap-1'>
+        <span className={labelCls}>Data final</span>
+        <input type='date' required aria-label='Data final' value={dataFim} onChange={(event) => { if (event.target.value) setDataFim(event.target.value); }} className={inputCls} />
+      </label>
+    </>
+  );
+}
+
 const BUSCA_PLACEHOLDER = 'Nº pedido, CNPJ ou razão social';
 
 /** Busca das abas, filtrada no servidor; o debounce evita uma requisição por tecla. */
@@ -450,8 +472,7 @@ function Faturados() {
 
   return <div className='space-y-4'>
     <div className='flex flex-wrap items-center gap-3'>
-      <label className='flex flex-col gap-1'><span className={labelCls}>Data inicial</span><input type='date' required aria-label='Data inicial' value={dataInicio} onChange={(event) => { if (event.target.value) setDataInicio(event.target.value); }} className={inputCls} /></label>
-      <label className='flex flex-col gap-1'><span className={labelCls}>Data final</span><input type='date' required aria-label='Data final' value={dataFim} onChange={(event) => { if (event.target.value) setDataFim(event.target.value); }} className={inputCls} /></label>
+      <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
       <input type='search' aria-label='Buscar faturados' value={search} onChange={(event) => setSearch(event.target.value)} placeholder='NF, nº pedido, CNPJ ou razão social' className={`${inputCls} max-w-xs`} />
       <div className='min-w-56 max-w-xs flex-1'>
         <AsyncCombobox key={`faturados-${fornecedores.length}`} ariaLabel='Filtrar faturados por fornecedor' value={fornecedorUuid || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorUuid(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} placeholder='Todos os fornecedores' className={inputCls} />
@@ -481,8 +502,8 @@ function Faturados() {
 }
 
 function Empresas() {
-  const [mes, setMes] = useState(now.getMonth() + 1);
-  const [ano, setAno] = useState(now.getFullYear());
+  const [dataInicio, setDataInicio] = useState(currentMonthStart);
+  const [dataFim, setDataFim] = useState(currentMonthEnd);
   const [fornecedorId, setFornecedorId] = useState('');
   const [fornecedorLabel, setFornecedorLabel] = useState('');
   const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
@@ -497,7 +518,7 @@ function Empresas() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ mes: String(mes), ano: String(ano) });
+    const params = new URLSearchParams({ data_inicio: dataInicio, data_fim: dataFim });
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
     if (debouncedSearch) params.set('search', debouncedSearch);
     api
@@ -505,7 +526,7 @@ function Empresas() {
       .then((r) => { if (atual()) setGrupos((r.data as { data: typeof grupos }).data ?? r.data ?? []); })
       .catch(() => { if (atual()) { setGrupos([]); setError('Não foi possível carregar vendas por empresa.'); } })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [mes, ano, fornecedorId, debouncedSearch, novaRequisicao]);
+  }, [dataInicio, dataFim, fornecedorId, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -516,7 +537,7 @@ function Empresas() {
   return (
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center gap-2'>
-        <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+        <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
         <BuscaInput value={search} onChange={setSearch} label='Buscar vendas por empresa' />
         {podeVerFornecedores && (
           <div className='min-w-56'>
@@ -585,8 +606,8 @@ function ComissaoAlune() {
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('financeiro.editar');
 
-  const [mes, setMes] = useState(now.getMonth() + 1);
-  const [ano, setAno] = useState(now.getFullYear());
+  const [dataInicio, setDataInicio] = useState(currentMonthStart);
+  const [dataFim, setDataFim] = useState(currentMonthEnd);
   const [status, setStatus] = useState('');
   const [fornecedorId, setFornecedorId] = useState('');
   const [fornecedorLabel, setFornecedorLabel] = useState('');
@@ -610,7 +631,7 @@ function ComissaoAlune() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ mes: String(mes), ano: String(ano), limit: '100' });
+    const params = new URLSearchParams({ data_inicio: dataInicio, data_fim: dataFim, limit: '100' });
     if (status) params.set('status', status);
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
     if (debouncedSearch) params.set('search', debouncedSearch);
@@ -618,7 +639,7 @@ function ComissaoAlune() {
     // O resumo é do período inteiro: a busca filtra só a lista.
     Promise.all([
       api.get(`/financeiro/comissoes?${params}`),
-      api.get(`/financeiro/comissoes/resumo?mes=${mes}&ano=${ano}`),
+      api.get(`/financeiro/comissoes/resumo?data_inicio=${dataInicio}&data_fim=${dataFim}`),
     ])
       .then(([r1, r2]) => {
         if (!atual()) return;
@@ -627,7 +648,7 @@ function ComissaoAlune() {
       })
       .catch(() => { if (atual()) setError('Não foi possível carregar comissões.'); })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [mes, ano, status, fornecedorId, debouncedSearch, novaRequisicao]);
+  }, [dataInicio, dataFim, status, fornecedorId, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -698,7 +719,7 @@ function ComissaoAlune() {
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div className='flex flex-wrap items-center gap-2'>
-          <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+          <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
           <BuscaInput value={search} onChange={setSearch} label='Buscar comissões' />
           {podeVerFornecedores && (
             <div className='min-w-56'>
@@ -842,8 +863,8 @@ function ComissaoAlune() {
 // ─── Tab: Parceiros ───────────────────────────────────────────────────────────
 
 function Parceiros() {
-  const [mes, setMes] = useState(now.getMonth() + 1);
-  const [ano, setAno] = useState(now.getFullYear());
+  const [dataInicio, setDataInicio] = useState(currentMonthStart);
+  const [dataFim, setDataFim] = useState(currentMonthEnd);
   const [parceiros, setParceiros] = useState<Parceiro[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -870,11 +891,11 @@ function Parceiros() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    api.get('/financeiro/parceiros', { params: { mes, ano, limit: 100, search: debouncedSearch || undefined } })
+    api.get('/financeiro/parceiros', { params: { data_inicio: dataInicio, data_fim: dataFim, limit: 100, search: debouncedSearch || undefined } })
       .then((r) => { if (atual()) setParceiros((r.data as { data: Parceiro[] }).data ?? r.data ?? []); })
       .catch(() => { if (atual()) { setParceiros([]); setError('Não foi possível carregar parceiros.'); } })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [mes, ano, debouncedSearch, novaRequisicao]);
+  }, [dataInicio, dataFim, debouncedSearch, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -916,7 +937,7 @@ function Parceiros() {
     <div className='space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div className='flex flex-wrap items-center gap-2'>
-          <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+          <FiltroIntervaloDatas dataInicio={dataInicio} setDataInicio={setDataInicio} dataFim={dataFim} setDataFim={setDataFim} />
           <BuscaInput value={search} onChange={setSearch} label='Buscar parceiros' />
         </div>
         <Can permission='financeiro.editar'>

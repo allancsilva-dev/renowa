@@ -389,7 +389,7 @@ export class FinanceService {
   async findAllComissoes(
     tenantId: string,
     pagination: PaginationDto,
-    filters?: { fornecedor_id?: number; mes?: number; ano?: number; status?: string; search?: string },
+    filters?: { fornecedor_id?: number; mes?: number; ano?: number; data_inicio?: string; data_fim?: string; status?: string; search?: string },
   ): Promise<PaginatedResponse<Commission>> {
     const { page = 1, limit = 50 } = pagination;
 
@@ -412,7 +412,10 @@ export class FinanceService {
       else qb.andWhere('c.status = :status', { status: filters.status });
     }
     this.applyComissaoSearch(qb, filters?.search);
-    if (filters?.mes && filters?.ano) {
+    if (filters?.data_inicio && filters.data_fim) {
+      qb.andWhere('COALESCE(c.data_faturamento, c.data_pedido) >= :dataInicio', { dataInicio: filters.data_inicio })
+        .andWhere('COALESCE(c.data_faturamento, c.data_pedido) <= :dataFim', { dataFim: filters.data_fim });
+    } else if (filters?.mes && filters?.ano) {
       qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes: filters.mes })
         .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
     } else if (filters?.ano) {
@@ -431,7 +434,10 @@ export class FinanceService {
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
-  async getResumoComissoes(tenantId: string, mes?: number, ano?: number): Promise<{
+  async getResumoComissoes(
+    tenantId: string,
+    filters?: { mes?: number; ano?: number; data_inicio?: string; data_fim?: string },
+  ): Promise<{
     total: string;
     faturado: string;
     pendente: string;
@@ -450,11 +456,14 @@ export class FinanceService {
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.deleted_at IS NULL');
 
-    if (mes && ano) {
-      qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes })
-        .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
-    } else if (ano) {
-      qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
+    if (filters?.data_inicio && filters.data_fim) {
+      qb.andWhere('COALESCE(c.data_faturamento, c.data_pedido) >= :dataInicio', { dataInicio: filters.data_inicio })
+        .andWhere('COALESCE(c.data_faturamento, c.data_pedido) <= :dataFim', { dataFim: filters.data_fim });
+    } else if (filters?.mes && filters?.ano) {
+      qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes: filters.mes })
+        .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
+    } else if (filters?.ano) {
+      qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
     }
 
     const result = await qb.getRawOne<{ total: string; faturado: string; pendente: string; pago: string; bloqueado: string }>();
@@ -470,10 +479,7 @@ export class FinanceService {
 
   async getVendasPorEmpresa(
     tenantId: string,
-    mes?: number,
-    ano?: number,
-    fornecedor_id?: number,
-    search?: string,
+    filters?: { mes?: number; ano?: number; data_inicio?: string; data_fim?: string; fornecedor_id?: number; search?: string },
   ): Promise<{ fornecedor_id: number; razao_social: string; total_faturado: string; total_comissao: string; registros: Commission[] }[]> {
     const qb = this.comissaoRepo
       .createQueryBuilder('c')
@@ -487,13 +493,16 @@ export class FinanceService {
       .andWhere('c.deleted_at IS NULL')
       .andWhere('c.fornecedor_id IS NOT NULL');
 
-    if (fornecedor_id) qb.andWhere('c.fornecedor_id = :fornecedor_id', { fornecedor_id });
-    this.applyComissaoSearch(qb, search);
-    if (mes && ano) {
-      qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes })
-        .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
-    } else if (ano) {
-      qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
+    if (filters?.fornecedor_id) qb.andWhere('c.fornecedor_id = :fornecedor_id', { fornecedor_id: filters.fornecedor_id });
+    this.applyComissaoSearch(qb, filters?.search);
+    if (filters?.data_inicio && filters.data_fim) {
+      qb.andWhere('COALESCE(c.data_faturamento, c.data_pedido) >= :dataInicio', { dataInicio: filters.data_inicio })
+        .andWhere('COALESCE(c.data_faturamento, c.data_pedido) <= :dataFim', { dataFim: filters.data_fim });
+    } else if (filters?.mes && filters?.ano) {
+      qb.andWhere('EXTRACT(MONTH FROM COALESCE(c.data_faturamento, c.data_pedido)) = :mes', { mes: filters.mes })
+        .andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
+    } else if (filters?.ano) {
+      qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
     }
 
     const registros = await qb.orderBy('COALESCE(c.data_faturamento, c.data_pedido)', 'DESC').getMany();
@@ -585,7 +594,7 @@ export class FinanceService {
   async findAllParceiros(
     tenantId: string,
     pagination: PaginationDto,
-    filters?: { nome_parceiro?: string; mes?: number; ano?: number; search?: string },
+    filters?: { nome_parceiro?: string; mes?: number; ano?: number; data_inicio?: string; data_fim?: string; search?: string },
   ): Promise<PaginatedResponse<Parceiro>> {
     const { page = 1, limit = 50 } = pagination;
 
@@ -610,7 +619,10 @@ export class FinanceService {
       ],
       cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
     });
-    if (filters?.mes && filters?.ano) {
+    if (filters?.data_inicio && filters.data_fim) {
+      qb.andWhere('p.data_pedido >= :dataInicio', { dataInicio: filters.data_inicio })
+        .andWhere('p.data_pedido <= :dataFim', { dataFim: filters.data_fim });
+    } else if (filters?.mes && filters?.ano) {
       qb.andWhere('EXTRACT(MONTH FROM p.data_pedido) = :mes', { mes: filters.mes })
         .andWhere('EXTRACT(YEAR FROM p.data_pedido) = :ano', { ano: filters.ano });
     } else if (filters?.ano) {
