@@ -51,7 +51,7 @@ export class FinanceService {
   async findFaturados(
     tenantId: string,
     pagination: PaginationDto,
-    filters: { mes?: number; ano?: number; fornecedor_uuid?: string; search?: string },
+    filters: { mes?: number; ano?: number; data_inicio?: string; data_fim?: string; fornecedor_uuid?: string; search?: string },
   ): Promise<PaginatedResponse<Record<string, unknown>>> {
     const { page = 1, limit = 20 } = pagination;
     const qb = this.dataSource.getRepository(NotaFiscal).createQueryBuilder('n')
@@ -62,8 +62,13 @@ export class FinanceService {
       .andWhere('n.deleted_at IS NULL')
       .andWhere('pedido.deleted_at IS NULL');
     const effectiveDate = "COALESCE(n.data_emissao, (n.created_at AT TIME ZONE 'America/Sao_Paulo')::date)";
-    if (filters.mes) qb.andWhere(`EXTRACT(MONTH FROM ${effectiveDate}) = :mes`, { mes: filters.mes });
-    if (filters.ano) qb.andWhere(`EXTRACT(YEAR FROM ${effectiveDate}) = :ano`, { ano: filters.ano });
+    if (filters.data_inicio && filters.data_fim) {
+      qb.andWhere(`${effectiveDate} >= :dataInicio`, { dataInicio: filters.data_inicio });
+      qb.andWhere(`${effectiveDate} <= :dataFim`, { dataFim: filters.data_fim });
+    } else {
+      if (filters.mes) qb.andWhere(`EXTRACT(MONTH FROM ${effectiveDate}) = :mes`, { mes: filters.mes });
+      if (filters.ano) qb.andWhere(`EXTRACT(YEAR FROM ${effectiveDate}) = :ano`, { ano: filters.ano });
+    }
     if (filters.fornecedor_uuid) qb.andWhere('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid: filters.fornecedor_uuid });
     applySearch(qb, filters.search, {
       text: [

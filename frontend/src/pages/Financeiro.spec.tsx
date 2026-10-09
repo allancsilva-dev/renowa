@@ -40,7 +40,19 @@ describe('Financeiro — Faturados', () => {
     expect(screen.getAllByText('Fornecedor Um').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhe' }));
     expect(mocks.navigate).toHaveBeenCalledWith('/faturamento/pedido-1');
-    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/faturados', expect.objectContaining({ params: expect.objectContaining({ mes: expect.any(Number), ano: expect.any(Number) }) })));
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/faturados', expect.objectContaining({ params: expect.objectContaining({ data_inicio: expect.stringMatching(/^\d{4}-\d{2}-01$/), data_fim: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) }) })));
+  });
+
+  it('envia ambas as extremidades do intervalo escolhido', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } } });
+    render(<Financeiro />);
+    fireEvent.click(screen.getByRole('button', { name: 'Faturados' }));
+    fireEvent.change(await screen.findByLabelText('Data inicial'), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText('Data final'), { target: { value: '2026-02-01' } });
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/financeiro/faturados', expect.objectContaining({
+      params: expect.objectContaining({ data_inicio: '2026-01-01', data_fim: '2026-02-01' }),
+    })));
   });
 });
 

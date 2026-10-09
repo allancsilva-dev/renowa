@@ -109,6 +109,25 @@ describe('FinanceService — notas faturadas', () => {
       'n.valor AS valor',
     ]));
   });
+
+  it('prioriza intervalo inclusivo sobre mês e ano', async () => {
+    const qb: any = {};
+    for (const method of ['innerJoin', 'leftJoin', 'where', 'andWhere', 'select', 'orderBy', 'addOrderBy', 'offset', 'limit']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getCount = jest.fn().mockResolvedValue(0);
+    qb.getRawMany = jest.fn().mockResolvedValue([]);
+    const dataSource = { getRepository: jest.fn(() => ({ createQueryBuilder: jest.fn(() => qb) })) } as any;
+    const service = new FinanceService({} as any, {} as any, {} as any, {} as any, dataSource);
+
+    await service.findFaturados('tenant-a', { page: 1, limit: 20 }, {
+      data_inicio: '2026-01-01', data_fim: '2026-02-01', mes: 9, ano: 2026,
+    });
+
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('>= :dataInicio'), { dataInicio: '2026-01-01' });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('<= :dataFim'), { dataFim: '2026-02-01' });
+    expect(qb.andWhere).not.toHaveBeenCalledWith(expect.stringContaining('EXTRACT(MONTH'), expect.anything());
+  });
 });
 
 describe('FinanceService — listagem de comissões', () => {

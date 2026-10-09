@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query,
+  BadRequestException, Controller, Get, Post, Patch, Body, Param, Query,
   Delete, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { FinanceService } from './finance.service';
@@ -57,9 +57,17 @@ export class FinanceController {
   @Get('faturados')
   @RequirePermission('financeiro.ver')
   async faturados(@Query() query: FaturadosQueryDto, @CurrentUser() user: RequestUser) {
+    if (Boolean(query.data_inicio) !== Boolean(query.data_fim)) {
+      throw new BadRequestException('Informe data_inicio e data_fim juntas.');
+    }
+    if (query.data_inicio && query.data_fim && query.data_inicio > query.data_fim) {
+      throw new BadRequestException('data_inicio não pode ser posterior a data_fim.');
+    }
     return this.financeService.findFaturados(user.tenantId, query, {
       mes: query.mes ? Number(query.mes) : undefined,
       ano: query.ano ? Number(query.ano) : undefined,
+      data_inicio: query.data_inicio,
+      data_fim: query.data_fim,
       fornecedor_uuid: query.fornecedor_uuid || undefined,
       search: query.search || undefined,
     });

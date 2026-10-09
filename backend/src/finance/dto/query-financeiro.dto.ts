@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 export class LancamentosQueryDto extends PaginationDto {
@@ -56,6 +56,8 @@ export class ParceirosQueryDto extends PaginationDto {
 export class FaturadosQueryDto extends PaginationDto {
   @IsOptional() @IsString() mes?: string;
   @IsOptional() @IsString() ano?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'data_inicio deve estar no formato YYYY-MM-DD.' }) @IsDateString({ strict: true }) data_inicio?: string;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'data_fim deve estar no formato YYYY-MM-DD.' }) @IsDateString({ strict: true }) data_fim?: string;
   @IsOptional() @IsUUID() fornecedor_uuid?: string;
 }
 

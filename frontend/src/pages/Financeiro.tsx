@@ -98,6 +98,8 @@ interface Faturado {
 // ─── Helpers visuais ─────────────────────────────────────────────────────────
 
 const now = new Date();
+const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+const currentMonthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
 
 const inputCls =
   'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 w-full';
@@ -411,8 +413,8 @@ function useFornecedoresFiltro() {
 
 function Faturados() {
   const navigate = useNavigate();
-  const [mes, setMes] = useState(now.getMonth() + 1);
-  const [ano, setAno] = useState(now.getFullYear());
+  const [dataInicio, setDataInicio] = useState(currentMonthStart);
+  const [dataFim, setDataFim] = useState(currentMonthEnd);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search.trim());
   const [fornecedorUuid, setFornecedorUuid] = useState('');
@@ -426,10 +428,10 @@ function Faturados() {
   }, []);
   const fetcher = useCallback(async ({ page, limit }: { page: number; limit: number }) => {
     const { data } = await api.get<PaginatedResponse<Faturado>>('/financeiro/faturados', {
-      params: { page, limit, mes, ano, search: debouncedSearch || undefined, fornecedor_uuid: fornecedorUuid || undefined },
+      params: { page, limit, data_inicio: dataInicio, data_fim: dataFim, search: debouncedSearch || undefined, fornecedor_uuid: fornecedorUuid || undefined },
     });
     return data;
-  }, [ano, fornecedorUuid, mes, debouncedSearch]);
+  }, [dataFim, dataInicio, fornecedorUuid, debouncedSearch]);
   const query = usePaginatedQuery<Faturado>({ fetcher });
   const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
     fornecedores.map((fornecedor) => ({ value: fornecedor.uuid, label: fornecedor.razao_social })), term, page,
@@ -437,7 +439,8 @@ function Faturados() {
 
   return <div className='space-y-4'>
     <div className='flex flex-wrap items-center gap-3'>
-      <FiltroMesAno mes={mes} setMes={setMes} ano={ano} setAno={setAno} />
+      <label className='flex flex-col gap-1'><span className={labelCls}>Data inicial</span><input type='date' required aria-label='Data inicial' value={dataInicio} onChange={(event) => { if (event.target.value) setDataInicio(event.target.value); }} className={inputCls} /></label>
+      <label className='flex flex-col gap-1'><span className={labelCls}>Data final</span><input type='date' required aria-label='Data final' value={dataFim} onChange={(event) => { if (event.target.value) setDataFim(event.target.value); }} className={inputCls} /></label>
       <input type='search' aria-label='Buscar faturados' value={search} onChange={(event) => setSearch(event.target.value)} placeholder='NF, nº pedido, CNPJ ou razão social' className={`${inputCls} max-w-xs`} />
       <div className='min-w-56 max-w-xs flex-1'>
         <AsyncCombobox key={`faturados-${fornecedores.length}`} ariaLabel='Filtrar faturados por fornecedor' value={fornecedorUuid || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorUuid(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} placeholder='Todos os fornecedores' className={inputCls} />
