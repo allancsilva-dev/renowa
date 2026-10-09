@@ -33,6 +33,12 @@ Banco (quando a alteração tocar schema ou migration):
 
 Ao finalizar, resuma as validações executadas e seus resultados.
 
+## Commits para rastreamento
+
+- Separe commits por assunto lógico; não misture funcionalidades independentes.
+- Mantenha migrations, backend, frontend e testes no commit da funcionalidade que dependem, salvo quando a cobertura de QA for uma melhoria independente.
+- Use Conventional Commits com assunto curto e objetivo.
+
 ## Automação de teste no Safari (obrigatório ler antes de automatizar navegador)
 
 Sempre que a tarefa pedir teste de tela, clique em botão, preenchimento de formulário, verificação de PDF ou "testar no navegador", use a ferramenta que já existe: **`ops/qa-safari/`**. Não escreva um driver novo, não instale Playwright/Selenium/WebDriver, não crie suíte de E2E — o projeto decidiu por automação simples via `osascript`. Detalhes de uso em `ops/qa-safari/README.md`; a primeira execução completa está em `docs/REVIEW_REPORTS/2026-07-30_teste-automatizado-safari-todas-as-telas.md`.

@@ -742,7 +742,9 @@
     if (emitir) {
       emitir.click(); await sleep(900); await settle();
       var root = Q.dlg() || document.querySelector('form') || document;
-      var rep = await fillAll(root, { tag: 'nota-fiscal', comboQuery: S });
+      var percentual = root.querySelector('#perc_comissao');
+      ok('percentual de comissão inicia em 5%', !!percentual && Number(percentual.value) === 5, percentual && percentual.value);
+      var rep = await fillAll(root, { tag: 'nota-fiscal', comboQuery: S, skip: /% Comissão|perc_comissao/i });
       ok('campos da nota fiscal preenchidos', rep.length >= 3, rep.length + ' campos');
       var vazios = Q.emptyControls(root);
       ok('nenhum campo ficou vazio (nota fiscal)', vazios.length === 0, vazios.join(', '));
@@ -758,6 +760,11 @@
       ok('detalhe de faturamento do pedido responde 200', det.status === 200, det.status);
       var d = det.body && det.body.data;
       var notas = (d && (d.notas || d.notas_fiscais)) || [];
+      var comissoes = await api('GET', '/financeiro/comissoes?limit=100&search=' + encodeURIComponent(notas[0] && notas[0].numero_nota || ''));
+      var listaComissoes = comissoes.body && (comissoes.body.data || comissoes.body) || [];
+      var comissao = listaComissoes.filter(function (c) { return c.nota_fiscal_id === (notas[0] && notas[0].id); })[0] || listaComissoes[0];
+      ok('comissão da NF-e mantém 5%', !!comissao && Number(comissao.perc_comissao) === 5, comissao && comissao.perc_comissao);
+      ok('comissão da NF-e nasce em aberto', !!comissao && comissao.status === 'faturado', comissao && comissao.status);
       ok('nota fiscal registrada no pedido', notas.length >= 1, notas.length + ' notas');
       if (notas.length) {
         st.ids.nota = notas[0].uuid; Q.flush();
