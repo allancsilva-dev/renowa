@@ -62,6 +62,12 @@ afterEach(() => {
 });
 
 describe('Pedidos — menu de ações', () => {
+  it('consulta somente pedidos em aberto e não oferece filtro de status', () => {
+    render(<Pedidos />);
+    mocks.fetcher!({ page: 1, limit: 20 });
+    expect(mocks.fetchOrders).toHaveBeenCalledWith(expect.objectContaining({ status: 'em_aberto' }));
+    expect(screen.queryByLabelText('Filtrar por status')).not.toBeInTheDocument();
+  });
   it('mostra o fornecedor e fallback para pedido legado sem vínculo', () => {
     render(<Pedidos />);
     expect(screen.getByText('Fornecedor Acme')).toBeInTheDocument();

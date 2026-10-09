@@ -8,7 +8,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import { fetchOrders, updateOrderStatus } from '@/services/orders.service';
 import {
   orderStatusLabel, orderStatusColor, orderOrigemLabel, orderOrigemColor,
-  type Order, type OrderStatus, type OrderOrigem,
+  type Order, type OrderOrigem,
 } from '@/types';
 import { moneyForDisplay } from '@/lib/decimal';
 import { PAYMENT_METHODS } from '@/lib/paymentOptions';
@@ -25,7 +25,6 @@ const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' 
 export default function Pedidos() {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | ''>('');
   const [origemFilter, setOrigemFilter] = useState<OrderOrigem | ''>('');
   const [pgtFilter, setPgtFilter] = useState('');
   const [search, setSearch] = useState('');
@@ -44,13 +43,13 @@ export default function Pedidos() {
     (params: { page: number; limit: number }) =>
       fetchOrders({
         ...params,
-        status: statusFilter || undefined,
+        status: 'em_aberto',
         origem: origemFilter || undefined,
         search: debouncedSearch || undefined,
         fornecedor_uuid: fornecedorFiltroUuid || undefined,
         pgt: pgtFilter || undefined,
       }),
-    [statusFilter, origemFilter, debouncedSearch, fornecedorFiltroUuid, pgtFilter],
+    [origemFilter, debouncedSearch, fornecedorFiltroUuid, pgtFilter],
   );
 
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<Order>({ fetcher });
@@ -169,17 +168,6 @@ export default function Pedidos() {
             aria-label='Buscar pedidos'
             className='min-h-11 min-w-64 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
           />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as OrderStatus | '')}
-            aria-label='Filtrar por status'
-            className='rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40'
-          >
-            <option value=''>Todos os status</option>
-            {(Object.keys(orderStatusLabel) as OrderStatus[]).map((s) => (
-              <option key={s} value={s}>{orderStatusLabel[s]}</option>
-            ))}
-          </select>
           <select
             value={origemFilter}
             onChange={(e) => setOrigemFilter(e.target.value as OrderOrigem | '')}
