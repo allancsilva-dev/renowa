@@ -241,6 +241,7 @@ export class FaturamentoService {
         observacao: dto.observacao ?? null,
       });
       const savedNota = await notaRepo.save(nota);
+      const percentualComissao = dto.perc_comissao ?? 5;
 
       const commission = commissionRepo.create({
         uuid: randomUUID(),
@@ -255,9 +256,9 @@ export class FaturamentoService {
         data_faturamento: savedNota.data_emissao ?? saoPauloDate(savedNota.created_at ?? new Date()),
         valor_pedido: this.orderValor(order),
         valor_faturado: savedNota.valor,
-        perc_comissao: null,
-        valor_comissao: '0.00',
-        status: 'pendente',
+        perc_comissao: decimal(percentualComissao).toFixed(2),
+        valor_comissao: percentageOf(savedNota.valor, percentualComissao),
+        status: 'faturado',
       });
       await commissionRepo.save(commission);
 

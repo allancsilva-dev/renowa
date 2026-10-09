@@ -15,8 +15,8 @@ import { orderStatusLabel, orderStatusColor, orderOrigemLabel, orderOrigemColor,
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
-type NotaForm = { numero_nota: string; serie: string; valor: number | null; data_emissao: string; observacao: string };
-const EMPTY_NOTA_FORM: NotaForm = { numero_nota: '', serie: '', valor: null, data_emissao: '', observacao: '' };
+type NotaForm = { numero_nota: string; serie: string; valor: number | null; perc_comissao: string; data_emissao: string; observacao: string };
+const EMPTY_NOTA_FORM: NotaForm = { numero_nota: '', serie: '', valor: null, perc_comissao: '5', data_emissao: '', observacao: '' };
 
 export default function Faturamento() {
   const navigate = useNavigate();
@@ -51,8 +51,13 @@ export default function Faturamento() {
   async function handleSubmitNota(event: React.FormEvent) {
     event.preventDefault();
     if (!notaPedido) return;
-    if (!notaForm.numero_nota.trim() || notaForm.valor === null) {
-      setFormError('Informe o número da nota e o valor.');
+    const percentualComissao = Number(notaForm.perc_comissao);
+    if (!notaForm.numero_nota.trim() || notaForm.valor === null || notaForm.perc_comissao.trim() === '') {
+      setFormError('Informe o número da nota, o valor e o percentual de comissão.');
+      return;
+    }
+    if (!Number.isFinite(percentualComissao) || percentualComissao < 0 || percentualComissao > 100) {
+      setFormError('Percentual de comissão deve estar entre 0 e 100.');
       return;
     }
     setSaving(true);
@@ -63,6 +68,7 @@ export default function Faturamento() {
         numero_nota: notaForm.numero_nota.trim(),
         serie: notaForm.serie.trim() || undefined,
         valor: normalizeMoney(notaForm.valor),
+        perc_comissao: percentualComissao,
         data_emissao: notaForm.data_emissao || undefined,
         observacao: notaForm.observacao.trim() || undefined,
       });
@@ -235,6 +241,25 @@ export default function Faturamento() {
                   onChange={(e) => setNotaForm((p) => ({ ...p, data_emissao: e.target.value }))}
                   className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
                 />
+              </div>
+            </div>
+            <div className='flex flex-col gap-1'>
+              <label htmlFor='perc_comissao' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                % Comissão <span className='text-red-500'>*</span>
+              </label>
+              <div className='relative'>
+                <input
+                  id='perc_comissao'
+                  type='number'
+                  step='0.01'
+                  min='0'
+                  max='100'
+                  required
+                  value={notaForm.perc_comissao}
+                  onChange={(e) => setNotaForm((p) => ({ ...p, perc_comissao: e.target.value }))}
+                  className='w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pr-8 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+                />
+                <span className='pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400'>%</span>
               </div>
             </div>
             <div className='flex flex-col gap-1'>

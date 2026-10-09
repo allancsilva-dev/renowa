@@ -152,7 +152,7 @@ describe('FaturamentoService', () => {
   });
 
   describe('registrarNota', () => {
-    it('uma nota que cobre o total fecha o pedido (faturado) e cria comissão pendente', async () => {
+    it('uma nota que cobre o total fecha o pedido e cria comissão faturada com 5% por padrão', async () => {
       const order = buildOrder({ status: 'liberado' });
       const repos = buildRepos({ order, notaSumAfter: '100.00' });
       const service = buildService(repos);
@@ -163,12 +163,26 @@ describe('FaturamentoService', () => {
 
       expect(nota.id).toBe(5);
       expect(repos.commissionRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-        status: 'pendente', valor_comissao: '0.00', valor_faturado: '100.00', nota_fiscal_id: 5,
+        status: 'faturado', perc_comissao: '5.00', valor_comissao: '5.00', valor_faturado: '100.00', nota_fiscal_id: 5,
       }));
       expect(repos.orderRepo.update).toHaveBeenCalledWith(
         { id: order.id, tenant_id: tenantId },
         expect.objectContaining({ status: 'faturado' }),
       );
+    });
+
+    it('usa o percentual informado para calcular a comissão', async () => {
+      const order = buildOrder({ status: 'liberado' });
+      const repos = buildRepos({ order, notaSumAfter: '200.00' });
+      const service = buildService(repos);
+
+      await service.registrarNota(pedidoUuid, {
+        uuid: 'dddddddd-dddd-dddd-dddd-dddddddddddd', numero_nota: '123', valor: 200, perc_comissao: 7.5,
+      } as any, tenantId);
+
+      expect(repos.commissionRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        status: 'faturado', perc_comissao: '7.50', valor_comissao: '15.00',
+      }));
     });
 
     it('nota parcial deixa o pedido parcialmente_faturado', async () => {

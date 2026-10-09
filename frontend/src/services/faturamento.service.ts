@@ -62,6 +62,7 @@ export interface CreateNotaFiscalPayload {
   numero_nota: string;
   serie?: string | null;
   valor: number;
+  perc_comissao?: number;
   data_emissao?: string | null;
   observacao?: string | null;
 }
