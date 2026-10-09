@@ -156,6 +156,7 @@ export default function PedidoExternoForm() {
       const updated = await liberarOrder(uuid, currentVersion);
       setForm((current) => ({ ...current, status: updated.status }));
       setVersion(updated.version);
+      navigate('/faturamento');
     } catch (reason) {
       setError(getApiErrorMessage(reason));
     } finally {
@@ -206,7 +207,10 @@ export default function PedidoExternoForm() {
   if (fetching) return <p className='py-20 text-center text-sm text-slate-600'>Carregando pedido...</p>;
 
   return (
-    <form ref={formRef} onSubmit={submit} className='mx-auto max-w-4xl space-y-5'>
+    <form ref={formRef} onSubmit={submit} onKeyDown={(event) => {
+      const target = event.target as HTMLElement;
+      if (event.key === 'Enter' && target.tagName !== 'TEXTAREA' && target.tagName !== 'BUTTON' && target.getAttribute('role') !== 'combobox') event.preventDefault();
+    }} className='mx-auto max-w-4xl space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div>
           <h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido externo' : duplicateSourceUuid ? 'Duplicar pedido externo' : 'Novo pedido externo'}</h1>

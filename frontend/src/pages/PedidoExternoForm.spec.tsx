@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PedidoExternoForm from './PedidoExternoForm';
 
-const mocks = vi.hoisted(() => ({ fetchOrder: vi.fn(), saveExternalOrder: vi.fn(), liberarOrder: vi.fn() }));
+const mocks = vi.hoisted(() => ({ fetchOrder: vi.fn(), saveExternalOrder: vi.fn(), liberarOrder: vi.fn(), navigate: vi.fn() }));
 const rota = vi.hoisted(() => ({ params: {} as { uuid?: string }, search: 'duplicar=externo-fonte' }));
 
 vi.mock('@/services/orders.service', () => ({
@@ -21,7 +21,7 @@ vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ hasAnyRole: () => false, hasPermission: () => true }),
 }));
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(), useParams: () => rota.params,
+  useNavigate: () => mocks.navigate, useParams: () => rota.params,
   useSearchParams: () => [new URLSearchParams(rota.search)],
 }));
 
@@ -102,6 +102,7 @@ describe('PedidoExternoForm — liberar com edição pendente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
 
     await waitFor(() => expect(mocks.liberarOrder).toHaveBeenCalledWith('externo-lib', 3));
+    expect(mocks.navigate).toHaveBeenCalledWith('/faturamento');
     expect(mocks.saveExternalOrder).toHaveBeenCalledWith(
       expect.objectContaining({ observacao: 'Nova observação', version: 2 }), 'externo-lib',
     );
@@ -140,6 +141,13 @@ describe('PedidoExternoForm — liberar com edição pendente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Liberar pedido' }));
 
     await waitFor(() => expect(mocks.liberarOrder).toHaveBeenCalledWith('externo-lib', 2));
+    expect(mocks.saveExternalOrder).not.toHaveBeenCalled();
+  });
+
+  it('Enter em campo comum não submete, mas continua disponível no textarea', async () => {
+    await montar();
+    expect(fireEvent.keyDown(screen.getByLabelText('Número do pedido *'), { key: 'Enter' })).toBe(false);
+    expect(fireEvent.keyDown(screen.getByLabelText('Observações'), { key: 'Enter' })).toBe(true);
     expect(mocks.saveExternalOrder).not.toHaveBeenCalled();
   });
 });

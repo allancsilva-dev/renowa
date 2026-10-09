@@ -10,13 +10,14 @@ const mocks = vi.hoisted(() => ({
   fetchFotos: vi.fn(),
   toBlob: vi.fn(),
   deleteOrder: vi.fn(),
+  liberarOrder: vi.fn(),
   navigate: vi.fn(),
   permissions: new Set<string>(),
 }));
 
 vi.mock('@/services/orders.service', () => ({
   fetchOrder: mocks.fetchOrder,
-  liberarOrder: vi.fn(),
+  liberarOrder: (...args: unknown[]) => mocks.liberarOrder(...args),
   updateOrderStatus: vi.fn(),
   deleteOrder: (...args: unknown[]) => mocks.deleteOrder(...args),
 }));
@@ -142,6 +143,18 @@ describe('PedidoDetalhe — geração do PDF', () => {
     expect(preview.close).toHaveBeenCalledOnce();
     expect(anchorClick).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent(/demorou mais de um minuto/i);
+  });
+});
+
+describe('PedidoDetalhe — liberação', () => {
+  it('abre Faturamento depois de liberar', async () => {
+    mocks.permissions.add('pedidos.liberar');
+    mocks.liberarOrder.mockResolvedValue({ ...pedido, status: 'liberado', version: 2 });
+    await abrirTela();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Liberar pedido' }));
+
+    await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith('/faturamento'));
   });
 });
 

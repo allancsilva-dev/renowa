@@ -24,6 +24,7 @@ const fetchOrderItemPhotoDataUrl = vi.fn();
 const uploadOrderItemPhoto = vi.fn();
 const deleteOrderItemPhoto = vi.fn();
 const liberarOrder = vi.fn();
+const navigate = vi.fn();
 
 vi.mock('@/services/orders.service', () => ({
   fetchOrder: (...args: unknown[]) => fetchOrder(...args),
@@ -59,7 +60,7 @@ vi.mock('@/hooks/useAuth', () => ({
   useAuth: () => ({ hasAnyRole: () => false, hasPermission: () => true }),
 }));
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
   useParams: () => routerParams,
   useSearchParams: () => [new URLSearchParams(routerSearch.value)],
 }));
@@ -527,6 +528,7 @@ describe('PedidoForm — liberar com edição pendente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar e liberar' }));
 
     await waitFor(() => expect(liberarOrder).toHaveBeenCalledWith('ped-lib', 4));
+    expect(navigate).toHaveBeenCalledWith('/faturamento');
     expect(saveOrder).toHaveBeenCalledWith(
       expect.objectContaining({ observacao: 'Nova observação', version: 3 }), 'ped-lib',
     );
@@ -598,6 +600,13 @@ describe('PedidoForm — liberar com edição pendente', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Liberar pedido' }));
 
     await waitFor(() => expect(liberarOrder).toHaveBeenCalledWith('ped-lib', 3));
+    expect(saveOrder).not.toHaveBeenCalled();
+  });
+
+  it('Enter em campo comum não submete, mas continua disponível no textarea', async () => {
+    await montar();
+    expect(fireEvent.keyDown(screen.getByLabelText('Data de emissão'), { key: 'Enter' })).toBe(false);
+    expect(fireEvent.keyDown(screen.getByLabelText('Observações'), { key: 'Enter' })).toBe(true);
     expect(saveOrder).not.toHaveBeenCalled();
   });
 

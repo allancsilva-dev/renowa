@@ -52,7 +52,7 @@ export default function PedidoDetalhe() {
     setStatusError(null);
     try {
       await liberarOrder(uuid, order.version);
-      load();
+      navigate('/faturamento');
     } catch (err) {
       setStatusError(getApiErrorMessage(err));
     } finally {

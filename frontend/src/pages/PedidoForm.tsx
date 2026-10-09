@@ -336,6 +336,7 @@ export default function PedidoForm() {
       const updated = await liberarOrder(uuid, currentVersion);
       setHeader((current) => ({ ...current, status: updated.status }));
       setVersion(updated.version);
+      navigate('/faturamento');
     } catch (reason) {
       setError(getApiErrorMessage(reason));
     } finally {
@@ -420,7 +421,10 @@ export default function PedidoForm() {
   if (fetching) return <p className='py-20 text-center text-sm text-slate-600'>Carregando pedido...</p>;
 
   return (
-    <form ref={formRef} onSubmit={submit} className='mx-auto max-w-6xl space-y-5'>
+    <form ref={formRef} onSubmit={submit} onKeyDown={(event) => {
+      const target = event.target as HTMLElement;
+      if (event.key === 'Enter' && target.tagName !== 'TEXTAREA' && target.tagName !== 'BUTTON' && target.getAttribute('role') !== 'combobox') event.preventDefault();
+    }} className='mx-auto max-w-6xl space-y-5'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div><h1 className='text-2xl font-bold text-slate-900'>{isEdit ? 'Editar pedido' : duplicateSourceUuid ? 'Duplicar pedido' : 'Novo pedido'}</h1>
           <p className='mt-1 text-sm text-slate-600'>O servidor recalcula quantidades, descontos, IPI e totais ao salvar.</p></div>
