@@ -115,8 +115,8 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
     tabela: 'comissoes',
     nome: 'comissoes_status_check',
     validado: false,
-    expressao: "status = ANY (ARRAY['pendente','faturado','pago'])",
-    origem: '0029',
+    expressao: "status = ANY (ARRAY['pendente','faturado','pago','bloqueado'])",
+    origem: '0048',
   },
   {
     tabela: 'pedidos',

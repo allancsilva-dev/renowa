@@ -92,7 +92,7 @@ export class Commission extends VersionedBaseEntity {
   @Column({ name: 'valor_comissao', type: 'decimal', precision: 12, scale: 2, default: 0 })
   valor_comissao: string;
 
-  /** 'pendente' | 'faturado' | 'pago' */
+  /** 'pendente' (legado) | 'faturado' (em aberto) | 'pago' | 'bloqueado' */
   @Column({ name: 'status', type: 'varchar', default: 'pendente' })
   status: string;
 }

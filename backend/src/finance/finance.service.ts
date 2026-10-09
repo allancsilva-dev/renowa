@@ -15,6 +15,7 @@ import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto'
 import { decimal, money, percentageOf, sumMoney } from '../common/decimal/decimal';
 import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { applySearch } from '../common/persistence/search-filter';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class FinanceService {
@@ -289,7 +290,7 @@ export class FinanceService {
   /**
    * Informa o percentual de comissão sobre a nota (ou, para comissões legadas
    * sem nota vinculada, sobre valor_faturado/valor_pedido). Exige status
-   * 'pendente' — não é possível reinformar percentual de comissão já faturada.
+   * 'pendente' ou 'faturado'. Comissão paga preserva o snapshot quitado.
    */
   async informarPercentual(uuid: string, percComissao: string, version: number, tenantId: string): Promise<Commission> {
     const commission = await this.comissaoRepo.findOne({
@@ -297,12 +298,17 @@ export class FinanceService {
       relations: ['notaFiscal'],
     });
     if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
-    if (commission.status !== 'pendente') {
-      throw new ConflictException('Comissão precisa estar pendente para informar o percentual.');
+    if (commission.status === 'pago' || commission.status === 'bloqueado') {
+      throw new ConflictException('Só é possível alterar o percentual de comissão em aberto.');
+    }
+
+    const percentual = decimal(percComissao);
+    if (percentual.isNegative() || percentual.greaterThan(100)) {
+      throw new BadRequestException('Percentual de comissão deve estar entre 0 e 100.');
     }
 
     const base = commission.notaFiscal?.valor ?? commission.valor_faturado ?? commission.valor_pedido ?? '0';
-    const valorComissao = percentageOf(base, percComissao);
+    const valorComissao = percentageOf(base, percentual);
 
     return optimisticUpdate({
       repository: this.comissaoRepo,
@@ -311,28 +317,58 @@ export class FinanceService {
       expectedVersion: version,
       resource: 'commission',
       notFoundMessage: `Comissão ${uuid} não encontrada.`,
-      patch: { perc_comissao: decimal(percComissao).toFixed(2), valor_comissao: valorComissao, status: 'faturado' },
+      patch: { perc_comissao: percentual.toFixed(2), valor_comissao: valorComissao, status: 'faturado' },
     });
   }
 
-  /** Registra o pagamento efetivo da comissão. Exige status 'faturado' + data de pagamento. */
+  /** Registra pagamento e baixa eventual atraso vinculado. */
   async registrarPagamento(uuid: string, dataPagamento: string, version: number, tenantId: string): Promise<Commission> {
     if (!dataPagamento) throw new BadRequestException('Data de pagamento é obrigatória.');
 
-    const commission = await this.comissaoRepo.findOne({ where: { uuid, tenant_id: tenantId, deleted_at: IsNull() } });
-    if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
-    if (commission.status !== 'faturado') {
-      throw new ConflictException('Comissão precisa estar faturada para registrar o pagamento.');
-    }
+    return this.dataSource.transaction(async (manager) => {
+      const commissionRepo = manager.getRepository(Commission);
+      const inadimplenciaRepo = manager.getRepository(Inadimplencia);
+      const commission = await commissionRepo.findOne({ where: { uuid, tenant_id: tenantId, deleted_at: IsNull() } });
+      if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
+      if (!['faturado', 'bloqueado'].includes(commission.status)) {
+        throw new ConflictException('Comissão precisa estar em aberto ou bloqueada para registrar o pagamento.');
+      }
+      const saved = await optimisticUpdate({
+        repository: commissionRepo, uuid, tenantId, expectedVersion: version, resource: 'commission',
+        notFoundMessage: `Comissão ${uuid} não encontrada.`, patch: { data_pagamento: dataPagamento, status: 'pago' },
+      });
+      await inadimplenciaRepo.update(
+        { tenant_id: tenantId, comissao_id: commission.id, deleted_at: IsNull() },
+        { deleted_at: new Date(), version: () => '"version" + 1' } as any,
+      );
+      return saved;
+    });
+  }
 
-    return optimisticUpdate({
-      repository: this.comissaoRepo,
-      uuid,
-      tenantId,
-      expectedVersion: version,
-      resource: 'commission',
-      notFoundMessage: `Comissão ${uuid} não encontrada.`,
-      patch: { data_pagamento: dataPagamento, status: 'pago' },
+  /** Marca atraso e cria, na mesma transação, registro único em Inadimplência. */
+  async registrarAtraso(uuid: string, version: number, tenantId: string): Promise<Commission> {
+    return this.dataSource.transaction(async (manager) => {
+      const commissionRepo = manager.getRepository(Commission);
+      const inadimplenciaRepo = manager.getRepository(Inadimplencia);
+      const commission = await commissionRepo.findOne({
+        where: { uuid, tenant_id: tenantId, deleted_at: IsNull() }, relations: ['fornecedor'],
+      });
+      if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
+      if (!['pendente', 'faturado'].includes(commission.status)) {
+        throw new ConflictException('Só é possível marcar atraso de comissão em aberto.');
+      }
+      const saved = await optimisticUpdate({
+        repository: commissionRepo, uuid, tenantId, expectedVersion: version, resource: 'commission',
+        notFoundMessage: `Comissão ${uuid} não encontrada.`, patch: { status: 'bloqueado' },
+      });
+      const atraso = inadimplenciaRepo.create({
+        uuid: randomUUID(), tenant_id: tenantId, comissao_id: commission.id, cliente_id: null,
+        empresa_devedora: commission.fornecedor?.razao_social ?? null,
+        valor_aberto: commission.valor_comissao,
+        observacao: `Atraso de pagamento da comissão da NF-e ${commission.numero_nfe ?? 'não informada'}.`,
+      });
+      await inadimplenciaRepo.save(atraso);
+      return saved;
     });
   }
 
@@ -372,7 +408,8 @@ export class FinanceService {
       qb.andWhere('c.fornecedor_id = :fornecedor_id', { fornecedor_id: filters.fornecedor_id });
     }
     if (filters?.status) {
-      qb.andWhere('c.status = :status', { status: filters.status });
+      if (filters.status === 'em_aberto') qb.andWhere("c.status IN ('pendente', 'faturado')");
+      else qb.andWhere('c.status = :status', { status: filters.status });
     }
     this.applyComissaoSearch(qb, filters?.search);
     if (filters?.mes && filters?.ano) {
@@ -399,14 +436,16 @@ export class FinanceService {
     faturado: string;
     pendente: string;
     pago: string;
+    bloqueado: string;
   }> {
     const qb = this.comissaoRepo
       .createQueryBuilder('c')
       .select([
         'SUM(c.valor_comissao) AS total',
-        "SUM(CASE WHEN c.status = 'faturado' THEN c.valor_comissao ELSE 0 END) AS faturado",
+        "SUM(CASE WHEN c.status IN ('pendente', 'faturado') THEN c.valor_comissao ELSE 0 END) AS faturado",
         "SUM(CASE WHEN c.status = 'pendente' THEN c.valor_comissao ELSE 0 END) AS pendente",
         "SUM(CASE WHEN c.status = 'pago' THEN c.valor_comissao ELSE 0 END) AS pago",
+        "SUM(CASE WHEN c.status = 'bloqueado' THEN c.valor_comissao ELSE 0 END) AS bloqueado",
       ])
       .where('c.tenant_id = :tenantId', { tenantId })
       .andWhere('c.deleted_at IS NULL');
@@ -418,13 +457,14 @@ export class FinanceService {
       qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano });
     }
 
-    const result = await qb.getRawOne<{ total: string; faturado: string; pendente: string; pago: string }>();
+    const result = await qb.getRawOne<{ total: string; faturado: string; pendente: string; pago: string; bloqueado: string }>();
 
     return {
       total: money(result?.total),
       faturado: money(result?.faturado),
       pendente: money(result?.pendente),
       pago: money(result?.pago),
+      bloqueado: money(result?.bloqueado),
     };
   }
 

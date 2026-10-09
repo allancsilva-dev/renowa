@@ -10,3 +10,5 @@ export class RegistrarPagamentoDto extends VersionDto {
   @IsDateString()
   data_pagamento: string;
 }
+
+export class BloquearComissaoDto extends VersionDto {}

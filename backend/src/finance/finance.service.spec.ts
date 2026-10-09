@@ -238,7 +238,14 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
 
   function buildServiceWithCommissionRepo(commissionRepo: any, dataSourceOverrides: Record<string, jest.Mock> = {}) {
     const movementRepo = { createQueryBuilder: jest.fn() } as any;
-    const dataSource = { query: jest.fn(), ...dataSourceOverrides } as any;
+    const inadimplenciaRepo = { update: jest.fn(), create: jest.fn((value) => value), save: jest.fn() };
+    const dataSource = {
+      query: jest.fn(),
+      transaction: jest.fn(async (work) => work({
+        getRepository: jest.fn((entity) => entity.name === 'Commission' ? commissionRepo : inadimplenciaRepo),
+      })),
+      ...dataSourceOverrides,
+    } as any;
     return new FinanceService(movementRepo, commissionRepo, {} as any, {} as any, dataSource);
   }
 
@@ -261,9 +268,27 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
       );
     });
 
-    it('exige status pendente antes de informar percentual', async () => {
+    it('permite alterar o percentual de comissão faturada', async () => {
+      const updateBuilder = optimisticWriteBuilder({
+        execute: jest.fn().mockResolvedValue({ affected: 1, raw: [{ uuid, status: 'faturado', valor_comissao: '12.00' }] }),
+      });
+      const lookupBuilder = optimisticWriteBuilder();
       const commissionRepo = {
-        findOne: jest.fn().mockResolvedValue({ uuid, status: 'faturado' }),
+        findOne: jest.fn().mockResolvedValue({ uuid, status: 'faturado', notaFiscal: { valor: '200.00' } }),
+        createQueryBuilder: jest.fn((alias?: string) => (alias ? lookupBuilder : updateBuilder)),
+      };
+      const service = buildServiceWithCommissionRepo(commissionRepo);
+
+      await service.informarPercentual(uuid, '6.00', 1, tenantId);
+
+      expect(updateBuilder.set).toHaveBeenCalledWith(expect.objectContaining({
+        perc_comissao: '6.00', valor_comissao: '12.00', status: 'faturado',
+      }));
+    });
+
+    it('bloqueia alteração do percentual de comissão paga', async () => {
+      const commissionRepo = {
+        findOne: jest.fn().mockResolvedValue({ uuid, status: 'pago' }),
       };
       const service = buildServiceWithCommissionRepo(commissionRepo);
 
@@ -310,6 +335,36 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
       expect(updateBuilder.set).toHaveBeenCalledWith(
         expect.objectContaining({ data_pagamento: '2026-07-20', status: 'pago' }),
       );
+    });
+  });
+
+  describe('registrarAtraso', () => {
+    it('bloqueia comissão e cria inadimplência vinculada ao fornecedor', async () => {
+      const updateBuilder = optimisticWriteBuilder({
+        execute: jest.fn().mockResolvedValue({ affected: 1, raw: [{ uuid, status: 'bloqueado' }] }),
+      });
+      const lookupBuilder = optimisticWriteBuilder();
+      const commissionRepo = {
+        findOne: jest.fn().mockResolvedValue({
+          id: 9, uuid, status: 'faturado', valor_comissao: '25.00', numero_nfe: '123',
+          fornecedor: { razao_social: 'Fornecedor Um' },
+        }),
+        createQueryBuilder: jest.fn((alias?: string) => (alias ? lookupBuilder : updateBuilder)),
+      };
+      const inadimplenciaRepo = { create: jest.fn((value) => value), save: jest.fn(async (value) => value) };
+      const dataSource = {
+        transaction: jest.fn(async (work) => work({
+          getRepository: jest.fn((entity) => entity.name === 'Commission' ? commissionRepo : inadimplenciaRepo),
+        })),
+      } as any;
+      const service = new FinanceService({} as any, commissionRepo as any, inadimplenciaRepo as any, {} as any, dataSource);
+
+      await service.registrarAtraso(uuid, 1, tenantId);
+
+      expect(updateBuilder.set).toHaveBeenCalledWith(expect.objectContaining({ status: 'bloqueado' }));
+      expect(inadimplenciaRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        comissao_id: 9, empresa_devedora: 'Fornecedor Um', valor_aberto: '25.00',
+      }));
     });
   });
 

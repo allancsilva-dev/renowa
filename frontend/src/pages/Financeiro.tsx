@@ -1,5 +1,5 @@
 import { cloneElement, useState, useEffect, useCallback, useId, useRef } from 'react';
-import { Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2, Pencil } from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
 import Dialog from '@/components/ui/Dialog';
@@ -224,6 +224,17 @@ function StatusBadge({ status }: { status: string }) {
       {status}
     </span>
   );
+}
+
+function CommissionStatusBadge({ status }: { status: string }) {
+  const states: Record<string, { label: string; cls: string }> = {
+    pendente: { label: 'EM ABERTO', cls: 'bg-amber-100 text-amber-800' },
+    faturado: { label: 'EM ABERTO', cls: 'bg-amber-100 text-amber-800' },
+    pago: { label: 'PAGO', cls: 'bg-emerald-100 text-emerald-800' },
+    bloqueado: { label: 'BLOQUEADO', cls: 'bg-red-100 text-red-800' },
+  };
+  const state = states[status] ?? { label: status.toUpperCase(), cls: 'bg-slate-100 text-slate-700' };
+  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${state.cls}`}>{state.label}</span>;
 }
 
 // ─── Tab: Fluxo de Caixa ─────────────────────────────────────────────────────
@@ -580,7 +591,7 @@ function ComissaoAlune() {
   const [fornecedorId, setFornecedorId] = useState('');
   const [fornecedorLabel, setFornecedorLabel] = useState('');
   const [comissoes, setComissoes] = useState<Comissao[]>([]);
-  const [resumo, setResumo] = useState({ total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
+  const [resumo, setResumo] = useState({ total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00', bloqueado: '0.00' });
   const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -590,10 +601,7 @@ function ComissaoAlune() {
   const [savingPercentual, setSavingPercentual] = useState(false);
   const [percentualError, setPercentualError] = useState<string | null>(null);
 
-  const [pagamentoAlvo, setPagamentoAlvo] = useState<Comissao | null>(null);
-  const [pagamentoData, setPagamentoData] = useState('');
-  const [savingPagamento, setSavingPagamento] = useState(false);
-  const [pagamentoError, setPagamentoError] = useState<string | null>(null);
+  const [savingAction, setSavingAction] = useState<string | null>(null);
 
   const { search, setSearch, debouncedSearch } = useBusca();
   const novaRequisicao = useRequisicaoAtual();
@@ -615,7 +623,7 @@ function ComissaoAlune() {
       .then(([r1, r2]) => {
         if (!atual()) return;
         setComissoes((r1.data as { data: Comissao[] }).data ?? r1.data ?? []);
-        setResumo((r2.data as { data: typeof resumo }).data ?? r2.data ?? { total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00' });
+        setResumo((r2.data as { data: typeof resumo }).data ?? r2.data ?? { total: '0.00', faturado: '0.00', pendente: '0.00', pago: '0.00', bloqueado: '0.00' });
       })
       .catch(() => { if (atual()) setError('Não foi possível carregar comissões.'); })
       .finally(() => { if (atual()) setLoading(false); });
@@ -652,32 +660,32 @@ function ComissaoAlune() {
     }
   }
 
-  function openPagamentoDialog(comissao: Comissao) {
-    setPagamentoAlvo(comissao);
-    setPagamentoData(comissao.data_pagamento ?? new Date().toISOString().slice(0, 10));
-    setPagamentoError(null);
-  }
-
-  async function handlePagamentoSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!pagamentoAlvo) return;
-    if (!pagamentoData) {
-      setPagamentoError('Informe a data de pagamento.');
-      return;
-    }
-    setSavingPagamento(true);
-    setPagamentoError(null);
+  async function registrarPagamento(comissao: Comissao, dataPagamento: string) {
+    if (!dataPagamento) return;
+    setSavingAction(comissao.uuid);
+    setError(null);
     try {
-      await api.patch(`/financeiro/comissoes/${pagamentoAlvo.uuid}/pagamento`, {
-        data_pagamento: pagamentoData,
-        version: pagamentoAlvo.version,
+      await api.patch(`/financeiro/comissoes/${comissao.uuid}/pagamento`, {
+        data_pagamento: dataPagamento, version: comissao.version,
       });
-      setPagamentoAlvo(null);
       load();
     } catch (requestError) {
-      setPagamentoError(writeErrorMessage(requestError));
+      setError(writeErrorMessage(requestError));
     } finally {
-      setSavingPagamento(false);
+      setSavingAction(null);
+    }
+  }
+
+  async function registrarAtraso(comissao: Comissao) {
+    setSavingAction(comissao.uuid);
+    setError(null);
+    try {
+      await api.patch(`/financeiro/comissoes/${comissao.uuid}/atraso`, { version: comissao.version });
+      load();
+    } catch (requestError) {
+      setError(writeErrorMessage(requestError));
+    } finally {
+      setSavingAction(null);
     }
   }
 
@@ -699,9 +707,9 @@ function ComissaoAlune() {
           )}
           <select value={status} onChange={(e) => setStatus(e.target.value)} className={sel}>
             <option value=''>Todos status</option>
-            <option value='pendente'>Pendente</option>
-            <option value='faturado'>Faturado</option>
+            <option value='em_aberto'>Em aberto</option>
             <option value='pago'>Pago</option>
+            <option value='bloqueado'>Bloqueado</option>
           </select>
         </div>
       </div>
@@ -712,8 +720,8 @@ function ComissaoAlune() {
       <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>
         {[
           { label: 'Total', value: resumo.total, color: 'text-slate-900' },
-          { label: 'Faturado', value: resumo.faturado, color: 'text-primary-700' },
-          { label: 'Pendente', value: resumo.pendente, color: 'text-slate-700' },
+          { label: 'Em aberto', value: resumo.faturado, color: 'text-amber-700' },
+          { label: 'Bloqueado', value: resumo.bloqueado, color: 'text-red-700' },
           { label: 'Pago', value: resumo.pago, color: 'text-teal-700' },
         ].map(({ label, value, color }) => (
           <div key={label} className='rounded-xl bg-white border border-slate-100 shadow-sm p-4'>
@@ -751,7 +759,16 @@ function ComissaoAlune() {
             key: 'perc',
             header: '%',
             className: 'text-right',
-            cell: (c) => <span className='text-slate-500'>{c.perc_comissao ?? '—'}%</span>,
+            cell: (c) => (
+              <span className='inline-flex items-center justify-end gap-1'>
+                <span className='text-slate-600'>{c.perc_comissao ?? '—'}%</span>
+                {canEdit && ['pendente', 'faturado'].includes(c.status) && (
+                  <button type='button' aria-label='Editar percentual' onClick={() => openPercentualDialog(c)} className='inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'>
+                    <Pencil className='h-3.5 w-3.5' />
+                  </button>
+                )}
+              </span>
+            ),
           },
           {
             key: 'comissao',
@@ -759,28 +776,29 @@ function ComissaoAlune() {
             className: 'text-right',
             cell: (c) => <span className='font-semibold text-teal-700'>{BRL.format(moneyForDisplay(c.valor_comissao))}</span>,
           },
-          { key: 'status', header: 'Status', cell: (c) => <StatusBadge status={c.status} /> },
+          { key: 'status', header: 'Status', cell: (c) => <CommissionStatusBadge status={c.status} /> },
           ...(canEdit
             ? [
                 {
                   key: 'acoes',
                   header: 'Ações',
                   cell: (c: Comissao) => (
-                    <>
-                      {c.status === 'pendente' && (
-                        <button type='button' onClick={() => openPercentualDialog(c)} className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'>
-                          Informar percentual
-                        </button>
+                    <span className='flex min-w-52 flex-wrap items-center gap-2'>
+                      {['pendente', 'faturado', 'bloqueado'].includes(c.status) && (
+                        <label className='flex items-center gap-2 text-xs font-medium text-slate-600'>
+                          Data de pagamento
+                          <input type='date' aria-label={`Data de pagamento da NF-e ${c.numero_nfe ?? ''}`} disabled={savingAction === c.uuid} onChange={(e) => void registrarPagamento(c, e.target.value)} className='rounded-md border border-slate-300 px-2 py-1 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/40' />
+                        </label>
                       )}
-                      {c.status === 'faturado' && (
-                        <button type='button' onClick={() => openPagamentoDialog(c)} className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'>
-                          Registrar pagamento
+                      {['pendente', 'faturado'].includes(c.status) && (
+                        <button type='button' disabled={savingAction === c.uuid} onClick={() => void registrarAtraso(c)} className='rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60'>
+                          Atraso de pagamento
                         </button>
                       )}
                       {c.status === 'pago' && c.data_pagamento && (
                         <span className='text-xs text-slate-500'>Pago em {fmtDate(c.data_pagamento)}</span>
                       )}
-                    </>
+                    </span>
                   ),
                 },
               ]
@@ -793,7 +811,7 @@ function ComissaoAlune() {
       />
 
       {percentualAlvo && (
-        <Modal title={`Informar percentual — ${percentualAlvo.fornecedor?.razao_social ?? 'comissão'}`} onClose={() => setPercentualAlvo(null)}>
+        <Modal title={`${percentualAlvo.status === 'faturado' ? 'Alterar' : 'Informar'} percentual — ${percentualAlvo.fornecedor?.razao_social ?? 'comissão'}`} onClose={() => setPercentualAlvo(null)}>
           <form onSubmit={handlePercentualSubmit} className='space-y-4'>
             <WriteError message={percentualError} />
             <Field label='% Comissão'>
@@ -817,17 +835,6 @@ function ComissaoAlune() {
         </Modal>
       )}
 
-      {pagamentoAlvo && (
-        <Modal title={`Registrar pagamento — ${pagamentoAlvo.fornecedor?.razao_social ?? 'comissão'}`} onClose={() => setPagamentoAlvo(null)}>
-          <form onSubmit={handlePagamentoSubmit} className='space-y-4'>
-            <WriteError message={pagamentoError} />
-            <Field label='Data de pagamento'>
-              <input type='date' required value={pagamentoData} onChange={(e) => setPagamentoData(e.target.value)} className={inputCls} />
-            </Field>
-            <ModalBtns onClose={() => setPagamentoAlvo(null)} saving={savingPagamento} />
-          </form>
-        </Modal>
-      )}
     </div>
   );
 }

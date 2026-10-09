@@ -1,6 +1,7 @@
 import { Column, Entity, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Client } from '../../clients/entities/client.entity';
+import { Commission } from './commission.entity';
 
 @Entity('inadimplencia')
 @Index(['tenant_id', 'uuid'], { unique: true })
@@ -8,6 +9,16 @@ import { Client } from '../../clients/entities/client.entity';
 @Index(['tenant_id', 'updated_at'])
 @Index(['tenant_id', 'deleted_at'])
 export class Inadimplencia extends VersionedBaseEntity {
+  @Column({ name: 'comissao_id', type: 'int', nullable: true })
+  comissao_id: number | null;
+
+  @ManyToOne(() => Commission, { nullable: true })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'comissao_id', referencedColumnName: 'id' },
+  ])
+  comissao: Commission | null;
+
   @Column({ name: 'cliente_id', type: 'int', nullable: true })
   cliente_id: number | null;
 
