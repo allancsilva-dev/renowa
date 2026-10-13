@@ -499,14 +499,16 @@
     var sl = btn(/^Salvar e liberar$/);
     if (!ok('p5b: "Salvar e liberar" presente', !!sl, '')) return out;
     sl.click();
-    ok('p5b: tela trava com aviso de liberado', !!(await waitFor(function () { return /já foi liberado e não pode mais ser editado/.test(Q.bodyText()); }, 12000)), Q.screenErrors() || '');
-    ok('p5b: campo segue com o texto digitado', obs().value === S + ' liberado', obs().value);
+    /* desde 8e2f1b3 (2026-10-09) liberar leva à fila de Faturamento */
+    ok('p5b: liberar leva ao Faturamento', !!(await waitFor(function () { return location.pathname === '/faturamento'; }, 12000)), location.pathname + ' ' + (Q.screenErrors() || ''));
+    await settle();
 
-    /* 4. Voltar ao detalhe e reabrir a edição: o texto tem de estar lá */
-    btn(/^Voltar$/).click();
+    /* 4. Voltar ao detalhe: o texto salvo antes de liberar tem de estar lá */
+    await go(out.pedido);
     ok('p5b: detalhe mostra a observação após liberar', await detalheMostra(S + ' liberado'), '');
     ok('p5b: detalhe mostra status Liberado', /Liberado/.test(Q.bodyText()), '');
     ok('p5b: edição reaberta mantém a observação', (await abrirEdicao()) && obs().value === S + ' liberado', obs() && obs().value);
+    ok('p5b: edição de pedido liberado mostra aviso de travado', /já foi liberado e não pode mais ser editado/.test(Q.bodyText()), '');
     btn(/^Voltar$/).click();
     await waitFor(function () { return /^\/pedidos\/[0-9a-f-]{36}$/.test(location.pathname); }, 8000);
     await settle();
@@ -918,6 +920,228 @@
     /* abas nunca abertas ficam registradas */
     ok('abas do financeiro percorridas', abas.length > 0, abas.length + ' abas');
     return out;
+  };
+
+  /* ---------------- P15 — prepostos, menu ⋮ do faturamento, ajuste de valor ----------------
+     Roda antes da p14 (usa cliente/fornecedor da rodada) e limpa o que cria. */
+  function dataOf(r) { return r && r.body && (r.body.data !== undefined ? r.body.data : r.body); }
+
+  async function pedidoExternoLiberado(sufixo, extra) {
+    var body = Object.assign({
+      uuid: crypto.randomUUID(), cliente_uuid: st.ids.cliente, fornecedor_uuid: st.ids.fornecedor,
+      numero_pedido_externo: S + '-' + sufixo, sistema_origem: 'QA ' + S, valor: 1000,
+    }, extra || {});
+    var c = await api('POST', '/pedidos/externos', body);
+    ok('p15: pedido externo ' + sufixo + ' criado', c.status === 201, c.status + ' ' + c.text.slice(0, 160));
+    var ped = dataOf(c);
+    if (!ped || !ped.uuid) return null;
+    var l = await api('PATCH', '/pedidos/' + ped.uuid + '/liberar', { version: ped.version });
+    ok('p15: pedido ' + sufixo + ' liberado', l.status === 200, l.status + ' ' + l.text.slice(0, 160));
+    return dataOf(l) || ped;
+  }
+
+  async function abrirMenuDaLinha(numero) {
+    var busca = document.querySelector('input[type=search][aria-label="Buscar pedidos a faturar"]');
+    if (busca) { Q.nativeSet(busca, String(numero)); await sleep(1200); await settle(); }
+    var re = new RegExp('#' + numero + '(?!\\d)');
+    var linha = all('tbody tr').filter(function (tr) { return Q.vis(tr) && re.test(tr.innerText); })[0];
+    ok('p15: linha #' + numero + ' na fila', !!linha);
+    var gatilho = linha && linha.querySelector('button[aria-haspopup="menu"]');
+    ok('p15: botão ⋮ da linha #' + numero, !!gatilho, gatilho && gatilho.getAttribute('aria-label'));
+    if (!gatilho) return [];
+    gatilho.click(); await sleep(400);
+    return all('[role=menu] [role=menuitem]').filter(Q.vis);
+  }
+  function item(itens, re) { return itens.filter(function (b) { return re.test(b.innerText); })[0] || null; }
+
+  P.p15 = async function () {
+    if (!st.ids.cliente || !st.ids.fornecedor) return 'sem cliente/fornecedor da rodada';
+    var me = (await api('GET', '/auth/me')).body;
+    var roles = (me && me.data && me.data.roles) || [];
+    var admin = roles.some(function (r) { return String(r).toUpperCase() === 'ADMIN'; });
+    ok('p15: usuário da rodada é ADMIN (Editar valor)', admin, JSON.stringify(roles));
+
+    /* 1. menu lateral: Pedidos acima de Faturamento, Prepostos acima de SAC */
+    var nav = all('nav a').map(function (a) { return a.innerText.trim(); }).filter(Boolean);
+    ok('p15: menu tem Pedidos logo acima de Faturamento', nav.indexOf('Faturamento') - nav.indexOf('Pedidos') === 1, nav.join(' > '));
+    ok('p15: menu tem Prepostos logo acima de SAC', nav.indexOf('SAC') - nav.indexOf('Prepostos') === 1, nav.join(' > '));
+
+    /* 2. cadastro de preposto pela tela */
+    await screen('/prepostos', 'Prepostos');
+    var novo = btn(/Novo Preposto/i);
+    if (!ok('p15: botão "Novo Preposto"', !!novo)) return 'sem botão';
+    novo.click();
+    var dlg = await waitFor(function () { return Q.dlg(); }, 6000);
+    var root = dlg || document;
+    Q.nativeSet(root.querySelector('#preposto-nome'), S + ' Preposto');
+    Q.nativeSet(root.querySelector('#preposto-percentual'), '3');
+    Q.nativeSet(root.querySelector('#preposto-email'), 'qa.' + S.toLowerCase() + '@exemplo.com');
+    var s = await Q.submitForm(root, /^Salvar$/);
+    ok('p15: salvar preposto clicou', s.ok, s.why || '');
+    await sleep(800); await settle();
+    var lp = dataOf(await api('GET', '/prepostos?search=' + S)) || [];
+    var preposto = Array.isArray(lp) ? lp[0] : null;
+    ok('p15: preposto criado com 3%', !!preposto && Number(preposto.percentual_comissao) === 3, JSON.stringify(preposto && preposto.percentual_comissao));
+    ok('p15: preposto aparece na lista', Q.bodyText().indexOf(S + ' Preposto') >= 0);
+    if (!preposto) return 'sem preposto';
+    st.ids.preposto = preposto.uuid; Q.flush();
+
+    /* 3. pedido com preposto: tela de edição mostra no campo Vendedor */
+    var ped = await pedidoExternoLiberado('P1', { preposto_uuid: preposto.uuid });
+    if (!ped) return 'sem pedido';
+    st.ids.pedidoPreposto = ped.uuid; Q.flush();
+    var det = dataOf(await api('GET', '/pedidos/' + ped.uuid));
+    ok('p15: pedido devolve só uuid+nome do preposto', det.preposto && det.preposto.nome === preposto.nome && det.preposto.documento === undefined && det.preposto.percentual_comissao === undefined, JSON.stringify(det.preposto));
+
+    /* 4. faturamento: menu ⋮ com todos os itens, Ver PDF, Editar valor */
+    await screen('/faturamento', 'Faturamento');
+    var itens = await abrirMenuDaLinha(det.numero_pedido);
+    var nomes = itens.map(function (b) { return b.innerText.trim(); });
+    ['Ver detalhes', 'Registrar nota', 'Ver PDF', 'Cancelar pedido'].forEach(function (n) {
+      ok('p15: menu ⋮ tem "' + n + '"', nomes.indexOf(n) >= 0, nomes.join(', '));
+    });
+    ok('p15: "Editar valor" ' + (admin ? 'visível para ADMIN' : 'oculto para não-ADMIN'), (nomes.indexOf('Editar valor') >= 0) === admin, nomes.join(', '));
+
+    var restaurar = (function () {
+      window.__QA_BLOB = null; window.__QA_POPUPS = [];
+      var oco = URL.createObjectURL; var oo = window.open;
+      URL.createObjectURL = function (b) { if (b && b.type === 'application/pdf') window.__QA_BLOB = b; return oco.call(URL, b); };
+      window.open = function () { var f = { location: { href: '' }, document: { write: function () {} }, close: function () {} }; window.__QA_POPUPS.push(f); return f; };
+      return function () { URL.createObjectURL = oco; window.open = oo; };
+    })();
+    try {
+      var verPdf = item(itens, /^Ver PDF$/);
+      if (verPdf) verPdf.click();
+      var blob = await waitFor(function () { return window.__QA_BLOB; }, 30000);
+      ok('p15: Ver PDF pelo ⋮ gerou PDF', !!blob && blob.size > 4000, blob && (blob.type + ' ' + blob.size + 'B'));
+      if (blob) {
+        var raw = await new Response(blob).text();
+        ok('p15: PDF começa com %PDF', raw.indexOf('%PDF') === 0);
+      }
+    } finally { restaurar(); }
+    await waitFor(function () { return !/Gerando PDF/.test(Q.bodyText()); }, 15000);
+
+    if (admin) {
+      itens = await abrirMenuDaLinha(det.numero_pedido);
+      var editar = item(itens, /^Editar valor$/);
+      if (editar) editar.click();
+      var d2 = await waitFor(function () { return Q.dlg(); }, 6000);
+      var r2 = d2 || document;
+      Q.nativeSet(r2.querySelector('#ajuste_valor'), '900,00');
+      Q.nativeSet(r2.querySelector('#ajuste_motivo'), 'Ajuste QA ' + S);
+      var s2 = await Q.submitForm(r2, /^Salvar valor$/);
+      ok('p15: salvar valor clicou', s2.ok, s2.why || '');
+      await sleep(1000); await settle();
+      var fd = dataOf(await api('GET', '/faturamento/pedidos/' + ped.uuid));
+      ok('p15: valor ajustado 900 e original preservado 1000', fd && fd.valor === '900.00' && fd.valor_original === '1000.00', fd && (fd.valor + ' / ' + fd.valor_original));
+      ok('p15: ajuste registra motivo e autor', fd && fd.valor_ajustado_motivo === 'Ajuste QA ' + S && !!(fd.valorAjustadoPor && fd.valorAjustadoPor.nome), fd && JSON.stringify(fd.valorAjustadoPor));
+      ok('p15: fila mostra selo "Ajustado"', /ajustado/i.test(Q.bodyText()));
+    }
+
+    /* 5. nota → venda do preposto (3% da nota) */
+    var valorNota = admin ? 900 : 1000;
+    var nota = await api('POST', '/faturamento/pedidos/' + ped.uuid + '/notas', { uuid: crypto.randomUUID(), numero_nota: S + '-NF1', valor: valorNota });
+    ok('p15: nota registrada', nota.status === 201, nota.status + ' ' + nota.text.slice(0, 160));
+    var fdepois = dataOf(await api('GET', '/faturamento/pedidos/' + ped.uuid));
+    ok('p15: nota igual ao valor ajustado conclui o pedido', fdepois && fdepois.status === 'faturado', fdepois && fdepois.status);
+
+    await screen('/prepostos', 'Prepostos');
+    var tabVendas = all('[role=tab]').filter(function (t) { return t.innerText.trim() === 'Vendas'; })[0];
+    if (tabVendas) tabVendas.click();
+    await sleep(600); await settle();
+    ok('p15: aba Vendas grava ?aba=vendas na URL', location.search === '?aba=vendas', location.search);
+    var aba = document.querySelector('[role=tab][aria-selected=true]');
+    ok('p15: aba Vendas selecionada', aba && aba.innerText.trim() === 'Vendas', aba && aba.innerText);
+    var temLinha = await waitFor(function () { return Q.bodyText().indexOf(S + '-NF1') >= 0; }, 8000);
+    ok('p15: venda da nota aparece na aba Vendas', !!temLinha);
+    var esperado = round2(valorNota * 0.03);
+    ok('p15: comissão = 3% da nota na tela', hasScreenNum(esperado), esperado);
+    var vendas = dataOf(await api('GET', '/prepostos/vendas?preposto_uuid=' + preposto.uuid)) || [];
+    var venda = vendas[0];
+    ok('p15: API da venda com 3%', venda && venda.perc_comissao === '3.00' && near(venda.valor_comissao, esperado), venda && JSON.stringify([venda.perc_comissao, venda.valor_comissao]));
+
+    /* 6. pagar pela tela → saída no Financeiro → trava → estornar */
+    function linhaVenda() { return all('tbody tr').filter(function (tr) { return Q.vis(tr) && tr.innerText.indexOf(S + '-NF1') >= 0; })[0]; }
+    var lv = linhaVenda();
+    var g = lv && lv.querySelector('button[aria-haspopup="menu"]');
+    if (g) { g.click(); await sleep(400); }
+    var pagar = item(all('[role=menu] [role=menuitem]').filter(Q.vis), /Marcar como pago/);
+    ok('p15: menu da venda tem "Marcar como pago"', !!pagar);
+    if (pagar) {
+      pagar.click();
+      var d3 = await waitFor(function () { return Q.dlg(); }, 6000);
+      var s3 = await Q.submitForm(d3 || document, /Confirmar pagamento/);
+      ok('p15: confirmar pagamento clicou', s3.ok, s3.why || '');
+      await sleep(1000); await settle();
+    }
+    venda = (dataOf(await api('GET', '/prepostos/vendas?preposto_uuid=' + preposto.uuid)) || [])[0];
+    ok('p15: venda paga', venda && venda.status === 'pago', venda && venda.status);
+    ok('p15: tela mostra "Pago em"', /Pago em/.test(Q.bodyText()));
+    var lanc = dataOf(await api('GET', '/financeiro/lancamentos?limit=100')) || [];
+    var mov = lanc.filter(function (m) { return (m.descricao || '').indexOf(S + '-NF1') >= 0; })[0];
+    ok('p15: saída "Custo Rotativo" no Financeiro com o valor da comissão', mov && mov.tipo === 'Custo Rotativo' && near(mov.valor, esperado), mov && JSON.stringify([mov.tipo, mov.valor, mov.descricao]));
+    if (mov) {
+      var delMov = await api('DELETE', '/financeiro/lancamentos/' + mov.uuid + '?version=' + mov.version);
+      ok('p15: Financeiro recusa apagar a saída da comissão (409)', delMov.status === 409, delMov.status);
+    }
+    var notaReg = dataOf(nota);
+    var delNota = await api('DELETE', '/faturamento/notas/' + notaReg.uuid + '?version=' + notaReg.version);
+    ok('p15: nota com comissão de preposto paga não exclui (409)', delNota.status === 409, delNota.status);
+
+    lv = linhaVenda(); g = lv && lv.querySelector('button[aria-haspopup="menu"]');
+    if (g) { g.click(); await sleep(400); }
+    var estornar = item(all('[role=menu] [role=menuitem]').filter(Q.vis), /Estornar pagamento/);
+    ok('p15: menu da venda paga tem "Estornar pagamento"', !!estornar);
+    if (estornar) {
+      estornar.click();
+      var d4 = await waitFor(function () { return Q.dlg(); }, 6000);
+      var b4 = btn(/^Estornar$/, d4 || document);
+      if (b4) b4.click();
+      await sleep(1200); await settle();
+    }
+    venda = (dataOf(await api('GET', '/prepostos/vendas?preposto_uuid=' + preposto.uuid)) || [])[0];
+    ok('p15: estorno volta a venda para pendente', venda && venda.status === 'pendente', venda && venda.status);
+    if (mov) {
+      var movDepois = await api('GET', '/financeiro/lancamentos/' + mov.uuid);
+      ok('p15: estorno apaga a saída do Financeiro', movDepois.status === 404, movDepois.status);
+    }
+
+    /* 7. cancelar pedido pelo ⋮ (pedido sem nota) */
+    var ped2 = await pedidoExternoLiberado('P2');
+    if (ped2) {
+      st.ids.pedidoCancelar = ped2.uuid; Q.flush();
+      await screen('/faturamento', 'Faturamento');
+      var it2 = await abrirMenuDaLinha(ped2.numero_pedido);
+      var canc = item(it2, /^Cancelar pedido$/);
+      if (canc) canc.click();
+      var d5 = await waitFor(function () { return Q.dlg(); }, 6000);
+      var b5 = btn(/^Cancelar pedido$/, d5 || document);
+      ok('p15: diálogo de confirmação do cancelamento', !!b5);
+      if (b5) b5.click();
+      await sleep(1200); await settle();
+      var p2d = dataOf(await api('GET', '/pedidos/' + ped2.uuid));
+      ok('p15: pedido cancelado pelo ⋮', p2d && p2d.status === 'cancelado', p2d && p2d.status);
+    }
+
+    /* 8. limpeza da fase */
+    var limp = [];
+    var n1 = dataOf(await api('GET', '/faturamento/pedidos/' + ped.uuid));
+    var notas = (n1 && n1.notas) || [];
+    for (var i = 0; i < notas.length; i++) {
+      limp.push((await api('DELETE', '/faturamento/notas/' + notas[i].uuid + '?version=' + notas[i].version)).status);
+    }
+    var pedidosFase = [ped.uuid, ped2 && ped2.uuid].filter(Boolean);
+    for (var j = 0; j < pedidosFase.length; j++) {
+      var cur = dataOf(await api('GET', '/pedidos/' + pedidosFase[j]));
+      if (cur) limp.push((await api('DELETE', '/pedidos/' + pedidosFase[j] + '?version=' + cur.version)).status);
+    }
+    var prep = dataOf(await api('GET', '/prepostos/' + preposto.uuid));
+    if (prep) limp.push((await api('DELETE', '/prepostos/' + preposto.uuid + '?version=' + prep.version)).status);
+    ok('p15: limpeza da fase (notas, pedidos, preposto)', limp.every(function (c) { return c === 200 || c === 204; }), limp.join(','));
+    var sobra = dataOf(await api('GET', '/prepostos?search=' + S)) || [];
+    ok('p15: preposto da rodada removido', Array.isArray(sobra) && sobra.length === 0, sobra.length);
+    Q.flush();
+    return { preposto: preposto.uuid, pedido: ped.uuid, limpeza: limp };
   };
 
   /* ---------------- P14 — limpeza ---------------- */
