@@ -35,9 +35,11 @@ Ao finalizar, resuma as validações executadas e seus resultados.
 
 ## Commits para rastreamento
 
-- Separe commits por assunto lógico; não misture funcionalidades independentes.
-- Mantenha migrations, backend, frontend e testes no commit da funcionalidade que dependem, salvo quando a cobertura de QA for uma melhoria independente.
-- Use Conventional Commits com assunto curto e objetivo.
+- Antes de executar `git add` ou `git commit`, releia esta seção e organize as mudanças em grupos lógicos separados.
+- Sempre faça commits separados por assunto lógico para manter o histórico 100% rastreável; nunca misture funcionalidades, correções ou refatorações independentes no mesmo commit.
+- Cada commit deve conter somente um grupo coerente e completo. Mantenha migration, backend, frontend e testes no commit da funcionalidade da qual dependem; se forem melhorias independentes, use commits separados.
+- Use Conventional Commits com assunto curto, objetivo e sempre em português.
+- Faça staging explícito somente dos arquivos pertencentes ao grupo atual. Revise `git diff --cached` antes de criar cada commit.
 
 ## Automação de teste no Safari (obrigatório ler antes de automatizar navegador)
 
