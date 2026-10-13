@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { Blob as NodeBlob } from 'node:buffer';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('driver Safari — captura temporária de window.open', () => {
@@ -8,7 +9,9 @@ describe('driver Safari — captura temporária de window.open', () => {
 
   it('restaura window.open e zera os popups entre p8 e p8b', async () => {
     const pdfRaw = `%PDF-1.7 /Type /PageX /Subtype /Image ${'x'.repeat(5000)}`;
-    const pdfBlob = new Blob([pdfRaw], { type: 'application/pdf' });
+    // Blob do Node, não o do jsdom: o driver lê o PDF com `new Response(blob)`,
+    // e o Response do Node 22 (o do CI) não sabe ler o Blob do jsdom.
+    const pdfBlob = new NodeBlob([pdfRaw], { type: 'application/pdf' }) as unknown as Blob;
     const openOriginal = vi.fn(() => null);
     window.open = openOriginal;
     window.Response = globalThis.Response;
