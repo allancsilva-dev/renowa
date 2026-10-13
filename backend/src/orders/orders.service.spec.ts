@@ -12,7 +12,7 @@ import { RequestUser } from '../common/types/jwt-payload.type';
 
 function queryBuilder(overrides: Record<string, jest.Mock> = {}) {
   const builder: Record<string, jest.Mock> = {};
-  for (const method of ['select', 'leftJoinAndSelect', 'where', 'andWhere', 'update', 'set', 'returning']) {
+  for (const method of ['select', 'addSelect', 'leftJoin', 'leftJoinAndSelect', 'where', 'andWhere', 'update', 'set', 'returning']) {
     builder[method] = jest.fn().mockReturnValue(builder);
   }
   return Object.assign(builder, overrides);

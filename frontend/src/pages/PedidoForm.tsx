@@ -18,10 +18,13 @@ import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
 import { encontrarCodigosDuplicados, mensagemCodigosDuplicados, mensagemLinhaDuplicada } from '@/lib/orderItemCodes';
 import { deleteOrderItemPhoto, fetchOrderItemPhoto, fetchOrderItemPhotoDataUrl, uploadOrderItemPhoto } from '@/services/productPhotos.service';
 import OrderItemPhotoField from '@/components/orders/OrderItemPhotoField';
-import { clientOptionsFetcher, filterLocalOptions, productOptionsFetcher, supplierOptionsFetcher, transportOptionsFetcher } from '@/lib/relationOptions';
+import {
+  clientOptionsFetcher, prepostoOptionLabel, productOptionsFetcher, sellerOptionsFetcher, sellerValue, splitSellerValue,
+  supplierOptionsFetcher, transportOptionsFetcher,
+} from '@/lib/relationOptions';
 
 type HeaderForm = {
-  data: string; cliente_uuid: string; vendedor_uuid: string; fornecedor_uuid: string;
+  data: string; cliente_uuid: string; vendedor_uuid: string; preposto_uuid: string; fornecedor_uuid: string;
   transportadora_uuid: string; status: OrderStatus; pgt: string; prazo: string;
   local_entrega: string; tipo_faturamento: string; observacao: string;
 };
@@ -44,7 +47,7 @@ type ItemForm = {
 type TenantUser = { authUserId: string; name: string; active: boolean };
 
 const emptyHeader: HeaderForm = {
-  data: new Date().toISOString().slice(0, 10), cliente_uuid: '', vendedor_uuid: '', fornecedor_uuid: '',
+  data: new Date().toISOString().slice(0, 10), cliente_uuid: '', vendedor_uuid: '', preposto_uuid: '', fornecedor_uuid: '',
   transportadora_uuid: '', status: 'em_aberto', pgt: '', prazo: '', local_entrega: '',
   tipo_faturamento: '', observacao: '',
 };
@@ -78,7 +81,9 @@ function orderToForm(order: Order, duplicating = false): { header: HeaderForm; i
   return {
     header: {
       data: duplicating ? new Date().toISOString().slice(0, 10) : order.data ?? '',
-      cliente_uuid: duplicating ? '' : order.cliente?.uuid ?? '', vendedor_uuid: order.vendedor?.uuid ?? '',
+      cliente_uuid: duplicating ? '' : order.cliente?.uuid ?? '',
+      // Campo Vendedor mostra um só: preposto, quando houver, senão o usuário.
+      vendedor_uuid: order.preposto ? '' : order.vendedor?.uuid ?? '', preposto_uuid: order.preposto?.uuid ?? '',
       fornecedor_uuid: order.fornecedor?.uuid ?? '', transportadora_uuid: duplicating ? '' : order.transportadora?.uuid ?? '',
       status: duplicating ? 'em_aberto' : order.status, pgt: duplicating ? '' : order.pgt ?? '', prazo: order.prazo ?? '', local_entrega: duplicating ? '' : order.local_entrega ?? '',
       tipo_faturamento: order.tipo_faturamento ?? '', observacao: order.observacao ?? '',
@@ -149,7 +154,7 @@ export default function PedidoForm() {
         setHeader(mapped.header); setItems(loadedItems); markClean(editSnapshot(mapped.header, loadedItems));
         setVersion(duplicateSourceUuid ? null : order.version); setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
         setSupplierLabel(order.fornecedor?.razao_social ?? '');
-        setVendorLabel(order.vendedor?.nome ?? '');
+        setVendorLabel(order.preposto ? prepostoOptionLabel(order.preposto.nome) : order.vendedor?.nome ?? '');
         setSelectedTransport(duplicateSourceUuid ? null : order.transportadora ?? null);
         setTransportLabel(duplicateSourceUuid ? '' : order.transportadora?.razao_social ?? '');
         if (!duplicateSourceUuid) {
@@ -225,10 +230,8 @@ export default function PedidoForm() {
   }
 
   function vendorFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-    return Promise.resolve(filterLocalOptions(users.map((user) => ({
-      value: user.authUserId,
-      label: user.name,
-    })), search, page));
+    const userOptions = users.map((user) => ({ value: user.authUserId, label: user.name }));
+    return sellerOptionsFetcher(userOptions, hasPermission('prepostos.ver'))(search, page);
   }
 
   function chooseProduct(itemUuid: string, productUuid: string | null, option: AsyncComboboxOption | null) {
@@ -371,6 +374,9 @@ export default function PedidoForm() {
     const payload: Record<string, unknown> = {
       uuid: uuid ?? uuidDeCriacao, ...headerFields,
       vendedor_uuid: canChooseVendor && header.vendedor_uuid ? header.vendedor_uuid : undefined,
+      // VENDEDOR não manda o campo (o backend responde 403); quem escolhe manda
+      // sempre, e null remove o preposto.
+      preposto_uuid: canChooseVendor ? header.preposto_uuid || null : undefined,
       transportadora_uuid: header.transportadora_uuid || null,
       data: header.data || null, pgt: header.pgt || null, prazo: header.prazo || null,
       local_entrega: header.local_entrega || null, tipo_faturamento: header.tipo_faturamento || null,
@@ -468,7 +474,7 @@ export default function PedidoForm() {
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
             <input disabled={fieldsDisabled} type='date' value={header.data} onChange={(e) => setHeader((h) => ({ ...h, data: e.target.value }))} className={inputClass} /></label>
           {canChooseVendor && <label className='flex flex-col gap-1'><span className={labelClass}>Vendedor</span>
-            <AsyncCombobox disabled={fieldsDisabled} value={header.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setHeader((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
+            <AsyncCombobox disabled={fieldsDisabled} value={sellerValue(header)} displayValue={vendorLabel} onChange={(value, option) => { setHeader((current) => ({ ...current, ...splitSellerValue(value) })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
             <AsyncCombobox disabled={fieldsDisabled} value={header.transportadora_uuid || null} displayValue={transportLabel} onChange={handleSelectTransport} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
           <label className='flex flex-col gap-1'><span className={labelClass}>Tel. Transporte</span>

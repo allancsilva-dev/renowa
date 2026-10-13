@@ -130,6 +130,22 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
       + ' AND valor_ajustado_por IS NOT NULL AND valor_ajustado_em IS NOT NULL)',
     origem: '0049',
   },
+  // Preposto (0050): percentual é base de comissão paga; documento só dígitos
+  // é o que o índice único parcial compara.
+  {
+    tabela: 'prepostos',
+    nome: 'prepostos_percentual_comissao_check',
+    validado: true,
+    expressao: 'percentual_comissao >= 0 AND percentual_comissao <= 100',
+    origem: '0050',
+  },
+  {
+    tabela: 'prepostos',
+    nome: 'prepostos_documento_check',
+    validado: true,
+    expressao: "documento IS NULL OR documento ~ '^([0-9]{11}|[0-9]{14})$'",
+    origem: '0050',
+  },
   {
     tabela: 'pedidos',
     nome: 'pedidos_origem_check',
@@ -293,6 +309,13 @@ const INDICES_PARCIAIS_ESPERADOS: IndiceParcialEsperado[] = [
     regra: 'uma foto ativa por produto do catalogo (soft delete libera a vaga)',
     origem: '0040',
   },
+  {
+    tabela: 'prepostos',
+    colunas: ['tenant_id', 'documento'],
+    predicado: 'deleted_at IS NULL AND documento IS NOT NULL',
+    regra: 'CPF/CNPJ de preposto unico entre os ativos do tenant',
+    origem: '0050',
+  },
 ];
 
 /** Tabelas declaradas por migrations já marcadas como aplicadas. */
@@ -314,6 +337,7 @@ const TABELAS_ESPERADAS = [
   'pedidos',
   'permissions',
   'pii_audit_events',
+  'prepostos',
   'produto_fotos',
   'produtos',
   'refresh_tokens',

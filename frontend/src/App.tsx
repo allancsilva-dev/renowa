@@ -20,6 +20,7 @@ const Fornecedores = lazy(() => import('@/pages/Fornecedores'));
 const FornecedorForm = lazy(() => import('@/pages/FornecedorForm'));
 const PedidoDetalhe = lazy(() => import('@/pages/PedidoDetalhe'));
 const Transporte = lazy(() => import('@/pages/Transporte'));
+const Prepostos = lazy(() => import('@/pages/Prepostos'));
 const Financeiro = lazy(() => import('@/pages/Financeiro'));
 const Faturamento = lazy(() => import('@/pages/Faturamento'));
 const FaturamentoDetalhe = lazy(() => import('@/pages/FaturamentoDetalhe'));
@@ -140,6 +141,17 @@ export default function App() {
             )}
           >
             <Route index element={<Transporte />} />
+          </Route>
+
+          <Route
+            path='prepostos'
+            element={(
+              <ProtectedRoute permission='prepostos.ver'>
+                <AppShell />
+              </ProtectedRoute>
+            )}
+          >
+            <Route index element={<Prepostos />} />
           </Route>
 
           <Route

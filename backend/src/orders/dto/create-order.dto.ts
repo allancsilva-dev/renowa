@@ -36,6 +36,12 @@ export class CreateOrderDto {
 
   @IsDefined() @IsUUID('4') cliente_uuid: string;
   @IsOptional() @IsUUID('4') vendedor_uuid?: string | null;
+  /**
+   * Preposto (representante externo) da venda. Exclusivo com `vendedor_uuid`:
+   * o campo Vendedor da tela escolhe um OU outro. Só ADMIN/GESTAO definem —
+   * VENDEDOR enviando o campo recebe 403.
+   */
+  @IsOptional() @IsUUID('4') preposto_uuid?: string | null;
   @IsDefined() @IsUUID('4') fornecedor_uuid: string;
   @IsOptional() @IsUUID('4') transportadora_uuid?: string | null;
 

@@ -299,6 +299,12 @@ export const TABELAS_SEM_PII: Readonly<Record<string, string>> = {
     + 'um TERCEIRO, que não é CLIENT nem USER e portanto não tem tipo de titular '
     + 'nem caminho de solicitação. Apagar por tabela de carona numa solicitação de '
     + 'outro titular seria decisão de negócio, não técnica. Ver PROB-0076.',
+  prepostos:
+    'FORA DO ESCOPO ATUAL, NÃO ISENTA — mesmo caso de parceiros_comerciais: nome, '
+    + 'CPF, telefone, e-mail e endereço de representante externo, que não é CLIENT '
+    + 'nem USER e portanto não tem tipo de titular nem caminho de solicitação. '
+    + 'Controles hoje: acesso só com prepostos.ver (vendedor não tem), pedido expõe '
+    + 'só uuid+nome, pull de sync não leva preposto_id, documento opcional. Ver PROB-0076.',
   lgpd_requests:
     'Trilha das próprias solicitações. Guarda `subject_uuid`, que é referência ao '
     + 'titular, não atributo dele. Apagar aqui destruiria a prova de que o '

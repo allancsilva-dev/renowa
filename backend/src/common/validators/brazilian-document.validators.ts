@@ -19,6 +19,25 @@ export function isValidCnpj(value: unknown): boolean {
   return calculateDigit(12) === Number(digits[12]) && calculateDigit(13) === Number(digits[13]);
 }
 
+export function isValidCpf(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const digits = value.replace(/\D/g, '');
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) return false;
+
+  const calculateDigit = (length: number): number => {
+    let sum = 0;
+    for (let index = 0; index < length; index += 1) sum += Number(digits[index]) * (length + 1 - index);
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+
+  return calculateDigit(9) === Number(digits[9]) && calculateDigit(10) === Number(digits[10]);
+}
+
+export function isValidCpfOrCnpj(value: unknown): boolean {
+  return isValidCpf(value) || isValidCnpj(value);
+}
+
 export function isValidCep(value: unknown): boolean {
   return typeof value === 'string' && /^\d{5}-?\d{3}$/.test(value);
 }
@@ -35,4 +54,5 @@ function validator(name: string, validate: (value: unknown) => boolean, message:
 }
 
 export const IsCnpj = validator('isCnpj', isValidCnpj, '$property must be a valid CNPJ');
+export const IsCpfOrCnpj = validator('isCpfOrCnpj', isValidCpfOrCnpj, '$property must be a valid CPF or CNPJ');
 export const IsCep = validator('isCep', isValidCep, '$property must be a valid CEP');

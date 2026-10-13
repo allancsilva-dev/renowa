@@ -19,6 +19,7 @@ import { ProductsModule } from './products/products.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { FinanceModule } from './finance/finance.module';
 import { TransportModule } from './transport/transport.module';
+import { PrepostosModule } from './prepostos/prepostos.module';
 import { SyncModule } from './sync/sync.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
@@ -82,6 +83,7 @@ import { RedisThrottlerStorage } from './common/throttling/redis-throttler.stora
     SuppliersModule,
     FinanceModule,
     TransportModule,
+    PrepostosModule,
     SyncModule,
     UsersModule,
     RolesModule,

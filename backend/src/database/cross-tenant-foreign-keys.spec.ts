@@ -18,6 +18,7 @@ import { Supplier } from '../suppliers/entities/supplier.entity';
 import { Transport } from '../transport/entities/transport.entity';
 import { User } from '../users/entities/user.entity';
 import { Permission } from '../common/entities/permission.entity';
+import { Preposto } from '../prepostos/entities/preposto.entity';
 
 const migration = readFileSync(
   join(__dirname, 'migrations/0021_cross_tenant_foreign_keys.sql'),
@@ -32,6 +33,7 @@ const tenantRelations: Array<[new (...args: any[]) => unknown, string]> = [
   [Order, 'cliente'],
   [Order, 'fornecedor'],
   [Order, 'transportadora'],
+  [Order, 'preposto'],
   [Client, 'transportadora'],
   [Product, 'fornecedor'],
   [Inadimplencia, 'cliente'],
@@ -73,6 +75,7 @@ describe('PROB-0011 cross-tenant foreign keys', () => {
         Product,
         Supplier,
         Transport,
+        Preposto,
         Inadimplencia,
         Commission,
         Parceiro,

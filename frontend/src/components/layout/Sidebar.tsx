@@ -11,6 +11,7 @@ import {
   Building2,
   Receipt,
   Headset,
+  UserRoundCheck,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { formatRole } from '@/lib/authorization';
@@ -39,6 +40,8 @@ const mainNavItems: NavItem[] = [
   { to: '/pedidos',       label: 'Pedidos',      icon: FileText,   permission: 'pedidos.ver' },
   { to: '/faturamento',   label: 'Faturamento',  icon: Receipt,    permission: 'faturamento.ver' },
   { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign, permission: 'financeiro.ver' },
+  // Prepostos logo acima do SAC: vendas e comissão dos representantes externos.
+  { to: '/prepostos',     label: 'Prepostos',    icon: UserRoundCheck, permission: 'prepostos.ver' },
   // SAC fecha a barra: é pós-venda, depois de todo o ciclo comercial.
   { to: '/sac',           label: 'SAC',          icon: Headset,    permission: 'sac.ver' },
 ];
