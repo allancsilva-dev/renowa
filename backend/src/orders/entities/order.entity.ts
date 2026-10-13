@@ -112,6 +112,23 @@ export class Order extends VersionedBaseEntity {
   @Column({ name: 'total_com_imposto', type: 'decimal', precision: 18, scale: 2, nullable: true })
   total_com_imposto: string | null;
 
+  /**
+   * Valor corrigido pelo ADMIN no Faturamento (0049). Não substitui os totais:
+   * o faturamento lê `valor_ajustado ?? total_com_imposto ?? total_sem_imposto`.
+   * CHECK `pedidos_valor_ajustado_check` exige os quatro campos juntos.
+   */
+  @Column({ name: 'valor_ajustado', type: 'decimal', precision: 18, scale: 2, nullable: true })
+  valor_ajustado: string | null;
+
+  @Column({ name: 'valor_ajustado_motivo', type: 'text', nullable: true })
+  valor_ajustado_motivo: string | null;
+
+  @Column({ name: 'valor_ajustado_por', type: 'uuid', nullable: true })
+  valor_ajustado_por: string | null;
+
+  @Column({ name: 'valor_ajustado_em', type: 'timestamptz', nullable: true })
+  valor_ajustado_em: Date | null;
+
   @Column({ name: 'pgt', type: 'varchar', nullable: true })
   pgt: string | null;
 

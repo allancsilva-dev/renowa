@@ -670,7 +670,7 @@ export class SyncService {
     const hasMore = cursor + limit < total;
 
     return {
-      data,
+      data: data.map((row) => omitPullHiddenFields(repo.metadata.tableName, row)),
       meta: {
         total,
         hasMore,
@@ -707,7 +707,8 @@ export class SyncService {
       ) as Array<{ revision: string; operation: 'UPSERT' | 'DELETE'; payload: Record<string, unknown> }>;
 
       const hasMore = rows.length > dto.limit;
-      const data = hasMore ? rows.slice(0, dto.limit) : rows;
+      const page = hasMore ? rows.slice(0, dto.limit) : rows;
+      const data = page.map((row) => ({ ...row, payload: omitPullHiddenFields(entity, row.payload) }));
       return {
         data,
         meta: {
@@ -718,6 +719,24 @@ export class SyncService {
       };
     });
   }
+}
+
+/**
+ * Colunas que existem na tabela mas não descem para o mobile. O payload do
+ * outbox é `to_jsonb(NEW)` (0008) e o pull v1 devolve a entidade inteira: sem
+ * este filtro, toda coluna nova de `pedidos` vaza para o aparelho — inclusive
+ * o motivo e o autor do ajuste de valor, que são decisão interna do ADMIN.
+ */
+const PULL_HIDDEN_FIELDS: Readonly<Record<string, readonly string[]>> = {
+  pedidos: ['valor_ajustado', 'valor_ajustado_motivo', 'valor_ajustado_por', 'valor_ajustado_em'],
+};
+
+export function omitPullHiddenFields<T extends object>(table: string, row: T): T {
+  const hidden = PULL_HIDDEN_FIELDS[table];
+  if (!hidden || !row) return row;
+  const copy = { ...row } as Record<string, unknown>;
+  for (const field of hidden) delete copy[field];
+  return copy as T;
 }
 
 export type SyncV2Status = 'applied' | 'duplicate' | 'conflict' | 'rejected' | 'retryable';

@@ -118,6 +118,18 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
     expressao: "status = ANY (ARRAY['pendente','faturado','pago','bloqueado'])",
     origem: '0048',
   },
+  // Ajuste de valor do ADMIN vem completo ou não existe: sem ele, um UPDATE
+  // parcial deixaria valor ajustado sem motivo/autor (auditoria perdida).
+  {
+    tabela: 'pedidos',
+    nome: 'pedidos_valor_ajustado_check',
+    validado: true,
+    expressao:
+      '(valor_ajustado IS NULL AND valor_ajustado_motivo IS NULL AND valor_ajustado_por IS NULL AND valor_ajustado_em IS NULL)'
+      + ' OR (valor_ajustado > 0 AND length(TRIM(BOTH FROM valor_ajustado_motivo)) >= 3'
+      + ' AND valor_ajustado_por IS NOT NULL AND valor_ajustado_em IS NOT NULL)',
+    origem: '0049',
+  },
   {
     tabela: 'pedidos',
     nome: 'pedidos_origem_check',

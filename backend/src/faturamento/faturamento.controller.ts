@@ -1,6 +1,9 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus,
+  Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus, ForbiddenException, ParseUUIDPipe,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
+import { isAdmin } from '../common/authorization/roles';
 import { FaturamentoService } from './faturamento.service';
 import { CreateNotaFiscalDto } from './dto/create-nota-fiscal.dto';
 import { UpdateNotaFiscalDto } from './dto/update-nota-fiscal.dto';
@@ -55,6 +58,19 @@ export class FaturamentoController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.faturamentoService.reabrir(uuid, dto, user.tenantId, user.sub);
+  }
+
+  /** Só ADMIN: Gestão também tem `faturamento.editar`, e o negócio restringiu o ajuste ao Admin. */
+  @Patch('pedidos/:uuid/valor')
+  @RequirePermission('faturamento.editar')
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  async ajustarValor(
+    @Param('uuid', new ParseUUIDPipe({ version: '4' })) uuid: string,
+    @Body() dto: AjustarValorPedidoDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    if (!isAdmin(user)) throw new ForbiddenException('Somente o administrador pode ajustar o valor do pedido.');
+    return this.faturamentoService.ajustarValor(uuid, dto, user.tenantId, user.sub);
   }
 
   @Patch('notas/:uuid')

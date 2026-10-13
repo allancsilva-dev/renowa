@@ -179,6 +179,10 @@ export interface Order {
   sistema_origem: string | null;
   total_sem_imposto: string | null;
   total_com_imposto: string | null;
+  /** Valor corrigido pelo ADMIN no Faturamento; os totais calculados ficam intactos. */
+  valor_ajustado?: string | null;
+  valor_ajustado_motivo?: string | null;
+  valor_ajustado_em?: string | null;
   pgt: string | null;
   prazo: string | null;
   local_entrega: string | null;

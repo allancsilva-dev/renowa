@@ -21,6 +21,7 @@ import { ConcurrentModificationException } from '../common/errors/concurrent-mod
 import { decimal, money } from '../common/decimal/decimal';
 import { applySearch } from '../common/persistence/search-filter';
 import { isVendorOnly, vendorOwnershipWhere } from './order-ownership';
+import { orderValorEfetivo } from './order-valor';
 
 type ReferenceTable = 'clientes' | 'usuarios' | 'fornecedores' | 'transportadoras' | 'produtos';
 
@@ -551,7 +552,7 @@ export class OrdersService {
       order: { data_emissao: 'DESC', created_at: 'DESC' },
     });
 
-    const valorPedido = decimal(order.total_com_imposto ?? order.total_sem_imposto ?? 0);
+    const valorPedido = decimal(orderValorEfetivo(order));
     const totalFaturado = money(notas.reduce((acc, n) => acc.plus(decimal(n.valor)), decimal(0)));
 
     return {

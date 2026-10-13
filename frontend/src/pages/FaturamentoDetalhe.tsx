@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Trash2, LockKeyhole, RotateCcw } from 'lucide-react';
+import { ArrowLeft, FileDown, Pencil, Trash2, LockKeyhole, RotateCcw } from 'lucide-react';
 import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
 import Dialog from '@/components/ui/Dialog';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
+import { useOrderPdf } from '@/hooks/useOrderPdf';
 import {
   fetchFaturamentoPedidoDetalhe, atualizarNota, excluirNota,
   finalizarFaturamento, reabrirFaturamento,
@@ -37,6 +38,7 @@ export default function FaturamentoDetalhe() {
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('faturamento.editar');
   const { uuid: finalizacaoUuid, renovar: renovarFinalizacaoUuid } = useUuidDeCriacao();
+  const { generate: gerarPdf, loadingUuid: pdfLoadingUuid, error: pdfError, warning: pdfWarning } = useOrderPdf();
 
   const [pedido, setPedido] = useState<PedidoDetalhe | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,15 +171,35 @@ export default function FaturamentoDetalhe() {
               {pedido.cliente?.razao_social ?? 'Sem cliente'} · {pedido.fornecedor?.razao_social ?? 'Sem fornecedor'}
             </p>
           </div>
-          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${orderStatusColor[status] ?? 'bg-slate-100 text-slate-600'}`}>
-            {orderStatusLabel[status] ?? pedido.status}
-          </span>
+          <div className='flex flex-wrap items-center gap-2'>
+            <button
+              type='button'
+              onClick={() => { void gerarPdf(pedido.uuid); }}
+              disabled={pdfLoadingUuid !== null}
+              className='flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60'
+            >
+              <FileDown className='h-4 w-4' />{pdfLoadingUuid ? 'Gerando...' : 'Ver PDF'}
+            </button>
+            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${orderStatusColor[status] ?? 'bg-slate-100 text-slate-600'}`}>
+              {orderStatusLabel[status] ?? pedido.status}
+            </span>
+          </div>
         </div>
+
+        {pdfError && (
+          <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>{pdfError}</div>
+        )}
+        {pdfWarning && (
+          <div role='status' className='rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700'>{pdfWarning}</div>
+        )}
 
         <div className='grid grid-cols-1 gap-4 sm:grid-cols-3 text-sm'>
           <div>
             <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Valor do pedido</p>
             <p className='text-slate-800'>{BRL.format(moneyForDisplay(pedido.valor))}</p>
+            {pedido.valor_ajustado && (
+              <p className='mt-1 text-xs text-slate-500'>Ajustado · original {BRL.format(moneyForDisplay(pedido.valor_original))}</p>
+            )}
           </div>
           <div>
             <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Total faturado</p>
@@ -191,6 +213,13 @@ export default function FaturamentoDetalhe() {
           </div>
         </div>
       </div>
+
+      {pedido.valor_ajustado && (
+        <p className='rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900'>
+          <strong>Valor ajustado</strong> por {pedido.valorAjustadoPor?.nome ?? 'administrador'}
+          {pedido.valor_ajustado_em ? ` em ${new Date(pedido.valor_ajustado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}` : ''}: {pedido.valor_ajustado_motivo}
+        </p>
+      )}
 
       <section className='rounded-lg border border-slate-200 bg-white p-6 shadow-sm'>
         <div className='flex flex-wrap items-start justify-between gap-4'>

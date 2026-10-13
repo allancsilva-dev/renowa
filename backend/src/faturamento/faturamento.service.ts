@@ -13,6 +13,8 @@ import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
 import { applySearch } from '../common/persistence/search-filter';
 import { decimal, money, percentageOf } from '../common/decimal/decimal';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
+import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
+import { orderValorEfetivo } from '../orders/order-valor';
 
 /** Pedidos elegíveis para registrar nota fiscal (fora de em_aberto/cancelado). */
 const FATURAVEL_STATUSES = ['liberado', 'parcialmente_faturado', 'faturado'];
@@ -26,9 +28,15 @@ export interface PedidoFaturamentoRow {
   uuid: string;
   numero_pedido: number | null;
   status: string;
+  /** Lock otimista do pedido — cancelar e ajustar valor pela fila exigem. */
+  version: number;
   cliente: string | null;
   fornecedor: string | null;
+  /** Valor efetivo: o ajustado pelo ADMIN, quando houver. */
   valor: string;
+  /** Total calculado do pedido, antes de qualquer ajuste. */
+  valor_original: string;
+  valor_ajustado: string | null;
   total_faturado: string;
   divergencia: string;
   /**
@@ -50,8 +58,8 @@ export class FaturamentoService {
     @InjectRepository(FaturamentoFinalizacao) private readonly finalizacaoRepo: Repository<FaturamentoFinalizacao>,
   ) {}
 
-  private orderValor(order: Pick<Order, 'total_com_imposto' | 'total_sem_imposto'>): string {
-    return money(order.total_com_imposto ?? order.total_sem_imposto ?? 0);
+  private orderValor(order: Pick<Order, 'valor_ajustado' | 'total_com_imposto' | 'total_sem_imposto'>): string {
+    return orderValorEfetivo(order);
   }
 
   async findPedidos(tenantId: string, pagination: PaginationDto): Promise<PaginatedResponse<PedidoFaturamentoRow>> {
@@ -94,9 +102,12 @@ export class FaturamentoService {
         uuid: o.uuid,
         numero_pedido: o.numero_pedido,
         status: o.status,
+        version: o.version,
         cliente: o.cliente?.razao_social ?? null,
         fornecedor: o.fornecedor?.razao_social ?? null,
         valor,
+        valor_original: money(o.total_com_imposto ?? o.total_sem_imposto ?? 0),
+        valor_ajustado: o.valor_ajustado ?? null,
         total_faturado: totalFaturado,
         divergencia: money(decimal(valor).minus(totalFaturado)),
         origem: o.origem ?? 'interno',
@@ -148,10 +159,20 @@ export class FaturamentoService {
       reabertura_motivo: item.reabertura_motivo,
     }));
 
+    // Só o nome de quem ajustou: o uuid já vem no pedido e o resto do usuário não interessa à tela.
+    const ajustadoPor = order.valor_ajustado_por
+      ? await this.dataSource.query(
+        'SELECT nome FROM usuarios WHERE tenant_id = $1 AND uuid = $2 LIMIT 1',
+        [tenantId, order.valor_ajustado_por],
+      ) as Array<{ nome: string }>
+      : [];
+
     return {
       ...order,
       notas,
       valor,
+      valor_original: money(order.total_com_imposto ?? order.total_sem_imposto ?? 0),
+      valorAjustadoPor: ajustadoPor[0] ? { nome: ajustadoPor[0].nome } : null,
       total_faturado: totalFaturado,
       divergencia: money(decimal(valor).minus(totalFaturado)),
       finalizacao_ativa: finalizacoesPublicas.find((item) => !item.reaberto_at) ?? null,
@@ -183,7 +204,7 @@ export class FaturamentoService {
       .getRawOne<{ total: string }>();
 
     const totalNotas = decimal(sumResult?.total ?? 0);
-    const totalPedido = decimal(order.total_com_imposto ?? order.total_sem_imposto ?? 0);
+    const totalPedido = decimal(this.orderValor(order));
 
     let newStatus: string;
     if (totalNotas.isZero()) {
@@ -435,6 +456,60 @@ export class FaturamentoService {
       );
       return saved;
     });
+  }
+
+  /**
+   * Ajuste do valor do pedido (só ADMIN — o controller barra os demais papéis).
+   * Grava em `valor_ajustado` sem tocar os totais calculados, e reavalia o status
+   * com o valor novo: baixar o valor até o total já faturado conclui o pedido.
+   */
+  async ajustarValor(pedidoUuid: string, dto: AjustarValorPedidoDto, tenantId: string, userUuid: string) {
+    const motivo = dto.motivo.trim();
+    if (motivo.length < 3) throw new BadRequestException('Informe um motivo com pelo menos 3 caracteres.');
+    const valor = money(dto.valor);
+    if (!decimal(valor).gt(0)) throw new BadRequestException('O valor do pedido deve ser maior que zero.');
+
+    await this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(Order);
+      const order = await orderRepo.findOne({
+        where: { uuid: pedidoUuid, tenant_id: tenantId, deleted_at: IsNull() },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!order) throw new NotFoundException(`Pedido ${pedidoUuid} não encontrado.`);
+      if (order.version !== dto.version) {
+        throw new ConcurrentModificationException('pedido', pedidoUuid, dto.version, order.version);
+      }
+      if (order.status !== 'liberado' && order.status !== 'parcialmente_faturado') {
+        throw new ConflictException('Só é possível ajustar o valor de pedido liberado ou parcialmente faturado.');
+      }
+      await this.assertNoActiveFinalization(manager, order);
+
+      const sum = await manager.getRepository(NotaFiscal).createQueryBuilder('n')
+        .select('COALESCE(SUM(n.valor), 0)', 'total')
+        .where('n.pedido_id = :pedidoId', { pedidoId: order.id })
+        .andWhere('n.tenant_id = :tenantId', { tenantId })
+        .andWhere('n.deleted_at IS NULL')
+        .getRawOne<{ total: string }>();
+      if (decimal(valor).lt(decimal(sum?.total ?? 0))) {
+        throw new ConflictException('O valor do pedido não pode ficar abaixo do total já faturado.');
+      }
+
+      const ajustadoEm = new Date();
+      await orderRepo.update(
+        { id: order.id, tenant_id: tenantId },
+        {
+          valor_ajustado: valor,
+          valor_ajustado_motivo: motivo,
+          valor_ajustado_por: userUuid,
+          valor_ajustado_em: ajustadoEm,
+          version: () => '"version" + 1',
+        } as any,
+      );
+      order.valor_ajustado = valor;
+      await this.recalculateOrderStatus(manager, order);
+    });
+
+    return this.findPedidoDetalhe(pedidoUuid, tenantId);
   }
 
   async reabrir(

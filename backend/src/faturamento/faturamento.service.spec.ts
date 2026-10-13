@@ -6,6 +6,7 @@ import { Commission } from '../finance/entities/commission.entity';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { FaturamentoFinalizacao } from './entities/faturamento-finalizacao.entity';
 import { FinalizarFaturamentoDto, ReabrirFaturamentoDto } from './dto/finalizar-faturamento.dto';
+import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
@@ -406,5 +407,110 @@ describe('Finalizar/ReabrirFaturamentoDto — motivo', () => {
       pipeOptions,
     );
     expect(reabrir.map((error) => error.property)).toEqual(['motivo']);
+  });
+});
+
+describe('FaturamentoService — ajuste de valor do pedido', () => {
+  const admin = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  function serviceFor(order: Order, notaSum = '0.00') {
+    const repos = buildRepos({ order, notaSumAfter: notaSum });
+    const service = buildService(repos);
+    jest.spyOn(service, 'findPedidoDetalhe').mockResolvedValue({ uuid: pedidoUuid } as any);
+    return { repos, service };
+  }
+
+  it('grava o ajuste sem tocar os totais calculados', async () => {
+    const { repos, service } = serviceFor(buildOrder({ status: 'liberado', total_com_imposto: '100.00' }));
+
+    await service.ajustarValor(pedidoUuid, { valor: 80.5, motivo: '  Desconto negociado  ', version: 1 }, tenantId, admin);
+
+    const patch = repos.orderRepo.update.mock.calls[0][1];
+    expect(patch).toEqual(expect.objectContaining({
+      valor_ajustado: '80.50', valor_ajustado_motivo: 'Desconto negociado', valor_ajustado_por: admin,
+    }));
+    expect(patch).not.toHaveProperty('total_com_imposto');
+    expect(patch).not.toHaveProperty('total_sem_imposto');
+  });
+
+  it('baixar o valor até o total faturado conclui o pedido', async () => {
+    const { repos, service } = serviceFor(buildOrder({ status: 'parcialmente_faturado', total_com_imposto: '100.00' }), '60.00');
+
+    await service.ajustarValor(pedidoUuid, { valor: 60, motivo: 'Saldo cancelado', version: 1 }, tenantId, admin);
+
+    expect(repos.orderRepo.update).toHaveBeenLastCalledWith(
+      { id: 1, tenant_id: tenantId },
+      expect.objectContaining({ status: 'faturado' }),
+    );
+  });
+
+  it('recusa valor abaixo do total já faturado', async () => {
+    const { repos, service } = serviceFor(buildOrder({ status: 'parcialmente_faturado' }), '60.00');
+    await expect(service.ajustarValor(pedidoUuid, { valor: 59.99, motivo: 'Teste', version: 1 }, tenantId, admin))
+      .rejects.toBeInstanceOf(ConflictException);
+    expect(repos.orderRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('recusa pedido fora do faturamento, versão obsoleta e fechamento ativo', async () => {
+    const emAberto = serviceFor(buildOrder({ status: 'em_aberto' }));
+    await expect(emAberto.service.ajustarValor(pedidoUuid, { valor: 10, motivo: 'Teste', version: 1 }, tenantId, admin))
+      .rejects.toBeInstanceOf(ConflictException);
+
+    const obsoleto = serviceFor(buildOrder({ version: 3 }));
+    await expect(obsoleto.service.ajustarValor(pedidoUuid, { valor: 10, motivo: 'Teste', version: 2 }, tenantId, admin))
+      .rejects.toBeInstanceOf(ConcurrentModificationException);
+
+    const fechado = serviceFor(buildOrder({ status: 'parcialmente_faturado' }));
+    fechado.repos.finalizacaoRepo.findOne.mockResolvedValue({ id: 9 });
+    await expect(fechado.service.ajustarValor(pedidoUuid, { valor: 10, motivo: 'Teste', version: 1 }, tenantId, admin))
+      .rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('404 quando o pedido não existe no tenant', async () => {
+    const { repos, service } = serviceFor(buildOrder());
+    repos.orderRepo.findOne.mockResolvedValue(null);
+    await expect(service.ajustarValor(pedidoUuid, { valor: 10, motivo: 'Teste', version: 1 }, tenantId, admin))
+      .rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('a fila usa o valor ajustado e expõe o original', async () => {
+    const order = buildOrder({ valor_ajustado: '70.00', total_com_imposto: '100.00' });
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'orderBy', 'skip', 'take']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[order], 1]);
+    const somaQb: any = {};
+    for (const method of ['select', 'addSelect', 'where', 'andWhere', 'groupBy']) somaQb[method] = jest.fn().mockReturnValue(somaQb);
+    somaQb.getRawMany = jest.fn().mockResolvedValue([{ pedido_id: '1', total: '20.00' }]);
+    const service = new FaturamentoService(
+      { createQueryBuilder: jest.fn(() => somaQb) } as any,
+      { createQueryBuilder: jest.fn(() => qb) } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const { data } = await service.findPedidos(tenantId, { page: 1, limit: 20 } as any);
+
+    expect(data[0]).toEqual(expect.objectContaining({
+      valor: '70.00', valor_original: '100.00', valor_ajustado: '70.00', divergencia: '50.00', version: 1,
+    }));
+  });
+});
+
+describe('AjustarValorPedidoDto', () => {
+  const pipeOptions = { whitelist: true, forbidNonWhitelisted: true };
+
+  it('exige valor positivo com até 2 casas, motivo de 3 a 500 e versão', async () => {
+    const ok = await validate(plainToInstance(AjustarValorPedidoDto, { valor: 10.5, motivo: 'abc', version: 1 }), pipeOptions);
+    expect(ok).toEqual([]);
+
+    const ruim = await validate(plainToInstance(AjustarValorPedidoDto, {
+      valor: 10.555, motivo: 'a'.repeat(501), version: 0, tenant_id: 'x',
+    }), pipeOptions);
+    expect(ruim.map((error) => error.property).sort()).toEqual(['motivo', 'tenant_id', 'valor', 'version']);
+
+    const zero = await validate(plainToInstance(AjustarValorPedidoDto, { valor: 0, motivo: 'abc', version: 1 }), pipeOptions);
+    expect(zero.map((error) => error.property)).toEqual(['valor']);
   });
 });
