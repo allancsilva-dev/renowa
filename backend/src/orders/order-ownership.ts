@@ -1,4 +1,5 @@
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { normalizeRole } from '../common/authorization/roles';
 
 /**
  * Ownership de pedido por vendedor.
@@ -11,7 +12,10 @@ import { RequestUser } from '../common/types/jwt-payload.type';
  * IDOR volta: basta um caminho novo esquecer o filtro.
  */
 export function isVendorOnly(user: RequestUser): boolean {
-  return user.roles.length === 1 && user.roles[0] === 'VENDEDOR';
+  // Sem caixa: o login nativo grava 'vendedor' e a comparação exata deixava
+  // esse usuário ver os pedidos de todos.
+  const roles = new Set((user.roles ?? []).map(normalizeRole));
+  return roles.size === 1 && roles.has('VENDEDOR');
 }
 
 /**
