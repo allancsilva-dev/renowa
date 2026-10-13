@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileDown, Pencil, Trash2, Unlock, XCircle } from 'lucide-react';
-import { pdf } from '@react-pdf/renderer';
 import { deleteOrder, fetchOrder, liberarOrder, updateOrderStatus } from '@/services/orders.service';
 import { orderStatusLabel, orderStatusColor, type Order } from '@/types';
 import { moneyForDisplay, qtyForDisplay } from '@/lib/decimal';
@@ -11,11 +10,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { canCancelarPedido, canLiberarPedido } from '@/lib/orderPermissions';
 import LoadingState from '@/components/feedback/LoadingState';
 import ErrorState from '@/components/feedback/ErrorState';
-import { OrderValidationPdf } from '@/components/orders/OrderValidationPdf';
-import { FotosDoPapelIndisponiveisError, fetchFotosPorProduto } from '@/services/productPhotos.service';
 import { Can } from '@/components/Can';
 import { orderTotalsBreakdown } from '@/lib/orderCalculation';
-import { PdfRenderTimeoutError, renderPdfBlobWithTimeout } from '@/lib/pdfRender';
+import { useOrderPdf } from '@/hooks/useOrderPdf';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -30,9 +27,9 @@ export default function PedidoDetalhe() {
 
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [pdfWarning, setPdfWarning] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const { generate: generateOrderPdf, loadingUuid: pdfLoadingUuid, error: pdfError, warning: pdfWarning } = useOrderPdf({ onLoaded: setOrder });
+  const pdfLoading = pdfLoadingUuid !== null;
 
   const load = useCallback(() => {
     if (!uuid) return;
@@ -89,55 +86,10 @@ export default function PedidoDetalhe() {
     }
   }
 
-  async function generatePdf() {
+  function generatePdf() {
     if (!uuid || deleting) return;
-    // Abrir aqui, dentro do gesto do usuário: depois de um `await` o bloqueador de
-    // popup mata a janela. O aviso evita a aba em branco enquanto o PDF monta —
-    // com fotos, montar leva um download por imagem.
-    const previewWindow = window.open('', '_blank');
-    previewWindow?.document.write(
-      '<title>Gerando papel do pedido…</title>'
-      + '<p style="font:14px system-ui;padding:24px;color:#334155">Gerando o papel do pedido…</p>',
-    );
-    setPdfLoading(true);
     setStatusError(null);
-    setPdfWarning(null);
-    try {
-      const persisted = await fetchOrder(uuid);
-      setOrder(persisted);
-      // As fotos vão embutidas como data URL: o endpoint de conteúdo é
-      // autenticado e o PDF é montado no cliente, então uma URL não resolveria.
-      // A rota resolve a foto específica do item e usa a foto do catálogo como
-      // fallback. O mapa fica indexado pelo uuid do item para que duas linhas do
-      // mesmo produto possam ter imagens diferentes.
-      const fotosPorProduto = await fetchFotosPorProduto(uuid, persisted.itens ?? []);
-      const blob = await renderPdfBlobWithTimeout(() =>
-        pdf(<OrderValidationPdf order={persisted} fotosPorProduto={fotosPorProduto} />).toBlob());
-      const url = URL.createObjectURL(blob);
-      if (previewWindow) previewWindow.location.href = url;
-      const filePrefix = persisted.status === 'em_aberto' || persisted.status === 'liberado' ? 'pedido-validacao-renowa' : 'pedido-renowa';
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${filePrefix}-${persisted.numero_pedido ?? persisted.uuid}.pdf`;
-      link.click();
-      if (!previewWindow) {
-        setPdfWarning(
-          'O PDF foi baixado, mas a prévia não pôde ser aberta. Libere popups para este site e tente novamente.',
-        );
-      }
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      previewWindow?.close();
-      // A falta de foto já vem com o texto pronto, contando quantas faltaram —
-      // `getApiErrorMessage` a reduziria a "Erro inesperado".
-      setStatusError(
-        err instanceof FotosDoPapelIndisponiveisError || err instanceof PdfRenderTimeoutError
-          ? err.message
-          : getApiErrorMessage(err),
-      );
-    } finally {
-      setPdfLoading(false);
-    }
+    void generateOrderPdf(uuid);
   }
 
   if (loading) return <LoadingState />;
@@ -198,9 +150,9 @@ export default function PedidoDetalhe() {
           </div>
         </div>
 
-        {statusError && (
+        {(statusError ?? pdfError) && (
           <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>
-            {statusError}
+            {statusError ?? pdfError}
           </div>
         )}
 
