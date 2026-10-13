@@ -30,12 +30,13 @@ interface NavItem {
 const mainNavItems: NavItem[] = [
   { to: '/dashboard',     label: 'Dashboard',    icon: LayoutDashboard },
   { to: '/clientes',      label: 'Clientes',     icon: Users,      permission: 'clientes.ver' },
-  { to: '/pedidos',       label: 'Pedidos',      icon: FileText,   permission: 'pedidos.ver' },
   { to: '/produtos',      label: 'Produtos',     icon: Package,    permission: 'produtos.ver' },
   { to: '/fornecedores',  label: 'Fornecedores', icon: Building2,  permission: 'fornecedores.ver' },
   { to: '/transporte',    label: 'Transporte',   icon: Truck,      permission: 'transportadoras.ver' },
-  // Faturamento antes de Financeiro: segue a ordem do ciclo comercial
-  // (pedido -> faturamento -> caixa), não a ordem em que os módulos nasceram.
+  // Cadastros primeiro; depois o ciclo comercial em ordem: pedido gerado ->
+  // faturamento -> caixa. Pedidos fica colado no Faturamento a pedido do
+  // usuário, não na ordem em que os módulos nasceram.
+  { to: '/pedidos',       label: 'Pedidos',      icon: FileText,   permission: 'pedidos.ver' },
   { to: '/faturamento',   label: 'Faturamento',  icon: Receipt,    permission: 'faturamento.ver' },
   { to: '/financeiro',    label: 'Financeiro',   icon: DollarSign, permission: 'financeiro.ver' },
   // SAC fecha a barra: é pós-venda, depois de todo o ciclo comercial.
