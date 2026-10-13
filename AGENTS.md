@@ -83,17 +83,17 @@ Pré-condições, todas verificáveis antes de começar:
 
 - Pedido externo: `POST /pedidos/externos` (não `POST /pedidos`), com `valor >= 0.01` obrigatório. Mesmo número no mesmo fornecedor → 409; em outro fornecedor → 201.
 - `DELETE /pedidos/:uuid` e `DELETE /sac/:uuid` exigem **`?version=`** (lock otimista); sem isso, 400.
-- Faturamento: `/faturamento/pedidos`, `/faturamento/pedidos/:uuid`, `/faturamento/pedidos/:uuid/notas`, `/faturamento/notas/:uuid`. `GET /faturamento` é 404. O botão na tela chama-se **"Registrar nota"**.
+- Faturamento: `/faturamento/pedidos`, `/faturamento/pedidos/:uuid`, `/faturamento/pedidos/:uuid/notas`, `/faturamento/notas/:uuid`. `GET /faturamento` é 404. A ação chama-se **"Registrar nota"** e fica no menu ⋮ da linha (`button[aria-haspopup=menu]` → `[role=menuitem]`), junto de Ver detalhes, Ver PDF, Editar valor (só ADMIN) e Cancelar pedido.
 - Excluir pedido com nota fiscal ativa → 409: apague as notas primeiro.
 - Sessão expira no meio da corrida: o helper `QA.api` repete a requisição depois de `POST /auth/refresh`, igual ao app.
 
 ### Ordem, verificação de PDF e limpeza
 
-Ordem que funciona: `p0` baseline → `p1`–`p4` cadastros (com `p3b` foto do produto logo depois da `p3`) → `p5` pedido interno → `p6`/`p6b` externo → `p7` contas → `p8` PDF → `p7c` liberar → `p8b` PDF pós-liberação → `p9` faturamento → `p10` SAC + PDF → `p11` telas de edição → `p12` varredura + filtros → `p13` Financeiro → `p14` limpeza.
+Ordem que funciona: `p0` baseline → `p1`–`p4` cadastros (com `p3b` foto do produto logo depois da `p3`) → `p5` pedido interno → `p6`/`p6b` externo → `p7` contas → `p8` PDF → `p7c` liberar → `p8b` PDF pós-liberação → `p9` faturamento → `p10` SAC + PDF → `p11` telas de edição → `p12` varredura + filtros → `p13` Financeiro → `p15` prepostos + menu ⋮ do faturamento + ajuste de valor (exige ADMIN) → `p14` limpeza.
 
 PDF é verificado duas vezes: no navegador (blob com MIME `application/pdf`, cabeçalho `%PDF`, contagem de `/Type /Page`) e fora dele, sobre o arquivo em `~/Downloads`, com `pdftotext -layout` (conteúdo, totais, `DATA DE ABERTURA` no SAC) e `pdfimages -list` (fotos embutidas).
 
-Toda execução **termina em `p14`** e depois confirma que não sobrou nada, buscando o stamp `QA<6 dígitos>` da rodada em clientes, fornecedores, produtos, transportadoras, pedidos e SAC. Se `p14` falhar em algum alvo, resolva na mão e diga qual ficou.
+Toda execução **termina em `p14`** e depois confirma que não sobrou nada, buscando o stamp `QA<6 dígitos>` da rodada em clientes, fornecedores, produtos, transportadoras, prepostos, pedidos e SAC. Se `p14` falhar em algum alvo, resolva na mão e diga qual ficou.
 
 ### Limites
 
