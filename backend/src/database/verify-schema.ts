@@ -146,6 +146,17 @@ const CHECKS_ESPERADOS: CheckEsperado[] = [
     expressao: "documento IS NULL OR documento ~ '^([0-9]{11}|[0-9]{14})$'",
     origem: '0050',
   },
+  // Venda do preposto (0051): pago <=> saída no Financeiro + data. Sem ele a
+  // comissão pode constar paga sem dinheiro saindo do caixa.
+  {
+    tabela: 'preposto_comissoes',
+    nome: 'preposto_comissoes_pagamento_check',
+    validado: true,
+    expressao:
+      "status = 'pago' AND movimento_id IS NOT NULL AND data_pagamento IS NOT NULL"
+      + " OR status = 'pendente' AND movimento_id IS NULL AND data_pagamento IS NULL",
+    origem: '0051',
+  },
   {
     tabela: 'pedidos',
     nome: 'pedidos_origem_check',
@@ -316,6 +327,20 @@ const INDICES_PARCIAIS_ESPERADOS: IndiceParcialEsperado[] = [
     regra: 'CPF/CNPJ de preposto unico entre os ativos do tenant',
     origem: '0050',
   },
+  {
+    tabela: 'preposto_comissoes',
+    colunas: ['tenant_id', 'nota_fiscal_id'],
+    predicado: 'deleted_at IS NULL',
+    regra: 'uma venda de preposto por nota ativa (retry nao paga duas vezes)',
+    origem: '0051',
+  },
+  {
+    tabela: 'preposto_comissoes',
+    colunas: ['tenant_id', 'movimento_id'],
+    predicado: 'deleted_at IS NULL AND movimento_id IS NOT NULL',
+    regra: 'uma saida do Financeiro paga no maximo uma venda de preposto',
+    origem: '0051',
+  },
 ];
 
 /** Tabelas declaradas por migrations já marcadas como aplicadas. */
@@ -338,6 +363,7 @@ const TABELAS_ESPERADAS = [
   'permissions',
   'pii_audit_events',
   'prepostos',
+  'preposto_comissoes',
   'produto_fotos',
   'produtos',
   'refresh_tokens',

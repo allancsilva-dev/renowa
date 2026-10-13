@@ -305,6 +305,9 @@ export const TABELAS_SEM_PII: Readonly<Record<string, string>> = {
     + 'nem USER e portanto não tem tipo de titular nem caminho de solicitação. '
     + 'Controles hoje: acesso só com prepostos.ver (vendedor não tem), pedido expõe '
     + 'só uuid+nome, pull de sync não leva preposto_id, documento opcional. Ver PROB-0076.',
+  preposto_comissoes:
+    'Só identificadores, snapshots fiscais (número da nota, data), valores e status. '
+    + 'O dado pessoal do preposto fica em prepostos.',
   lgpd_requests:
     'Trilha das próprias solicitações. Guarda `subject_uuid`, que é referência ao '
     + 'titular, não atributo dele. Apagar aqui destruiria a prova de que o '

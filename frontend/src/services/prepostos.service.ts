@@ -28,3 +28,46 @@ export async function updatePreposto(uuid: string, payload: PrepostoPayload & { 
 export async function deletePreposto(uuid: string, version: number): Promise<void> {
   await api.delete(`/prepostos/${uuid}`, { params: { version } });
 }
+
+export interface PrepostoVenda {
+  uuid: string;
+  version: number;
+  status: 'pendente' | 'pago';
+  numero_nfe: string | null;
+  data_faturamento: string | null;
+  data_pagamento: string | null;
+  valor_faturado: string;
+  perc_comissao: string;
+  valor_comissao: string;
+  preposto: { uuid: string; nome: string };
+  pedido: { uuid: string; numero_pedido: number | null; cliente: string | null };
+}
+
+export interface PrepostoVendasTotais {
+  faturado: string;
+  comissao_pendente: string;
+  comissao_paga: string;
+}
+
+export type PrepostoVendasResponse = PaginatedResponse<PrepostoVenda> & {
+  meta: PaginatedResponse<PrepostoVenda>['meta'] & { totais: PrepostoVendasTotais };
+};
+
+export async function fetchPrepostoVendas(params: {
+  page?: number; limit?: number; preposto_uuid?: string; status?: 'pendente' | 'pago';
+  data_inicio?: string; data_fim?: string;
+}): Promise<PrepostoVendasResponse> {
+  const { data } = await api.get<PrepostoVendasResponse>('/prepostos/vendas', { params });
+  return data;
+}
+
+export async function alterarPercentualVenda(uuid: string, payload: { perc_comissao: number; version: number }) {
+  const { data } = await api.patch<ApiResponse<unknown>>(`/prepostos/vendas/${uuid}/percentual`, payload);
+  return data.data;
+}
+
+/** `data_pagamento` null estorna (apaga a saída no Financeiro). */
+export async function registrarPagamentoVenda(uuid: string, payload: { data_pagamento: string | null; version: number }) {
+  const { data } = await api.patch<ApiResponse<unknown>>(`/prepostos/vendas/${uuid}/pagamento`, payload);
+  return data.data;
+}

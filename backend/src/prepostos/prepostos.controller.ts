@@ -3,6 +3,8 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { PrepostosService } from './prepostos.service';
+import { PrepostoVendasService } from './preposto-vendas.service';
+import { AlterarPercentualVendaDto, ListPrepostoVendasDto, PagamentoVendaDto } from './dto/preposto-vendas.dto';
 import { CreatePrepostoDto } from './dto/create-preposto.dto';
 import { UpdatePrepostoDto } from './dto/update-preposto.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -16,7 +18,40 @@ const uuidPipe = new ParseUUIDPipe({ version: '4' });
 /** Cadastro de prepostos. Vendedor não tem acesso (documento e contato de terceiro). */
 @Controller('prepostos')
 export class PrepostosController {
-  constructor(private readonly prepostosService: PrepostosService) {}
+  constructor(
+    private readonly prepostosService: PrepostosService,
+    private readonly vendasService: PrepostoVendasService,
+  ) {}
+
+  // Rotas de "vendas" antes de ':uuid' — senão GET /prepostos/vendas casaria como uuid.
+  @Get('vendas')
+  @RequirePermission('prepostos.ver')
+  async listVendas(@Query() query: ListPrepostoVendasDto, @CurrentUser() user: RequestUser) {
+    return this.vendasService.list(user.tenantId, query);
+  }
+
+  @Patch('vendas/:uuid/percentual')
+  @RequirePermission('prepostos.editar')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  async alterarPercentual(
+    @Param('uuid', uuidPipe) uuid: string,
+    @Body() dto: AlterarPercentualVendaDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.vendasService.alterarPercentual(uuid, dto, user.tenantId);
+  }
+
+  /** Mexe no caixa: exige financeiro.editar além de enxergar prepostos. */
+  @Patch('vendas/:uuid/pagamento')
+  @RequirePermission(['prepostos.ver', 'financeiro.editar'])
+  @Throttle({ default: { ttl: 60_000, limit: 20 } })
+  async registrarPagamento(
+    @Param('uuid', uuidPipe) uuid: string,
+    @Body() dto: PagamentoVendaDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.vendasService.registrarPagamento(uuid, dto, user.tenantId);
+  }
 
   @Post()
   @RequirePermission('prepostos.criar')

@@ -70,6 +70,13 @@ describe('PrepostosService', () => {
     expect(qb.set).toHaveBeenCalledWith(expect.objectContaining({ percentual_comissao: '4.00' }));
   });
 
+  it('não exclui preposto com comissão pendente', async () => {
+    const { repo, service } = subject();
+    repo.findOne.mockResolvedValue({ id: 1, uuid, tenant_id: tenantId });
+    repo.query.mockResolvedValueOnce([{ total: 0 }]).mockResolvedValueOnce([{ total: 1 }]);
+    await expect(service.remove(uuid, 1, tenantId)).rejects.toThrow('comissões pendentes');
+  });
+
   it('não exclui preposto com pedido em andamento', async () => {
     const { repo, service } = subject({ pedidosEmAndamento: 2 });
     repo.findOne.mockResolvedValue({ id: 1, uuid, tenant_id: tenantId });

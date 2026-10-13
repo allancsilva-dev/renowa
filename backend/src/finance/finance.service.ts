@@ -120,7 +120,26 @@ export class FinanceService {
     return this.movimentoRepo.save(m);
   }
 
+  /**
+   * Saída criada pelo pagamento de comissão de preposto só muda pela aba Vendas
+   * do preposto (estorno). Editar ou apagar aqui deixaria a venda "paga" com um
+   * caixa que não confere.
+   */
+  private async assertMovimentoLivre(uuid: string, tenantId: string): Promise<void> {
+    const vinculo = await this.movimentoRepo.query(
+      `SELECT 1 FROM preposto_comissoes v
+         JOIN financeiro_movimentacao m ON m.id = v.movimento_id AND m.tenant_id = v.tenant_id
+        WHERE m.uuid = $1 AND m.tenant_id = $2 AND v.deleted_at IS NULL
+        LIMIT 1`,
+      [uuid, tenantId],
+    ) as unknown[];
+    if (vinculo.length) {
+      throw new ConflictException('Lançamento gerado pelo pagamento de comissão de preposto. Estorne pela aba Vendas do preposto.');
+    }
+  }
+
   async updateMovimento(uuid: string, dto: UpdateMovementDto, tenantId: string): Promise<FinanceMovement> {
+    await this.assertMovimentoLivre(uuid, tenantId);
     const patch: Partial<FinanceMovement> = {};
     if (dto.tipo !== undefined) patch.tipo = dto.tipo;
     if (dto.valor !== undefined) patch.valor = money(dto.valor);
@@ -175,6 +194,7 @@ export class FinanceService {
   }
 
   async removeMovimento(uuid: string, version: number, tenantId: string): Promise<void> {
+    await this.assertMovimentoLivre(uuid, tenantId);
     await optimisticSoftDelete({
       repository: this.movimentoRepo,
       uuid,

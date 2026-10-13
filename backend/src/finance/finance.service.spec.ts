@@ -489,3 +489,28 @@ describe('FinanceService — dashboard', () => {
     expect(result.clientesInativos[19]).toMatchObject({ clienteUuid: 'cliente-19', diasSemPedido: 81 });
   });
 });
+
+describe('FinanceService — lançamento gerado por pagamento de preposto', () => {
+  function subject(vinculado: boolean) {
+    const builder = optimisticWriteBuilder({ execute: jest.fn().mockResolvedValue({ affected: 1, raw: [{}] }) });
+    const movementRepo = {
+      query: jest.fn().mockResolvedValue(vinculado ? [{ '?column?': 1 }] : []),
+      createQueryBuilder: jest.fn(() => builder),
+    } as any;
+    const service = new FinanceService(movementRepo, {} as any, {} as any, {} as any, {} as any);
+    return { movementRepo, builder, service };
+  }
+
+  it('não edita nem apaga saída vinculada a venda de preposto', async () => {
+    const { service, builder } = subject(true);
+    await expect(service.removeMovimento('mov-1', 1, 'tenant-a')).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.updateMovimento('mov-1', { version: 1, valor: '10.00' } as any, 'tenant-a')).rejects.toBeInstanceOf(ConflictException);
+    expect(builder.execute).not.toHaveBeenCalled();
+  });
+
+  it('a checagem é por tenant', async () => {
+    const { service, movementRepo } = subject(false);
+    await service.removeMovimento('mov-1', 1, 'tenant-a').catch(() => undefined);
+    expect(movementRepo.query).toHaveBeenCalledWith(expect.stringContaining('m.tenant_id = $2'), ['mov-1', 'tenant-a']);
+  });
+});

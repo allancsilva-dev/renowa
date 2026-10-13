@@ -15,6 +15,10 @@ import { decimal, money, percentageOf } from '../common/decimal/decimal';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
 import { orderValorEfetivo } from '../orders/order-valor';
+import { Preposto } from '../prepostos/entities/preposto.entity';
+import { PrepostoComissao } from '../prepostos/entities/preposto-comissao.entity';
+
+const VENDA_PREPOSTO_PAGA = 'A comissão do preposto desta nota já foi paga. Estorne o pagamento na aba Vendas do preposto antes de alterar ou excluir a nota.';
 
 /** Pedidos elegíveis para registrar nota fiscal (fora de em_aberto/cancelado). */
 const FATURAVEL_STATUSES = ['liberado', 'parcialmente_faturado', 'faturado'];
@@ -193,6 +197,44 @@ export class FaturamentoService {
     }
   }
 
+  /**
+   * Venda do preposto nasce com a nota, na mesma transação: percentual do
+   * cadastro como snapshot, incidindo sobre o valor da nota. `withDeleted`: o
+   * preposto pode ter sido excluído depois que o pedido foi feito — a venda
+   * dele continua devida.
+   */
+  private async criarVendaPreposto(manager: EntityManager, order: Order, nota: NotaFiscal): Promise<void> {
+    if (!order.preposto_id) return;
+    const preposto = await manager.getRepository(Preposto).findOne({
+      where: { id: order.preposto_id, tenant_id: order.tenant_id },
+      withDeleted: true,
+    });
+    if (!preposto) return;
+    const repo = manager.getRepository(PrepostoComissao);
+    await repo.save(repo.create({
+      uuid: randomUUID(),
+      tenant_id: order.tenant_id,
+      preposto_id: preposto.id,
+      pedido_id: order.id,
+      nota_fiscal_id: nota.id,
+      numero_nfe: nota.numero_nota,
+      data_faturamento: nota.data_emissao ?? saoPauloDate(nota.created_at ?? new Date()),
+      valor_faturado: nota.valor,
+      perc_comissao: money(preposto.percentual_comissao),
+      valor_comissao: percentageOf(nota.valor, preposto.percentual_comissao),
+      status: 'pendente',
+      data_pagamento: null,
+      movimento_id: null,
+    }));
+  }
+
+  private async vendaPrepostoDaNota(manager: EntityManager, notaId: number, tenantId: string): Promise<PrepostoComissao | null> {
+    return manager.getRepository(PrepostoComissao).findOne({
+      where: { nota_fiscal_id: notaId, tenant_id: tenantId, deleted_at: IsNull() },
+      lock: { mode: 'pessimistic_write' },
+    });
+  }
+
   /** Recalcula o status do pedido a partir da soma de notas ativas. Chamado sempre dentro de uma transação com o pedido já travado. */
   private async recalculateOrderStatus(manager: EntityManager, order: Order): Promise<void> {
     const sumResult = await manager.getRepository(NotaFiscal)
@@ -282,6 +324,7 @@ export class FaturamentoService {
         status: 'faturado',
       });
       await commissionRepo.save(commission);
+      await this.criarVendaPreposto(manager, order, savedNota);
 
       await this.recalculateOrderStatus(manager, order);
 
@@ -311,6 +354,8 @@ export class FaturamentoService {
       if (commission?.status === 'pago') {
         throw new ConflictException('Não é possível alterar nota fiscal com comissão já paga.');
       }
+      const vendaPreposto = await this.vendaPrepostoDaNota(manager, nota.id, tenantId);
+      if (vendaPreposto?.status === 'pago') throw new ConflictException(VENDA_PREPOSTO_PAGA);
 
       // `withDeleted` é deliberado: pedido soft-deletado antes desta guarda
       // existir deixa notas órfãs, e sem isto elas ficariam impossíveis de
@@ -357,6 +402,19 @@ export class FaturamentoService {
         await commissionRepo.update({ id: commission.id, tenant_id: tenantId }, patch as any);
       }
 
+      if (vendaPreposto) {
+        await manager.getRepository(PrepostoComissao).update(
+          { id: vendaPreposto.id, tenant_id: tenantId },
+          {
+            numero_nfe: saved.numero_nota,
+            data_faturamento: saved.data_emissao ?? saoPauloDate(saved.created_at ?? new Date()),
+            valor_faturado: saved.valor,
+            valor_comissao: percentageOf(saved.valor, vendaPreposto.perc_comissao),
+            version: () => '"version" + 1',
+          } as any,
+        );
+      }
+
       return saved;
     });
   }
@@ -383,6 +441,8 @@ export class FaturamentoService {
       if (commission?.status === 'pago') {
         throw new ConflictException('Não é possível excluir nota fiscal com comissão já paga.');
       }
+      const vendaPreposto = await this.vendaPrepostoDaNota(manager, nota.id, tenantId);
+      if (vendaPreposto?.status === 'pago') throw new ConflictException(VENDA_PREPOSTO_PAGA);
 
       // `withDeleted` é deliberado: pedido soft-deletado antes desta guarda
       // existir deixa notas órfãs, e sem isto elas ficariam impossíveis de
@@ -398,6 +458,7 @@ export class FaturamentoService {
 
       await notaRepo.softRemove(nota);
       if (commission) await commissionRepo.softRemove(commission);
+      if (vendaPreposto) await manager.getRepository(PrepostoComissao).softRemove(vendaPreposto);
 
       await this.recalculateOrderStatus(manager, order);
     });
