@@ -1,14 +1,18 @@
 import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import { Eye, FileDown, FileText, Pencil, XCircle } from 'lucide-react';
 import DataTable from '@/components/tables/DataTable';
+import { RowMenu, type RowMenuItem } from '@/components/tables/RowMenu';
 import Dialog from '@/components/ui/Dialog';
 import { InputMoney } from '@/components/ui/InputMoney';
 import { usePaginatedQuery } from '@/hooks/usePaginatedQuery';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/hooks/useAuth';
 import { useUuidDeCriacao } from '@/hooks/useUuidDeCriacao';
-import { fetchFaturamentoPedidos, registrarNota, type FaturamentoPedidoRow } from '@/services/faturamento.service';
+import { ajustarValorPedido, fetchFaturamentoPedidos, registrarNota, type FaturamentoPedidoRow } from '@/services/faturamento.service';
+import { updateOrderStatus } from '@/services/orders.service';
+import { useOrderPdf } from '@/hooks/useOrderPdf';
+import { canCancelarPedido } from '@/lib/orderPermissions';
 import { moneyForDisplay, normalizeMoney } from '@/lib/decimal';
 import { getApiErrorMessage } from '@/lib/errors';
 import { orderStatusLabel, orderStatusColor, orderOrigemLabel, orderOrigemColor, type OrderStatus } from '@/types';
@@ -18,10 +22,24 @@ const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' 
 type NotaForm = { numero_nota: string; serie: string; valor: number | null; perc_comissao: string; data_emissao: string; observacao: string };
 const EMPTY_NOTA_FORM: NotaForm = { numero_nota: '', serie: '', valor: null, perc_comissao: '5', data_emissao: '', observacao: '' };
 
+function pedidoLabel(row: Pick<FaturamentoPedidoRow, 'numero_pedido'>): string {
+  return row.numero_pedido != null ? `#${row.numero_pedido}` : '';
+}
+
 export default function Faturamento() {
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasAnyRole } = useAuth();
   const canEdit = hasPermission('faturamento.editar');
+  // Ajuste de valor é do ADMIN por decisão do negócio; Gestão tem a mesma
+  // permissão e não deve nem ver a opção. O backend repete a regra (403).
+  const canAjustarValor = canEdit && hasAnyRole(['ADMIN']);
+  const { generate: gerarPdf, loadingUuid: pdfLoadingUuid, error: pdfError, warning: pdfWarning } = useOrderPdf();
+
+  const [ajustePedido, setAjustePedido] = useState<FaturamentoPedidoRow | null>(null);
+  const [ajusteValor, setAjusteValor] = useState<number | null>(null);
+  const [ajusteMotivo, setAjusteMotivo] = useState('');
+  const [cancelPedido, setCancelPedido] = useState<FaturamentoPedidoRow | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [notaPedido, setNotaPedido] = useState<FaturamentoPedidoRow | null>(null);
   const [notaForm, setNotaForm] = useState<NotaForm>(EMPTY_NOTA_FORM);
@@ -46,6 +64,74 @@ export default function Faturamento() {
     setNotaPedido(row);
     setNotaForm(EMPTY_NOTA_FORM);
     setFormError(null);
+  }
+
+  function openAjusteDialog(row: FaturamentoPedidoRow) {
+    setAjustePedido(row);
+    setAjusteValor(moneyForDisplay(row.valor));
+    setAjusteMotivo('');
+    setFormError(null);
+  }
+
+  async function handleSubmitAjuste(event: React.FormEvent) {
+    event.preventDefault();
+    if (!ajustePedido || saving) return;
+    const motivo = ajusteMotivo.trim();
+    if (ajusteValor === null || ajusteValor <= 0) { setFormError('Informe um valor maior que zero.'); return; }
+    if (moneyForDisplay(normalizeMoney(ajusteValor)) < moneyForDisplay(ajustePedido.total_faturado)) {
+      setFormError('O valor não pode ficar abaixo do total já faturado.');
+      return;
+    }
+    if (motivo.length < 3) { setFormError('Informe o motivo do ajuste (mínimo 3 caracteres).'); return; }
+    setSaving(true);
+    setFormError(null);
+    try {
+      await ajustarValorPedido(ajustePedido.uuid, { valor: normalizeMoney(ajusteValor), motivo, version: ajustePedido.version });
+      setAjustePedido(null);
+      reload();
+    } catch (err) {
+      setFormError(getApiErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleConfirmCancel() {
+    if (!cancelPedido || saving) return;
+    setSaving(true);
+    setActionError(null);
+    try {
+      await updateOrderStatus(cancelPedido.uuid, 'cancelado', cancelPedido.version);
+      setCancelPedido(null);
+      reload();
+    } catch (err) {
+      // 409 (nota registrada no meio) ou versão obsoleta: fecha, avisa e
+      // recarrega para a linha refletir o estado real.
+      setCancelPedido(null);
+      setActionError(getApiErrorMessage(err));
+      reload();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function rowMenuItems(row: FaturamentoPedidoRow): RowMenuItem[] {
+    const items: RowMenuItem[] = [
+      { label: 'Ver detalhes', icon: Eye, onSelect: () => navigate(`/faturamento/${row.uuid}`) },
+    ];
+    if (canEdit) items.push({ label: 'Registrar nota', icon: FileText, onSelect: () => openNotaDialog(row) });
+    items.push({
+      label: pdfLoadingUuid === row.uuid ? 'Gerando PDF...' : 'Ver PDF',
+      icon: FileDown,
+      disabled: pdfLoadingUuid !== null,
+      onSelect: () => { setActionError(null); void gerarPdf(row.uuid); },
+    });
+    if (canAjustarValor) items.push({ label: 'Editar valor', icon: Pencil, onSelect: () => openAjusteDialog(row) });
+    // Mesma regra do detalhe do pedido: só sem nota registrada (status liberado).
+    if (canCancelarPedido(hasPermission, row.status as OrderStatus)) {
+      items.push({ label: 'Cancelar pedido', icon: XCircle, danger: true, onSelect: () => { setActionError(null); setCancelPedido(row); } });
+    }
+    return items;
   }
 
   async function handleSubmitNota(event: React.FormEvent) {
@@ -108,7 +194,20 @@ export default function Faturamento() {
     },
     { key: 'cliente', header: 'Cliente', cell: (row: FaturamentoPedidoRow) => row.cliente ?? '—' },
     { key: 'fornecedor', header: 'Fornecedor', cell: (row: FaturamentoPedidoRow) => row.fornecedor ?? '—' },
-    { key: 'valor', header: 'Valor', cell: (row: FaturamentoPedidoRow) => BRL.format(moneyForDisplay(row.valor)) },
+    {
+      key: 'valor',
+      header: 'Valor',
+      cell: (row: FaturamentoPedidoRow) => (
+        row.valor_ajustado
+          ? (
+            <span title={`Valor original ${BRL.format(moneyForDisplay(row.valor_original))}`}>
+              {BRL.format(moneyForDisplay(row.valor))}
+              <span className='ml-1 rounded bg-amber-100 px-1 text-[10px] font-semibold uppercase text-amber-800'>Ajustado</span>
+            </span>
+          )
+          : BRL.format(moneyForDisplay(row.valor))
+      ),
+    },
     {
       key: 'total_faturado',
       header: 'Total Faturado',
@@ -138,25 +237,7 @@ export default function Faturamento() {
       key: 'acoes',
       header: 'Ações',
       cell: (row: FaturamentoPedidoRow) => (
-        <div className='flex items-center gap-2'>
-          <button
-            type='button'
-            onClick={() => navigate(`/faturamento/${row.uuid}`)}
-            className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
-          >
-            Ver detalhes
-          </button>
-          {canEdit && (
-            <button
-              type='button'
-              onClick={() => openNotaDialog(row)}
-              className='inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
-            >
-              <FileText className='h-3.5 w-3.5' />
-              Registrar nota
-            </button>
-          )}
-        </div>
+        <RowMenu label={`Ações do pedido ${pedidoLabel(row)}`.trim()} items={rowMenuItems(row)} />
       ),
     },
   ];
@@ -167,6 +248,17 @@ export default function Faturamento() {
         <h1 className='text-xl font-bold text-slate-900'>Faturamento</h1>
         <p className='text-sm text-slate-500 mt-1'>Pedidos liberados aguardando ou em processo de faturamento.</p>
       </div>
+
+      {(actionError ?? pdfError) && (
+        <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>
+          {actionError ?? pdfError}
+        </div>
+      )}
+      {pdfWarning && (
+        <div role='status' className='rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700'>
+          {pdfWarning}
+        </div>
+      )}
 
       <input
         type='search'
@@ -281,6 +373,65 @@ export default function Faturamento() {
               </button>
             </div>
           </form>
+        </Dialog>
+      )}
+
+      {ajustePedido && (
+        <Dialog open title={`Editar valor — Pedido ${pedidoLabel(ajustePedido)}`} onClose={() => setAjustePedido(null)} className='max-w-md'>
+          <form onSubmit={handleSubmitAjuste} className='space-y-4'>
+            {formError && (
+              <div role='alert' className='rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>{formError}</div>
+            )}
+            <p className='text-sm text-slate-600'>
+              Valor calculado: <strong>{BRL.format(moneyForDisplay(ajustePedido.valor_original))}</strong>
+              {' · '}Já faturado: <strong>{BRL.format(moneyForDisplay(ajustePedido.total_faturado))}</strong>.
+              Itens e papel do pedido não mudam.
+            </p>
+            <div className='flex flex-col gap-1'>
+              <label htmlFor='ajuste_valor' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                Novo valor <span className='text-red-500'>*</span>
+              </label>
+              <InputMoney id='ajuste_valor' value={ajusteValor} onChange={setAjusteValor} required />
+            </div>
+            <div className='flex flex-col gap-1'>
+              <label htmlFor='ajuste_motivo' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+                Motivo <span className='text-red-500'>*</span>
+              </label>
+              <textarea
+                id='ajuste_motivo'
+                rows={3}
+                required
+                maxLength={500}
+                value={ajusteMotivo}
+                onChange={(e) => setAjusteMotivo(e.target.value)}
+                className='resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
+              />
+            </div>
+            <div className='flex justify-end gap-3 pt-2'>
+              <button type='button' onClick={() => setAjustePedido(null)} className='rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'>
+                Cancelar
+              </button>
+              <button type='submit' disabled={saving} className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors'>
+                {saving ? 'Salvando...' : 'Salvar valor'}
+              </button>
+            </div>
+          </form>
+        </Dialog>
+      )}
+
+      {cancelPedido && (
+        <Dialog open title={`Cancelar pedido ${pedidoLabel(cancelPedido)}`} onClose={() => setCancelPedido(null)} className='max-w-md'>
+          <div className='space-y-4'>
+            <p className='text-sm text-slate-700'>O pedido sai do faturamento e fica cancelado. Essa ação não pode ser desfeita.</p>
+            <div className='flex justify-end gap-3'>
+              <button type='button' onClick={() => setCancelPedido(null)} className='rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'>
+                Voltar
+              </button>
+              <button type='button' onClick={handleConfirmCancel} disabled={saving} className='min-h-11 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60 transition-colors'>
+                {saving ? 'Cancelando...' : 'Cancelar pedido'}
+              </button>
+            </div>
+          </div>
         </Dialog>
       )}
     </div>

@@ -47,6 +47,16 @@ describe('SyncService v2 change feed', () => {
     expect(query.mock.calls[2][1].slice(0, 2)).toEqual(['tenant-isolated', SyncEntity.PRODUTOS]);
   });
 
+  it('never sends internal pedido fields (valor ajustado) to the device', async () => {
+    const rows = [{
+      revision: '1', operation: 'UPSERT',
+      payload: { uuid: 'p', total_com_imposto: '100.00', valor_ajustado: '80.00', valor_ajustado_motivo: 'interno', valor_ajustado_por: 'u', valor_ajustado_em: 'x' },
+    }];
+    const { service } = subject([[], [{ value: '1' }], rows]);
+    const result = await service.pullEntityV2(SyncEntity.PEDIDOS, { cursor: '0', limit: 10 }, 'tenant-a');
+    expect(result.data[0].payload).toEqual({ uuid: 'p', total_com_imposto: '100.00' });
+  });
+
   it('does not return a cursor when page query fails', async () => {
     const manager = { query: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ value: '5' }]).mockRejectedValueOnce(new Error('pull failed')) };
     const dataSource = { transaction: (work: (value: typeof manager) => unknown) => work(manager) };

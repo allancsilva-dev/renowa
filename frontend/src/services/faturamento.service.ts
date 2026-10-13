@@ -9,9 +9,15 @@ export interface FaturamentoPedidoRow {
   uuid: string;
   numero_pedido: number | null;
   status: string;
+  /** Lock otimista do pedido: cancelar e ajustar valor pela fila exigem. */
+  version: number;
   cliente: string | null;
   fornecedor: string | null;
+  /** Valor efetivo — o ajustado pelo ADMIN quando houver. */
   valor: string;
+  /** Total calculado do pedido, antes de qualquer ajuste. */
+  valor_original: string;
+  valor_ajustado: string | null;
   total_faturado: string;
   divergencia: string;
   /** Em pedido externo o valor é declarado pelo operador, não somado dos itens. */
@@ -23,6 +29,8 @@ export interface FaturamentoPedidoRow {
 export interface FaturamentoPedidoDetalhe extends Order {
   notas: NotaFiscal[];
   valor: string;
+  valor_original: string;
+  valorAjustadoPor: { nome: string } | null;
   total_faturado: string;
   divergencia: string;
   finalizacao_ativa: FaturamentoFinalizacao | null;
@@ -97,5 +105,11 @@ export async function finalizarFaturamento(pedidoUuid: string, payload: { uuid: 
 
 export async function reabrirFaturamento(pedidoUuid: string, payload: { version: number; finalizacao_version: number; motivo: string }): Promise<FaturamentoFinalizacao> {
   const { data } = await api.post<ApiResponse<FaturamentoFinalizacao>>(`/faturamento/pedidos/${pedidoUuid}/reabertura`, payload);
+  return data.data;
+}
+
+/** Só ADMIN — o backend recusa os demais papéis com 403. */
+export async function ajustarValorPedido(pedidoUuid: string, payload: { valor: number; motivo: string; version: number }): Promise<FaturamentoPedidoDetalhe> {
+  const { data } = await api.patch<ApiResponse<FaturamentoPedidoDetalhe>>(`/faturamento/pedidos/${pedidoUuid}/valor`, payload);
   return data.data;
 }

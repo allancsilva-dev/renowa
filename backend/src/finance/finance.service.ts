@@ -16,6 +16,7 @@ import { decimal, money, percentageOf, sumMoney } from '../common/decimal/decima
 import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { applySearch } from '../common/persistence/search-filter';
 import { randomUUID } from 'crypto';
+import { orderValorEfetivoSql } from '../orders/order-valor';
 
 @Injectable()
 export class FinanceService {
@@ -817,7 +818,7 @@ export class FinanceService {
 
       this.dataSource.query(
         `SELECT to_char(date_trunc('month', data), 'YYYY-MM') AS mes,
-                SUM(COALESCE(total_com_imposto, total_sem_imposto, 0)) AS valor
+                SUM(${orderValorEfetivoSql()}) AS valor
          FROM pedidos
          WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'
            AND data >= date_trunc('month', CURRENT_DATE) - INTERVAL '5 months'
@@ -828,7 +829,7 @@ export class FinanceService {
 
       this.dataSource.query(
         `SELECT c.razao_social AS cliente,
-                SUM(COALESCE(p.total_com_imposto, p.total_sem_imposto, 0)) AS valor
+                SUM(${orderValorEfetivoSql('p')}) AS valor
          FROM pedidos p
          JOIN clientes c ON c.id = p.cliente_id AND c.tenant_id = p.tenant_id
          WHERE p.tenant_id = $1 AND p.deleted_at IS NULL AND c.deleted_at IS NULL
@@ -840,7 +841,7 @@ export class FinanceService {
       ),
 
       this.dataSource.query(
-        `SELECT SUM(COALESCE(total_com_imposto, total_sem_imposto, 0)) AS total
+        `SELECT SUM(${orderValorEfetivoSql()}) AS total
          FROM pedidos
          WHERE tenant_id = $1 AND deleted_at IS NULL AND status <> 'cancelado'`,
         [tenantId],
