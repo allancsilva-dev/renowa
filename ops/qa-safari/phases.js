@@ -737,7 +737,12 @@
       ok('busca por nº do pedido acha o pedido no faturamento', !!linhaAlvo, '#' + numAlvo);
     }
 
-    var emitir = linhaAlvo ? btn(/Registrar nota/i, linhaAlvo) : btn(/Registrar nota|Emitir|Faturar/i);
+    /* as ações da linha ficam no menu ⋮ (RowMenu): abre o menu da linha-alvo
+       e procura o item dentro do role=menu que ele monta */
+    var gatilho = (linhaAlvo || document).querySelector('button[aria-haspopup="menu"]');
+    ok('menu de ações da linha existe', !!gatilho, gatilho && gatilho.getAttribute('aria-label'));
+    if (gatilho) { gatilho.click(); await sleep(400); }
+    var emitir = all('[role=menu] [role=menuitem]').filter(function (b) { return /Registrar nota/i.test(b.innerText); })[0] || null;
     ok('ação de emitir nota existe', !!emitir, emitir && emitir.innerText);
     if (emitir) {
       emitir.click(); await sleep(900); await settle();
@@ -964,6 +969,7 @@
       ['fornecedores', '/fornecedores?search=' + S],
       ['produtos', '/produtos?search=' + S],
       ['transportadoras', '/transportadoras?search=' + S],
+      ['prepostos', '/prepostos?search=' + S],
       ['pedidos', '/pedidos?search=' + S + '&limit=100'],
       ['SAC', '/sac?search=' + S + '&limit=100'],
     ];
