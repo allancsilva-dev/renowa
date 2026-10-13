@@ -469,6 +469,7 @@
 - **Evidências/comandos:** `information_schema.columns` de `parceiros_comerciais` → `nome_parceiro`, `empresa_parceiro`, `cliente_id`, `fornecedor_id`, além de valores e datas. `SELECT ... FROM pg_constraint WHERE conname = 'lgpd_requests_subject_type_check'` → `subject_type = 'CLIENT'::text` no CHECK esperado por `verify-schema.ts`.
 - **Riscos residuais:** enquanto ABERTO, o inventário de PII está completo e honesto, mas a cobertura não. `docs/LGPD_ARCHITECTURE.md` registra o limite na seção "Limite conhecido".
 - **Próximo passo:** decisão do usuário sobre (a)/(b)/(c).
+- **Atualização 2026-10-13:** `prepostos` (migration `0050`) entrou no mesmo caso — nome, CPF, telefone, e-mail e endereço de representante externo, sem tipo de titular. Controles: só `prepostos.ver` lê (vendedor não tem), pedido expõe só uuid+nome, pull de sync não leva `preposto_id`, documento opcional. A decisão (a)/(b)/(c) passa a valer para as duas tabelas.
 - **Relacionado:** PROB-0075, BACKLOG-0054
 
 ### PROB-0077 — Foto do pedido persiste indefinidamente no banco, contrariando o requisito original — ressalva aceita por decisão do usuário

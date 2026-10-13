@@ -1045,3 +1045,13 @@
 - **Risco se ficar pendente:** se o defeito for do app, o usuário perde o código digitado no item 1. A corrida de QA não prova Pedido, Faturamento nem PDF.
 - **Status:** **CONCLUÍDO** (2026-09-25, FIX-0039). Causa: os dois itens tinham o mesmo produto do catálogo e códigos editados diferentes. O front só olhava o produto quando faltava código; o backend e o índice `uq_itens_pedido_produto` recusam, com mensagem que culpava o código. Não havia perda de código digitado. Pedidos antigos `QA889263` continuam no banco de dev, porque limpar depende de decisão do usuário.
 - **Relacionado:** FIX-0038, BACKLOG-0066
+
+### BACKLOG-0098 — QA Safari sem fase para Prepostos, ajuste de valor e menu ⋮ do Faturamento
+- **Prioridade:** P2
+- **Área:** frontend / QA
+- **Origem:** entrega de 2026-10-13 (Faturamento ⋮ + Prepostos).
+- **Motivo:** a entrega foi validada por lint, build, testes (backend 869, frontend 341, shared 14), `db:migrate`/`db:verify` e um smoke em transação revertida contra o Postgres local (preposto → ajuste → nota → venda → % → pagar → travas → estornar). **Não** houve corrida no navegador. A `p9` foi adaptada ao menu ⋮ e a `p14` procura o stamp em prepostos, mas nenhuma fase cria preposto, ajusta valor ou paga comissão.
+- **Critério de aceite:** fase nova (cadastro de preposto com stamp, pedido com preposto, nota, aba Vendas, pagar/estornar, conferência da saída no Financeiro, Editar valor como ADMIN, Ver PDF pelo ⋮) e limpeza na `p14` (estornar, excluir notas, pedido e preposto).
+- **Risco se ficar pendente:** layout e comportamento das telas novas só verificados por testes de componente.
+- **Status:** ABERTO
+- **Relacionado:** PROB-0076
