@@ -19,6 +19,16 @@ export function maskCnpj(value: string): string {
     .replace(/(\d{4})(\d)/, '$1-$2');
 }
 
+/** CPF (000.000.000-00) até 11 dígitos; a partir do 12º, CNPJ. */
+export function maskCpfCnpj(value: string): string {
+  const d = value.replace(/\D/g, '').slice(0, 14);
+  if (d.length > 11) return maskCnpj(d);
+  return d
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1-$2');
+}
+
 /** Aplica máscara de telefone (10 ou 11 dígitos) enquanto o usuário digita. */
 export function maskTel(value: string): string {
   const d = value.replace(/\D/g, '').slice(0, 11);

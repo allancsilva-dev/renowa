@@ -728,7 +728,9 @@ export class SyncService {
  * o motivo e o autor do ajuste de valor, que são decisão interna do ADMIN.
  */
 const PULL_HIDDEN_FIELDS: Readonly<Record<string, readonly string[]>> = {
-  pedidos: ['valor_ajustado', 'valor_ajustado_motivo', 'valor_ajustado_por', 'valor_ajustado_em'],
+  // preposto_id: id interno de cadastro que o mobile não tem (nem deve ter —
+  // vendedor não acessa prepostos).
+  pedidos: ['valor_ajustado', 'valor_ajustado_motivo', 'valor_ajustado_por', 'valor_ajustado_em', 'preposto_id'],
 };
 
 export function omitPullHiddenFields<T extends object>(table: string, row: T): T {

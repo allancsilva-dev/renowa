@@ -169,6 +169,8 @@ export interface Order {
   /** Presente somente quando a API resolve o join (ex.: GET /pedidos/:uuid). */
   cliente?: Client | null;
   vendedor?: { uuid: string; nome: string; email: string } | null;
+  /** Só nome e uuid — o resto do cadastro exige prepostos.ver. */
+  preposto?: { uuid: string; nome: string } | null;
   fornecedor?: Supplier | null;
   transportadora?: Transport | null;
   data: string | null;
@@ -216,6 +218,20 @@ export interface Transport {
   cnpj: string | null;
   telefone: string | null;
   endereco_completo: string | null;
+}
+
+// ─── Prepostos ───────────────────────────────────────────────────────────────
+
+/** Representante externo (não é usuário). Documento só dígitos (CPF ou CNPJ). */
+export interface Preposto {
+  uuid: string;
+  version: number;
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  email: string | null;
+  endereco_completo: string | null;
+  percentual_comissao: string;
 }
 
 // ─── Fornecedores ────────────────────────────────────────────────────────────

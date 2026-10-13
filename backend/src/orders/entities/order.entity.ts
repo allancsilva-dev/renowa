@@ -5,6 +5,7 @@ import { Transport } from '../../transport/entities/transport.entity';
 import { Supplier } from '../../suppliers/entities/supplier.entity';
 import { OrderItem } from './order-item.entity';
 import { User } from '../../users/entities/user.entity';
+import { Preposto } from '../../prepostos/entities/preposto.entity';
 
 /** Espelha `pedidos_origem_check` (0033). */
 export const ORDER_ORIGENS = ['interno', 'externo'] as const;
@@ -73,6 +74,20 @@ export class Order extends VersionedBaseEntity {
     { name: 'vendedor_id', referencedColumnName: 'id' },
   ])
   vendedor: User | null;
+
+  /**
+   * Preposto (representante externo, 0050) que fez a venda. Não substitui
+   * `vendedor_id`: o vendedor continua sendo o usuário dono do pedido.
+   */
+  @Column({ name: 'preposto_id', type: 'int', nullable: true })
+  preposto_id: number | null;
+
+  @ManyToOne(() => Preposto, { nullable: true })
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'preposto_id', referencedColumnName: 'id' },
+  ])
+  preposto: Preposto | null;
 
   @Column({ name: 'fornecedor_id', type: 'int', nullable: true })
   fornecedor_id: number | null;

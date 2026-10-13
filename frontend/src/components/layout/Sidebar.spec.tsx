@@ -25,10 +25,10 @@ function navLabels(): string[] {
 describe('Sidebar', () => {
   it('segue cadastros e depois o ciclo comercial: Pedidos logo acima de Faturamento', () => {
     ['clientes.ver', 'pedidos.ver', 'produtos.ver', 'fornecedores.ver', 'transportadoras.ver',
-      'faturamento.ver', 'financeiro.ver', 'sac.ver'].forEach((slug) => mocks.permissions.add(slug));
+      'faturamento.ver', 'financeiro.ver', 'prepostos.ver', 'sac.ver'].forEach((slug) => mocks.permissions.add(slug));
     render(<MemoryRouter><Sidebar /></MemoryRouter>);
 
-    const esperado = ['Dashboard', 'Clientes', 'Produtos', 'Fornecedores', 'Transporte', 'Pedidos', 'Faturamento', 'Financeiro', 'SAC'];
+    const esperado = ['Dashboard', 'Clientes', 'Produtos', 'Fornecedores', 'Transporte', 'Pedidos', 'Faturamento', 'Financeiro', 'Prepostos', 'SAC'];
     const labels = navLabels();
     expect(labels.filter((label) => esperado.includes(label))).toEqual(esperado);
     expect(labels.indexOf('Faturamento') - labels.indexOf('Pedidos')).toBe(1);

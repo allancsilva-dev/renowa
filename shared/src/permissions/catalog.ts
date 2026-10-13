@@ -10,6 +10,7 @@ export enum PermissionModule {
   AUDITORIA = 'auditoria',
   PRIVACIDADE = 'privacidade',
   SAC = 'sac',
+  PREPOSTOS = 'prepostos',
 }
 
 export enum PermissionSlug {
@@ -55,6 +56,11 @@ export enum PermissionSlug {
   SacCriar = 'sac.criar',
   SacEditar = 'sac.editar',
   SacDeletar = 'sac.deletar',
+
+  PrepostosVer = 'prepostos.ver',
+  PrepostosCriar = 'prepostos.criar',
+  PrepostosEditar = 'prepostos.editar',
+  PrepostosDeletar = 'prepostos.deletar',
 }
 
 export interface PermissionCatalogEntry {
@@ -106,6 +112,11 @@ export const PERMISSION_CATALOG: readonly PermissionCatalogEntry[] = [
   { slug: PermissionSlug.SacCriar, module: PermissionModule.SAC, description: 'Abrir chamados de SAC' },
   { slug: PermissionSlug.SacEditar, module: PermissionModule.SAC, description: 'Editar chamados de SAC e alterar o status' },
   { slug: PermissionSlug.SacDeletar, module: PermissionModule.SAC, description: 'Remover chamados de SAC' },
+
+  { slug: PermissionSlug.PrepostosVer, module: PermissionModule.PREPOSTOS, description: 'Visualizar prepostos e suas vendas' },
+  { slug: PermissionSlug.PrepostosCriar, module: PermissionModule.PREPOSTOS, description: 'Cadastrar prepostos' },
+  { slug: PermissionSlug.PrepostosEditar, module: PermissionModule.PREPOSTOS, description: 'Editar prepostos' },
+  { slug: PermissionSlug.PrepostosDeletar, module: PermissionModule.PREPOSTOS, description: 'Remover prepostos' },
 ] as const;
 
 export const PERMISSION_SLUGS: readonly PermissionSlug[] = PERMISSION_CATALOG.map((entry) => entry.slug);
@@ -135,6 +146,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<Record<string, readonly Permissi
     PermissionSlug.FinanceiroVer, PermissionSlug.FinanceiroEditar,
     PermissionSlug.PedidosVer, PermissionSlug.PedidosLiberar,
     PermissionSlug.FaturamentoVer, PermissionSlug.FaturamentoEditar,
+    // Só leitura: paga comissão de preposto com financeiro.editar (0050).
+    PermissionSlug.PrepostosVer,
   ],
 };
 

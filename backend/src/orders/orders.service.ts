@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { Order, ORDER_ORIGENS, ORDER_STATUSES } from './entities/order.entity';
@@ -23,10 +23,10 @@ import { applySearch } from '../common/persistence/search-filter';
 import { isVendorOnly, vendorOwnershipWhere } from './order-ownership';
 import { orderValorEfetivo } from './order-valor';
 
-type ReferenceTable = 'clientes' | 'usuarios' | 'fornecedores' | 'transportadoras' | 'produtos';
+type ReferenceTable = 'clientes' | 'usuarios' | 'fornecedores' | 'transportadoras' | 'produtos' | 'prepostos';
 
 /** Referências de cabeçalho comuns ao pedido interno e ao externo. */
-type OrderHeaderRefs = Pick<CreateOrderDto, 'cliente_uuid' | 'vendedor_uuid' | 'fornecedor_uuid' | 'transportadora_uuid'>;
+type OrderHeaderRefs = Pick<CreateOrderDto, 'cliente_uuid' | 'vendedor_uuid' | 'preposto_uuid' | 'fornecedor_uuid' | 'transportadora_uuid'>;
 
 /**
  * Filtros da listagem de pedidos.
@@ -87,12 +87,32 @@ export class OrdersService {
     return rows[0].id;
   }
 
-  private async resolveHeader(manager: EntityManager, dto: OrderHeaderRefs, user: RequestUser) {
+  /**
+   * `currentPrepostoId` é o preposto já gravado (edição). VENDEDOR não escolhe
+   * preposto: o vínculo existente é preservado e enviar o campo é 403 — recusar
+   * em silêncio deixaria o cliente achando que gravou.
+   */
+  private async resolveHeader(
+    manager: EntityManager,
+    dto: OrderHeaderRefs,
+    user: RequestUser,
+    currentPrepostoId: number | null = null,
+  ) {
     const tenantId = user.tenantId;
-    const vendedorUuid = this.isVendorOnly(user) ? user.sub : dto.vendedor_uuid;
+    const vendorOnly = this.isVendorOnly(user);
+    if (vendorOnly && dto.preposto_uuid !== undefined) {
+      throw new ForbiddenException('Somente administrador ou gestão definem o preposto do pedido.');
+    }
+    if (!vendorOnly && dto.vendedor_uuid && dto.preposto_uuid) {
+      throw new BadRequestException('Informe vendedor OU preposto, não os dois.');
+    }
+    const vendedorUuid = vendorOnly ? user.sub : dto.vendedor_uuid;
     return {
       cliente_id: await this.resolveUuid(manager, 'clientes', dto.cliente_uuid, tenantId, true),
-      vendedor_id: await this.resolveUuid(manager, 'usuarios', vendedorUuid, tenantId, this.isVendorOnly(user)),
+      vendedor_id: await this.resolveUuid(manager, 'usuarios', vendedorUuid, tenantId, vendorOnly),
+      preposto_id: vendorOnly
+        ? currentPrepostoId
+        : await this.resolveUuid(manager, 'prepostos', dto.preposto_uuid, tenantId),
       fornecedor_id: await this.resolveUuid(manager, 'fornecedores', dto.fornecedor_uuid, tenantId, true),
       transportadora_id: await this.resolveUuid(manager, 'transportadoras', dto.transportadora_uuid, tenantId),
     };
@@ -336,7 +356,7 @@ export class OrdersService {
         throw new ConflictException(`Pedido ${uuid} não pode ser editado pois não está em aberto.`);
       }
 
-      const refs = await this.resolveHeader(manager, dto, user);
+      const refs = await this.resolveHeader(manager, dto, user, order.preposto_id);
       await this.assertNumeroExternoLivre(
         manager, user.tenantId, refs.fornecedor_id!, dto.numero_pedido_externo.trim(), order.id,
       );
@@ -398,7 +418,7 @@ export class OrdersService {
         throw new ConflictException(`Pedido ${uuid} não pode ser editado pois não está em aberto.`);
       }
 
-      const refs = await this.resolveHeader(manager, dto, user);
+      const refs = await this.resolveHeader(manager, dto, user, order.preposto_id);
       const existingItems = await itemRepo.find({ withDeleted: true, where: { pedido_id: order.id, tenant_id: user.tenantId } });
       const byUuid = new Map(existingItems.map((item) => [item.uuid, item]));
       const requested = new Set(dto.itens.map((item) => item.uuid));
@@ -523,6 +543,10 @@ export class OrdersService {
       .leftJoinAndSelect('o.transportadora', 'transportadora')
       .leftJoinAndSelect('o.fornecedor', 'fornecedor')
       .leftJoinAndSelect('o.vendedor', 'vendedor')
+      // Só nome e uuid: documento, contato e percentual do preposto ficam no
+      // cadastro (prepostos.ver), e o pedido é lido também pelo VENDEDOR.
+      .leftJoin('o.preposto', 'preposto')
+      .addSelect(['preposto.id', 'preposto.uuid', 'preposto.nome'])
       .leftJoinAndSelect('o.itens', 'itens', 'itens.deleted_at IS NULL')
       .leftJoinAndSelect('itens.produto', 'produto')
       .leftJoinAndSelect('itens.foto_especifica', 'foto_especifica', 'foto_especifica.deleted_at IS NULL')

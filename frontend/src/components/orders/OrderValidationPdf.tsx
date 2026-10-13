@@ -124,7 +124,7 @@ export function OrderValidationPdf({ order, fotosPorProduto = {} }: { order: Ord
       <Footer order={order} />
       <View style={styles.section}><View style={styles.infoGrid}>
         <Field span={4} label='RAZÃO SOCIAL' value={text(order.cliente?.razao_social)} />
-        <Field label='CNPJ' value={text(order.cliente?.cnpj)} /><Field label='INSC. EST.' value={text(order.cliente?.inscricao_estadual)} /><Field label='SUFRAMA' value={text(order.cliente?.suframa)} /><Field label='VENDEDOR' value={text(order.vendedor?.nome)} />
+        <Field label='CNPJ' value={text(order.cliente?.cnpj)} /><Field label='INSC. EST.' value={text(order.cliente?.inscricao_estadual)} /><Field label='SUFRAMA' value={text(order.cliente?.suframa)} /><Field label='VENDEDOR' value={text(order.preposto?.nome ?? order.vendedor?.nome)} />
         <Field span={2} label='ENDEREÇO' value={text(order.cliente?.endereco)} /><Field span={2} label='BAIRRO' value={text(order.cliente?.bairro)} />
         <Field label='Nº / AND.' value={text(order.cliente?.numero)} /><Field label='CIDADE' value={text(order.cliente?.cidade)} /><Field label='UF' value={text(order.cliente?.uf)} /><Field label='CEP' value={text(order.cliente?.cep)} />
         {/* E-mail em meia largura: em 25% um endereço corporativo hifeniza em três linhas e estica a linha inteira da grade. */}

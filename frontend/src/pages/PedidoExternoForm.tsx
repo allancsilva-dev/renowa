@@ -14,7 +14,10 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges';
 import { applyClientToOrderHeader } from '@/lib/clientSelection';
 import { paymentOptionsWith } from '@/lib/paymentOptions';
 import { canLiberarPedido, isPedidoLocked } from '@/lib/orderPermissions';
-import { clientOptionsFetcher, filterLocalOptions, supplierOptionsFetcher, transportOptionsFetcher } from '@/lib/relationOptions';
+import {
+  clientOptionsFetcher, prepostoOptionLabel, sellerOptionsFetcher, sellerValue, splitSellerValue,
+  supplierOptionsFetcher, transportOptionsFetcher,
+} from '@/lib/relationOptions';
 
 /**
  * Pedido externo — digitado em sistema de terceiro e só registrado aqui.
@@ -25,7 +28,7 @@ import { clientOptionsFetcher, filterLocalOptions, supplierOptionsFetcher, trans
  * mesmos endpoints do pedido interno.
  */
 type ExternalForm = {
-  data: string; cliente_uuid: string; vendedor_uuid: string; fornecedor_uuid: string;
+  data: string; cliente_uuid: string; vendedor_uuid: string; preposto_uuid: string; fornecedor_uuid: string;
   transportadora_uuid: string; status: OrderStatus; numero_pedido_externo: string;
   sistema_origem: string; valor: number | null; pgt: string; prazo: string;
   local_entrega: string; tipo_faturamento: string; observacao: string;
@@ -34,7 +37,7 @@ type ExternalForm = {
 type TenantUser = { authUserId: string; name: string; active: boolean };
 
 const emptyForm: ExternalForm = {
-  data: new Date().toISOString().slice(0, 10), cliente_uuid: '', vendedor_uuid: '', fornecedor_uuid: '',
+  data: new Date().toISOString().slice(0, 10), cliente_uuid: '', vendedor_uuid: '', preposto_uuid: '', fornecedor_uuid: '',
   transportadora_uuid: '', status: 'em_aberto', numero_pedido_externo: '', sistema_origem: '',
   valor: null, pgt: '', prazo: '', local_entrega: '', tipo_faturamento: '', observacao: '',
 };
@@ -51,7 +54,9 @@ function editSnapshot(form: ExternalForm): string {
 function orderToForm(order: Order, duplicating = false): ExternalForm {
   return {
     data: duplicating ? new Date().toISOString().slice(0, 10) : order.data ?? '',
-    cliente_uuid: duplicating ? '' : order.cliente?.uuid ?? '', vendedor_uuid: order.vendedor?.uuid ?? '',
+    cliente_uuid: duplicating ? '' : order.cliente?.uuid ?? '',
+    // Campo Vendedor mostra um só: preposto, quando houver, senão o usuário.
+    vendedor_uuid: order.preposto ? '' : order.vendedor?.uuid ?? '', preposto_uuid: order.preposto?.uuid ?? '',
     fornecedor_uuid: order.fornecedor?.uuid ?? '', transportadora_uuid: duplicating ? '' : order.transportadora?.uuid ?? '',
     status: duplicating ? 'em_aberto' : order.status, numero_pedido_externo: duplicating ? '' : order.numero_pedido_externo ?? '',
     sistema_origem: order.sistema_origem ?? '',
@@ -105,7 +110,7 @@ export default function PedidoExternoForm() {
         setVersion(duplicateSourceUuid ? null : order.version);
         setClienteLabel(duplicateSourceUuid ? '' : order.cliente?.razao_social ?? '');
         setSupplierLabel(order.fornecedor?.razao_social ?? '');
-        setVendorLabel(order.vendedor?.nome ?? '');
+        setVendorLabel(order.preposto ? prepostoOptionLabel(order.preposto.nome) : order.vendedor?.nome ?? '');
         setTransportLabel(duplicateSourceUuid ? '' : order.transportadora?.razao_social ?? '');
       }
     }).catch((reason) => { if (active) setError(getApiErrorMessage(reason)); })
@@ -131,7 +136,8 @@ export default function PedidoExternoForm() {
   }
 
   function vendorFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
-    return Promise.resolve(filterLocalOptions(users.map((user) => ({ value: user.authUserId, label: user.name })), search, page));
+    const userOptions = users.map((user) => ({ value: user.authUserId, label: user.name }));
+    return sellerOptionsFetcher(userOptions, hasPermission('prepostos.ver'))(search, page);
   }
 
   /**
@@ -186,6 +192,8 @@ export default function PedidoExternoForm() {
       cliente_uuid: form.cliente_uuid,
       fornecedor_uuid: form.fornecedor_uuid,
       vendedor_uuid: canChooseVendor && form.vendedor_uuid ? form.vendedor_uuid : undefined,
+      // VENDEDOR não manda o campo (403); quem escolhe manda sempre — null remove.
+      preposto_uuid: canChooseVendor ? form.preposto_uuid || null : undefined,
       transportadora_uuid: form.transportadora_uuid || null,
       numero_pedido_externo: form.numero_pedido_externo.trim(),
       sistema_origem: form.sistema_origem.trim(),
@@ -258,7 +266,7 @@ export default function PedidoExternoForm() {
           <label className='flex flex-col gap-1'><span className={labelClass}>Data de emissão</span>
             <input disabled={fieldsDisabled} type='date' value={form.data} onChange={(e) => setForm((f) => ({ ...f, data: e.target.value }))} className={inputClass} /></label>
           {canChooseVendor && <label className='flex flex-col gap-1'><span className={labelClass}>Vendedor</span>
-            <AsyncCombobox disabled={fieldsDisabled} value={form.vendedor_uuid || null} displayValue={vendorLabel} onChange={(value, option) => { setForm((current) => ({ ...current, vendedor_uuid: value ?? '' })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
+            <AsyncCombobox disabled={fieldsDisabled} value={sellerValue(form)} displayValue={vendorLabel} onChange={(value, option) => { setForm((current) => ({ ...current, ...splitSellerValue(value) })); setVendorLabel(option?.label ?? ''); }} fetcher={vendorFetcher} ariaLabel='Vendedor' placeholder='Buscar vendedor...' className={inputClass} /></label>}
           <label className='flex flex-col gap-1'><span className={labelClass}>Transportadora</span>
             <AsyncCombobox disabled={fieldsDisabled} value={form.transportadora_uuid || null} displayValue={transportLabel} onChange={(value, option) => { setForm((current) => ({ ...current, transportadora_uuid: value ?? '' })); setTransportLabel(option?.label ?? ''); }} fetcher={transportOptionsFetcher} ariaLabel='Transportadora' placeholder='Buscar transportadora...' className={inputClass} /></label>
         </div>

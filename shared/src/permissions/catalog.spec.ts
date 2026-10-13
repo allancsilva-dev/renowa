@@ -12,8 +12,8 @@ import {
 describe('PERMISSION_CATALOG', () => {
   it('has exactly 32 entries, one per PermissionSlug value', () => {
     const enumSlugs = Object.values(PermissionSlug);
-    expect(enumSlugs).toHaveLength(32);
-    expect(PERMISSION_CATALOG).toHaveLength(32);
+    expect(enumSlugs).toHaveLength(36);
+    expect(PERMISSION_CATALOG).toHaveLength(36);
     expect(new Set(PERMISSION_SLUGS)).toEqual(new Set(enumSlugs));
   });
 
@@ -45,7 +45,7 @@ describe('DEFAULT_ROLE_PERMISSIONS', () => {
     expect(new Set(DEFAULT_ROLE_PERMISSIONS.gestao)).toEqual(new Set(PERMISSION_SLUGS));
   });
 
-  it('grants financeiro visibility/liberation of pedidos plus faturamento', () => {
+  it('grants financeiro visibility/liberation of pedidos plus faturamento and prepostos read', () => {
     expect(new Set(DEFAULT_ROLE_PERMISSIONS.financeiro)).toEqual(new Set([
       PermissionSlug.FinanceiroVer,
       PermissionSlug.FinanceiroEditar,
@@ -53,6 +53,7 @@ describe('DEFAULT_ROLE_PERMISSIONS', () => {
       PermissionSlug.PedidosLiberar,
       PermissionSlug.FaturamentoVer,
       PermissionSlug.FaturamentoEditar,
+      PermissionSlug.PrepostosVer,
     ]));
   });
 
@@ -74,6 +75,18 @@ describe('DEFAULT_ROLE_PERMISSIONS', () => {
       expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(slug);
       expect(DEFAULT_ROLE_PERMISSIONS.financeiro).not.toContain(slug);
     }
+  });
+
+  // Preposto tem documento/contato e comissão de terceiro: vendedor não vê;
+  // financeiro só lê (paga com financeiro.editar). Espelha a 0050.
+  it('grants prepostos only read to financeiro and nothing to vendedor', () => {
+    const slugs = [
+      PermissionSlug.PrepostosVer, PermissionSlug.PrepostosCriar,
+      PermissionSlug.PrepostosEditar, PermissionSlug.PrepostosDeletar,
+    ];
+    for (const slug of slugs) expect(DEFAULT_ROLE_PERMISSIONS.vendedor).not.toContain(slug);
+    expect(DEFAULT_ROLE_PERMISSIONS.financeiro).toContain(PermissionSlug.PrepostosVer);
+    expect(DEFAULT_ROLE_PERMISSIONS.financeiro).not.toContain(PermissionSlug.PrepostosEditar);
   });
 });
 

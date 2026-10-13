@@ -25,6 +25,8 @@ const uploadOrderItemPhoto = vi.fn();
 const deleteOrderItemPhoto = vi.fn();
 const liberarOrder = vi.fn();
 const navigate = vi.fn();
+const authState = vi.hoisted(() => ({ gestor: false }));
+const fetchPrepostos = vi.fn();
 
 vi.mock('@/services/orders.service', () => ({
   fetchOrder: (...args: unknown[]) => fetchOrder(...args),
@@ -57,7 +59,10 @@ vi.mock('@/services/productPhotos.service', () => ({
   deleteOrderItemPhoto: (...args: unknown[]) => deleteOrderItemPhoto(...args),
 }));
 vi.mock('@/hooks/useAuth', () => ({
-  useAuth: () => ({ hasAnyRole: () => false, hasPermission: () => true }),
+  useAuth: () => ({ hasAnyRole: () => authState.gestor, hasPermission: () => true }),
+}));
+vi.mock('@/services/prepostos.service', () => ({
+  fetchPrepostos: (...args: unknown[]) => fetchPrepostos(...args),
 }));
 vi.mock('react-router-dom', () => ({
   useNavigate: () => navigate,
@@ -71,6 +76,8 @@ const PRODUTO_A = { uuid: 'prod-a', codigo: 'AAA-1', descricao: 'Produto A', pre
 const PRODUTO_B = { uuid: 'prod-b', codigo: 'BBB-1', descricao: 'Produto B', preco_base: '30.00', ipi_perc: '5', quantidade: 6 };
 
 beforeEach(() => {
+  authState.gestor = false;
+  fetchPrepostos.mockResolvedValue({ data: [{ uuid: 'prep-1', nome: 'Paula Preposta' }], meta: { page: 1, totalPages: 1 } });
   routerSearch.value = '';
   routerParams.uuid = undefined;
   fetchOrderItemPhoto.mockResolvedValue(null);
@@ -620,5 +627,59 @@ describe('PedidoForm — liberar com edição pendente', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(liberarOrder).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Observações')).toHaveValue('Nova observação');
+  });
+});
+
+describe('PedidoForm — preposto no campo Vendedor', () => {
+  function pedido(extra: Record<string, unknown> = {}) {
+    return {
+      uuid: 'ped-prep', version: 2, origem: 'interno', status: 'em_aberto', data: '2026-09-15',
+      cliente: { uuid: 'cli-1', razao_social: 'Cliente Um' }, vendedor: null, preposto: null,
+      fornecedor: FORNECEDOR_A, transportadora: null, pgt: null, prazo: null,
+      local_entrega: null, tipo_faturamento: null, observacao: null,
+      itens: [{
+        uuid: 'item-prep', produto: PRODUTO_A, foto_especifica: null,
+        codigo_manual: 'AAA-1', descricao_manual: 'Produto A', qtd_caixas: '1',
+        qtd_unitaria: '12', preco_unitario: '25.50', desconto_perc: '0', ipi_perc: '10',
+      }],
+      ...extra,
+    };
+  }
+
+  async function montarEdicao(order: ReturnType<typeof pedido>) {
+    routerParams.uuid = 'ped-prep';
+    fetchOrder.mockResolvedValue(order);
+    saveOrder.mockResolvedValue({ uuid: 'ped-prep', version: 3 });
+    render(<PedidoForm />);
+    await screen.findByDisplayValue('Cliente Um');
+  }
+
+  it('lista prepostos junto com os usuários e envia só preposto_uuid ao escolher um', async () => {
+    authState.gestor = true;
+    await montarEdicao(pedido());
+
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Vendedor' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Paula Preposta · Preposto' }));
+    fireEvent.submit(screen.getByRole('button', { name: 'Salvar pedido' }).closest('form')!);
+
+    await waitFor(() => expect(saveOrder).toHaveBeenCalled());
+    const payload = saveOrder.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(payload.preposto_uuid).toBe('prep-1');
+    expect(payload.vendedor_uuid).toBeUndefined();
+  });
+
+  it('carrega o preposto gravado no campo Vendedor', async () => {
+    authState.gestor = true;
+    await montarEdicao(pedido({ preposto: { uuid: 'prep-1', nome: 'Paula Preposta' } }));
+    expect(screen.getByRole('combobox', { name: 'Vendedor' })).toHaveValue('Paula Preposta · Preposto');
+  });
+
+  it('vendedor (sem escolher vendedor) nunca envia preposto_uuid', async () => {
+    await montarEdicao(pedido({ preposto: { uuid: 'prep-1', nome: 'Paula Preposta' } }));
+    expect(screen.queryByRole('combobox', { name: 'Vendedor' })).not.toBeInTheDocument();
+    fireEvent.submit(screen.getByRole('button', { name: 'Salvar pedido' }).closest('form')!);
+    await waitFor(() => expect(saveOrder).toHaveBeenCalled());
+    const payload = saveOrder.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect('preposto_uuid' in payload ? payload.preposto_uuid : undefined).toBeUndefined();
   });
 });
