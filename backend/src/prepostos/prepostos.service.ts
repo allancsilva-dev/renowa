@@ -112,7 +112,7 @@ export class PrepostosService {
 
   /**
    * Excluir com pedido em andamento deixaria a nota futura sem preposto ativo
-   * para receber a comissão.
+   * para receber a comissão; com comissão pendente, a dívida sumiria da tela.
    */
   private async assertRemovivel(preposto: Preposto): Promise<void> {
     const [pedidos] = await this.prepostoRepo.query(
@@ -122,6 +122,14 @@ export class PrepostosService {
     ) as Array<{ total: number }>;
     if (pedidos.total > 0) {
       throw new ConflictException('Preposto tem pedidos em andamento. Conclua ou troque o preposto desses pedidos antes de excluir.');
+    }
+    const [vendas] = await this.prepostoRepo.query(
+      `SELECT COUNT(*)::int AS total FROM preposto_comissoes
+        WHERE tenant_id = $1 AND preposto_id = $2 AND deleted_at IS NULL AND status = 'pendente'`,
+      [preposto.tenant_id, preposto.id],
+    ) as Array<{ total: number }>;
+    if (vendas.total > 0) {
+      throw new ConflictException('Preposto tem comissões pendentes. Pague ou ajuste as vendas antes de excluir.');
     }
   }
 

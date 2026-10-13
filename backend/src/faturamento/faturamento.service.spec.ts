@@ -7,6 +7,8 @@ import { ConcurrentModificationException } from '../common/errors/concurrent-mod
 import { FaturamentoFinalizacao } from './entities/faturamento-finalizacao.entity';
 import { FinalizarFaturamentoDto, ReabrirFaturamentoDto } from './dto/finalizar-faturamento.dto';
 import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
+import { Preposto } from '../prepostos/entities/preposto.entity';
+import { PrepostoComissao } from '../prepostos/entities/preposto-comissao.entity';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
@@ -65,13 +67,17 @@ function buildRepos({ order, notaSumAfter, existingNota = null }: { order: Order
   return { orderRepo, notaRepo, commissionRepo, finalizacaoRepo };
 }
 
-function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: any; finalizacaoRepo: any }) {
+const vendaPrepostoVazia = { findOne: jest.fn().mockResolvedValue(null) };
+
+function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: any; finalizacaoRepo: any; vendaPrepostoRepo?: any; prepostoRepo?: any }) {
   const manager = {
     getRepository: jest.fn((entity: any) => {
       if (entity === Order) return repos.orderRepo;
       if (entity === NotaFiscal) return repos.notaRepo;
       if (entity === Commission) return repos.commissionRepo;
       if (entity === FaturamentoFinalizacao) return repos.finalizacaoRepo;
+      if (entity === PrepostoComissao) return repos.vendaPrepostoRepo ?? vendaPrepostoVazia;
+      if (entity === Preposto) return repos.prepostoRepo ?? { findOne: jest.fn().mockResolvedValue(null) };
       throw new Error(`repo not mocked for ${String(entity)}`);
     }),
   };
@@ -512,5 +518,72 @@ describe('AjustarValorPedidoDto', () => {
 
     const zero = await validate(plainToInstance(AjustarValorPedidoDto, { valor: 0, motivo: 'abc', version: 1 }), pipeOptions);
     expect(zero.map((error) => error.property)).toEqual(['valor']);
+  });
+});
+
+describe('FaturamentoService — venda do preposto', () => {
+  function vendaRepo(venda: any = null) {
+    return {
+      findOne: jest.fn().mockResolvedValue(venda),
+      create: jest.fn((v: any) => v),
+      save: jest.fn(async (v: any) => v),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      softRemove: jest.fn(async (v: any) => v),
+    };
+  }
+
+  it('nota de pedido com preposto cria a venda com o % do cadastro sobre o valor da nota', async () => {
+    const order = buildOrder({ preposto_id: 7 } as Partial<Order>);
+    const repos = { ...buildRepos({ order, notaSumAfter: '40.00' }), vendaPrepostoRepo: vendaRepo(), prepostoRepo: { findOne: jest.fn().mockResolvedValue({ id: 7, percentual_comissao: '2.50' }) } };
+    const service = buildService(repos);
+
+    await service.registrarNota(pedidoUuid, { uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', numero_nota: 'NF-9', valor: 40 } as any, tenantId);
+
+    expect(repos.vendaPrepostoRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      tenant_id: tenantId, preposto_id: 7, pedido_id: 1, numero_nfe: 'NF-9',
+      valor_faturado: '40.00', perc_comissao: '2.50', valor_comissao: '1.00', status: 'pendente', movimento_id: null,
+    }));
+  });
+
+  it('pedido sem preposto não cria venda', async () => {
+    const repos = { ...buildRepos({ order: buildOrder(), notaSumAfter: '40.00' }), vendaPrepostoRepo: vendaRepo() };
+    const service = buildService(repos);
+    await service.registrarNota(pedidoUuid, { uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', numero_nota: 'NF-9', valor: 40 } as any, tenantId);
+    expect(repos.vendaPrepostoRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('editar nota recalcula venda pendente com o % gravado na venda', async () => {
+    const nota = { id: 5, uuid: 'nota-1', pedido_id: 1, tenant_id: tenantId, version: 1, valor: '40.00', numero_nota: 'NF-9', created_at: new Date() };
+    const repos = { ...buildRepos({ order: buildOrder(), notaSumAfter: '50.00', existingNota: nota }), vendaPrepostoRepo: vendaRepo({ id: 3, status: 'pendente', perc_comissao: '10.00' }) };
+    const service = buildService(repos);
+
+    await service.atualizarNota('nota-1', { version: 1, valor: 50 } as any, tenantId);
+
+    expect(repos.vendaPrepostoRepo.update).toHaveBeenCalledWith(
+      { id: 3, tenant_id: tenantId },
+      expect.objectContaining({ valor_faturado: '50.00', valor_comissao: '5.00' }),
+    );
+  });
+
+  it('venda paga trava editar e excluir a nota', async () => {
+    const nota = { id: 5, uuid: 'nota-1', pedido_id: 1, tenant_id: tenantId, version: 1, valor: '40.00', numero_nota: 'NF-9' };
+    const repos = { ...buildRepos({ order: buildOrder(), notaSumAfter: '40.00', existingNota: nota }), vendaPrepostoRepo: vendaRepo({ id: 3, status: 'pago', perc_comissao: '10.00' }) };
+    const service = buildService(repos);
+
+    await expect(service.atualizarNota('nota-1', { version: 1, valor: 50 } as any, tenantId)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.excluirNota('nota-1', 1, tenantId)).rejects.toBeInstanceOf(ConflictException);
+    expect(repos.notaRepo.save).not.toHaveBeenCalled();
+    expect(repos.notaRepo.softRemove).not.toHaveBeenCalled();
+  });
+
+  it('excluir nota remove a venda pendente junto', async () => {
+    const nota = { id: 5, uuid: 'nota-1', pedido_id: 1, tenant_id: tenantId, version: 1, valor: '40.00', numero_nota: 'NF-9' };
+    const venda = { id: 3, status: 'pendente', perc_comissao: '10.00' };
+    const repos = { ...buildRepos({ order: buildOrder(), notaSumAfter: '0.00', existingNota: nota }), vendaPrepostoRepo: vendaRepo(venda) };
+    const service = buildService(repos);
+
+    await service.excluirNota('nota-1', 1, tenantId);
+
+    expect(repos.vendaPrepostoRepo.softRemove).toHaveBeenCalledWith(venda);
   });
 });
