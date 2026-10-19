@@ -1,5 +1,8 @@
 import { cloneElement, useState, useEffect, useCallback, useId, useRef } from 'react';
-import { Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2, Pencil } from 'lucide-react';
+import {
+  Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2, Pencil,
+  ArrowDown, ArrowUp, CalendarCheck, AlertTriangle, Undo2,
+} from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
 import Dialog from '@/components/ui/Dialog';
@@ -15,6 +18,8 @@ import type { PaginatedResponse } from '@/types';
 import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
 import { filterLocalOptions } from '@/lib/relationOptions';
 import EmptyState from '@/components/feedback/EmptyState';
+import { RowMenu, type RowMenuItem } from '@/components/tables/RowMenu';
+import { hojeLocal, isDataCompleta } from '@/lib/date';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -51,6 +56,16 @@ interface Comissao {
   perc_comissao: string | null;
   valor_comissao: string;
   status: string;
+}
+
+/** Data da NF: a mesma que filtra e ordena no backend (`COALESCE(data_faturamento, data_pedido)`). */
+function dataNf(c: Comissao): string | null {
+  return c.data_faturamento ?? c.data_pedido;
+}
+
+interface AcaoComissao {
+  tipo: 'pagamento' | 'atraso' | 'estorno';
+  comissao: Comissao;
 }
 
 interface Parceiro {
@@ -151,25 +166,37 @@ function FiltroIntervaloDatas({
   value: Periodo;
   onChange: (periodo: Periodo) => void;
 }) {
-  function changeInicio(inicio: string) {
-    if (!inicio) return;
-    onChange({ inicio, fim: inicio > value.fim ? inicio : value.fim });
+  // Rascunho local: o input emite `0002-…` a cada dígito do ano. Só data
+  // completa vira filtro — senão cada tecla buscava e o ano parcial "puxava"
+  // a outra ponta do intervalo.
+  const [inicio, setInicio] = useState(value.inicio);
+  const [fim, setFim] = useState(value.fim);
+  useEffect(() => { setInicio(value.inicio); }, [value.inicio]);
+  useEffect(() => { setFim(value.fim); }, [value.fim]);
+
+  function changeInicio(novo: string) {
+    setInicio(novo);
+    if (!isDataCompleta(novo)) return;
+    onChange({ inicio: novo, fim: novo > value.fim ? novo : value.fim });
   }
 
-  function changeFim(fim: string) {
-    if (!fim) return;
-    onChange({ inicio: fim < value.inicio ? fim : value.inicio, fim });
+  function changeFim(novo: string) {
+    setFim(novo);
+    if (!isDataCompleta(novo)) return;
+    onChange({ inicio: novo < value.inicio ? novo : value.inicio, fim: novo });
   }
 
+  // Ao sair com data incompleta, volta ao período em vigor em vez de deixar
+  // na tela uma data que não está filtrando nada.
   return (
     <div className='grid min-w-0 grid-cols-2 gap-2 xl:w-72 xl:shrink-0'>
       <label className='flex min-w-0 flex-col gap-1'>
         <span className={labelCls}>Data inicial</span>
-        <input type='date' required aria-label='Data inicial' value={value.inicio} max={value.fim} onChange={(event) => changeInicio(event.target.value)} className={`${inputCls} min-h-11`} />
+        <input type='date' required aria-label='Data inicial' value={inicio} max={value.fim} onChange={(event) => changeInicio(event.target.value)} onBlur={() => { if (!isDataCompleta(inicio)) setInicio(value.inicio); }} className={`${inputCls} min-h-11`} />
       </label>
       <label className='flex min-w-0 flex-col gap-1'>
         <span className={labelCls}>Data final</span>
-        <input type='date' required aria-label='Data final' value={value.fim} min={value.inicio} onChange={(event) => changeFim(event.target.value)} className={`${inputCls} min-h-11`} />
+        <input type='date' required aria-label='Data final' value={fim} min={value.inicio} onChange={(event) => changeFim(event.target.value)} onBlur={() => { if (!isDataCompleta(fim)) setFim(value.fim); }} className={`${inputCls} min-h-11`} />
       </label>
     </div>
   );
@@ -259,14 +286,16 @@ function Field({ label, children }: { label: string; children: React.ReactElemen
   );
 }
 
-function ModalBtns({ onClose, saving }: { onClose: () => void; saving: boolean }) {
+function ModalBtns({
+  onClose, saving, submitLabel = 'Salvar', disabled = false, danger = false,
+}: { onClose: () => void; saving: boolean; submitLabel?: string; disabled?: boolean; danger?: boolean }) {
   return (
     <div className='flex justify-end gap-3 pt-3'>
       <button type='button' onClick={onClose} className='rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors'>
         Cancelar
       </button>
-      <button type='submit' disabled={saving} className='min-h-11 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60 transition-colors'>
-        {saving ? 'Salvando...' : 'Salvar'}
+      <button type='submit' disabled={saving || disabled} className={`min-h-11 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 transition-colors ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-primary-800'}`}>
+        {saving ? 'Salvando...' : submitLabel}
       </button>
     </div>
   );
@@ -658,7 +687,11 @@ function ComissaoAlune() {
   const [savingPercentual, setSavingPercentual] = useState(false);
   const [percentualError, setPercentualError] = useState<string | null>(null);
 
-  const [savingAction, setSavingAction] = useState<string | null>(null);
+  const [acao, setAcao] = useState<AcaoComissao | null>(null);
+  const [dataPagamento, setDataPagamento] = useState('');
+  const [savingAcao, setSavingAcao] = useState(false);
+  const [acaoError, setAcaoError] = useState<string | null>(null);
+  const [ordem, setOrdem] = useState<'asc' | 'desc'>('desc');
 
   const { search, setSearch, debouncedSearch } = useBusca();
   const novaRequisicao = useRequisicaoAtual();
@@ -667,7 +700,7 @@ function ComissaoAlune() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ data_inicio: periodo.inicio, data_fim: periodo.fim, limit: '100' });
+    const params = new URLSearchParams({ data_inicio: periodo.inicio, data_fim: periodo.fim, limit: '100', ordem });
     if (status) params.set('status', status);
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
     if (debouncedSearch) params.set('search', debouncedSearch);
@@ -684,7 +717,7 @@ function ComissaoAlune() {
       })
       .catch(() => { if (atual()) setError('Não foi possível carregar comissões.'); })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [periodo, status, fornecedorId, debouncedSearch, novaRequisicao]);
+  }, [periodo, status, fornecedorId, debouncedSearch, ordem, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -717,33 +750,67 @@ function ComissaoAlune() {
     }
   }
 
-  async function registrarPagamento(comissao: Comissao, dataPagamento: string) {
-    if (!dataPagamento) return;
-    setSavingAction(comissao.uuid);
-    setError(null);
+  function abrirAcao(tipo: AcaoComissao['tipo'], comissao: Comissao) {
+    setAcao({ tipo, comissao });
+    setDataPagamento('');
+    setAcaoError(null);
+  }
+
+  const hoje = hojeLocal();
+  const dataMinimaPagamento = acao ? dataNf(acao.comissao) : null;
+  const dataPagamentoValida = isDataCompleta(dataPagamento)
+    && dataPagamento <= hoje
+    && (!dataMinimaPagamento || dataPagamento >= dataMinimaPagamento);
+
+  async function confirmarAcao(e: React.FormEvent) {
+    e.preventDefault();
+    if (!acao || savingAcao) return;
+    const { tipo, comissao } = acao;
+    // Nada sai no onChange do input: o pagamento só vai com data completa e
+    // dentro do intervalo, depois do clique em confirmar.
+    if (tipo === 'pagamento' && !dataPagamentoValida) {
+      setAcaoError('Informe uma data de pagamento completa, entre a data da NF e hoje.');
+      return;
+    }
+    setSavingAcao(true);
+    setAcaoError(null);
     try {
-      await api.patch(`/financeiro/comissoes/${comissao.uuid}/pagamento`, {
-        data_pagamento: dataPagamento, version: comissao.version,
-      });
+      if (tipo === 'pagamento') {
+        await api.patch(`/financeiro/comissoes/${comissao.uuid}/pagamento`, { data_pagamento: dataPagamento, version: comissao.version });
+      } else if (tipo === 'atraso') {
+        await api.patch(`/financeiro/comissoes/${comissao.uuid}/atraso`, { version: comissao.version });
+      } else {
+        await api.patch(`/financeiro/comissoes/${comissao.uuid}/estorno`, { version: comissao.version });
+      }
+      setAcao(null);
       load();
     } catch (requestError) {
-      setError(writeErrorMessage(requestError));
+      const message = writeErrorMessage(requestError);
+      // Versão velha não adianta repetir: fecha, recarrega e avisa na página.
+      if ((requestError as { response?: { status?: number } }).response?.status === 409) {
+        setAcao(null);
+        load();
+        setError(message);
+      } else {
+        setAcaoError(message);
+      }
     } finally {
-      setSavingAction(null);
+      setSavingAcao(false);
     }
   }
 
-  async function registrarAtraso(comissao: Comissao) {
-    setSavingAction(comissao.uuid);
-    setError(null);
-    try {
-      await api.patch(`/financeiro/comissoes/${comissao.uuid}/atraso`, { version: comissao.version });
-      load();
-    } catch (requestError) {
-      setError(writeErrorMessage(requestError));
-    } finally {
-      setSavingAction(null);
+  function acoesDaComissao(c: Comissao): RowMenuItem[] {
+    const items: RowMenuItem[] = [];
+    if (['faturado', 'bloqueado'].includes(c.status)) {
+      items.push({ label: 'Registrar pagamento', icon: CalendarCheck, onSelect: () => abrirAcao('pagamento', c) });
     }
+    if (['pendente', 'faturado'].includes(c.status)) {
+      items.push({ label: 'Atraso de pagamento', icon: AlertTriangle, danger: true, onSelect: () => abrirAcao('atraso', c) });
+    }
+    if (c.status === 'pago') {
+      items.push({ label: 'Estornar pagamento', icon: Undo2, danger: true, onSelect: () => abrirAcao('estorno', c) });
+    }
+    return items;
   }
 
   const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
@@ -803,12 +870,28 @@ function ComissaoAlune() {
                 <span className='inline-flex rounded-full bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-400'>Manual</span>
               ),
           },
-          { key: 'data_pedido', header: 'Data Ped.', cell: (c) => <span className='text-slate-500'>{fmtDate(c.data_pedido)}</span> },
+          {
+            key: 'data_nf',
+            header: (
+              <button
+                type='button'
+                onClick={() => setOrdem((atual) => (atual === 'desc' ? 'asc' : 'desc'))}
+                aria-label={ordem === 'desc' ? 'Ordenar por data NF: mais antigas primeiro' : 'Ordenar por data NF: mais recentes primeiro'}
+                className='-mx-1 inline-flex items-center gap-1 whitespace-nowrap rounded px-1 font-semibold hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+              >
+                Data NF
+                {ordem === 'desc' ? <ArrowDown className='h-3.5 w-3.5' aria-hidden /> : <ArrowUp className='h-3.5 w-3.5' aria-hidden />}
+              </button>
+            ),
+            ariaSort: ordem === 'desc' ? 'descending' : 'ascending',
+            cell: (c) => <span className='whitespace-nowrap text-slate-500'>{fmtDate(dataNf(c))}</span>,
+          },
+          { key: 'nf', header: 'NF', cell: (c) => <span className='font-mono text-slate-500'>{c.numero_nfe ?? '—'}</span> },
           { key: 'fornecedor', header: 'Fornecedor', cell: (c) => <span className='text-slate-700'>{c.fornecedor?.razao_social ?? '—'}</span> },
-          { key: 'nfe', header: 'NF-e', cell: (c) => <span className='text-slate-500'>{c.numero_nfe ?? '—'}</span> },
+          { key: 'cliente', header: 'Cliente', cell: (c) => <span className='text-slate-700'>{c.cliente?.razao_social ?? '—'}</span> },
           {
             key: 'valor_faturado',
-            header: 'Val. Fat.',
+            header: 'Valor faturado',
             className: 'text-right',
             cell: (c) => <span className='text-slate-900'>{BRL.format(moneyForDisplay(c.valor_faturado))}</span>,
           },
@@ -833,30 +916,29 @@ function ComissaoAlune() {
             className: 'text-right',
             cell: (c) => <span className='font-semibold text-teal-700'>{BRL.format(moneyForDisplay(c.valor_comissao))}</span>,
           },
-          { key: 'status', header: 'Status', cell: (c) => <CommissionStatusBadge status={c.status} /> },
+          {
+            key: 'status',
+            header: 'Status',
+            cell: (c) => (
+              <span className='flex flex-col items-start gap-1'>
+                <CommissionStatusBadge status={c.status} />
+                {c.status === 'pago' && c.data_pagamento && (
+                  <span className='whitespace-nowrap text-xs text-slate-500'>Pago em {fmtDate(c.data_pagamento)}</span>
+                )}
+              </span>
+            ),
+          },
           ...(canEdit
             ? [
                 {
                   key: 'acoes',
                   header: 'Ações',
-                  cell: (c: Comissao) => (
-                    <span className='flex min-w-52 flex-wrap items-center gap-2'>
-                      {['pendente', 'faturado', 'bloqueado'].includes(c.status) && (
-                        <label className='flex items-center gap-2 text-xs font-medium text-slate-600'>
-                          Data de pagamento
-                          <input type='date' aria-label={`Data de pagamento da NF-e ${c.numero_nfe ?? ''}`} disabled={savingAction === c.uuid} onChange={(e) => void registrarPagamento(c, e.target.value)} className='rounded-md border border-slate-300 px-2 py-1 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/40' />
-                        </label>
-                      )}
-                      {['pendente', 'faturado'].includes(c.status) && (
-                        <button type='button' disabled={savingAction === c.uuid} onClick={() => void registrarAtraso(c)} className='rounded-md border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-60'>
-                          Atraso de pagamento
-                        </button>
-                      )}
-                      {c.status === 'pago' && c.data_pagamento && (
-                        <span className='text-xs text-slate-500'>Pago em {fmtDate(c.data_pagamento)}</span>
-                      )}
-                    </span>
-                  ),
+                  cell: (c: Comissao) => {
+                    const items = acoesDaComissao(c);
+                    return items.length > 0
+                      ? <RowMenu label={`Ações da comissão NF ${c.numero_nfe ?? 'sem número'}`} items={items} />
+                      : <span className='text-slate-400'>—</span>;
+                  },
                 },
               ]
             : []),
@@ -888,6 +970,49 @@ function ComissaoAlune() {
               </div>
             </Field>
             <ModalBtns onClose={() => setPercentualAlvo(null)} saving={savingPercentual} />
+          </form>
+        </Modal>
+      )}
+
+      {acao && (
+        <Modal
+          title={{ pagamento: 'Registrar pagamento', atraso: 'Atraso de pagamento', estorno: 'Estornar pagamento' }[acao.tipo]}
+          onClose={() => { if (!savingAcao) setAcao(null); }}
+        >
+          <form onSubmit={confirmarAcao} className='space-y-4'>
+            <WriteError message={acaoError} />
+            <p className='text-sm text-slate-600'>
+              NF {acao.comissao.numero_nfe ?? 'sem número'} · {acao.comissao.fornecedor?.razao_social ?? '—'} ·{' '}
+              <span className='font-semibold text-slate-900'>{BRL.format(moneyForDisplay(acao.comissao.valor_comissao))}</span>
+            </p>
+            {acao.tipo === 'pagamento' && (
+              <Field label='Data de pagamento'>
+                <input
+                  type='date'
+                  required
+                  value={dataPagamento}
+                  min={dataMinimaPagamento ?? undefined}
+                  max={hoje}
+                  onChange={(e) => setDataPagamento(e.target.value)}
+                  className={inputCls}
+                />
+              </Field>
+            )}
+            {acao.tipo === 'atraso' && (
+              <p className='text-sm text-slate-600'>A comissão fica bloqueada e entra na aba Inadimplência.</p>
+            )}
+            {acao.tipo === 'estorno' && (
+              <p className='text-sm text-slate-600'>
+                O pagamento de {fmtDate(acao.comissao.data_pagamento)} será desfeito e a comissão volta para em aberto.
+              </p>
+            )}
+            <ModalBtns
+              onClose={() => setAcao(null)}
+              saving={savingAcao}
+              disabled={acao.tipo === 'pagamento' && !dataPagamentoValida}
+              danger={acao.tipo !== 'pagamento'}
+              submitLabel={{ pagamento: 'Confirmar pagamento', atraso: 'Marcar atraso', estorno: 'Estornar' }[acao.tipo]}
+            />
           </form>
         </Modal>
       )}

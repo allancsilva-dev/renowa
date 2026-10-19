@@ -48,7 +48,7 @@ jq -r '[.net[]|select(.status>=400)]|group_by(.u)[]|"\(length)x \(.[0].u) → \(
 | `p10` | SAC: form, numeração, total, transição de status, PDF |
 | `p11` | telas de edição carregam valores existentes |
 | `p12` | varredura de todas as telas + preenchimento de filtros |
-| `p13` | abas e modais do Financeiro |
+| `p13` | abas e modais do Financeiro; aba Comissão: colunas, ordenação por Data NF, ano pela metade recusado, pagar e estornar pelo menu ⋮ (depende da comissão da `p9`) |
 | `p14` | limpeza (notas → pedidos → cadastros) |
 
 ## Armadilhas que o driver já contorna

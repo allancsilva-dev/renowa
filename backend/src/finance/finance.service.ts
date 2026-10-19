@@ -17,6 +17,7 @@ import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { applySearch } from '../common/persistence/search-filter';
 import { randomUUID } from 'crypto';
 import { orderValorEfetivoSql } from '../orders/order-valor';
+import { saoPauloDate } from '../common/dates/sao-paulo-date';
 
 @Injectable()
 export class FinanceService {
@@ -354,6 +355,15 @@ export class FinanceService {
       if (!['faturado', 'bloqueado'].includes(commission.status)) {
         throw new ConflictException('Comissão precisa estar em aberto ou bloqueada para registrar o pagamento.');
       }
+      // Data de digitação incompleta (ano 0002) já gravou pagamento; o backend
+      // não confia no navegador: paga entre a data da NF e hoje.
+      const referencia = commission.data_faturamento ?? commission.data_pedido;
+      if (referencia && dataPagamento < referencia) {
+        throw new BadRequestException(`Data de pagamento não pode ser anterior à data da NF (${referencia.split('-').reverse().join('/')}).`);
+      }
+      if (dataPagamento > saoPauloDate()) {
+        throw new BadRequestException('Data de pagamento não pode ser futura.');
+      }
       const saved = await optimisticUpdate({
         repository: commissionRepo, uuid, tenantId, expectedVersion: version, resource: 'commission',
         notFoundMessage: `Comissão ${uuid} não encontrada.`, patch: { data_pagamento: dataPagamento, status: 'pago' },
@@ -363,6 +373,26 @@ export class FinanceService {
         { deleted_at: new Date(), version: () => '"version" + 1' } as any,
       );
       return saved;
+    });
+  }
+
+  /**
+   * Desfaz o pagamento: volta para em aberto (`faturado`) e limpa a data.
+   * Não recria a Inadimplência apagada no pagamento; se ainda houver atraso,
+   * o usuário marca de novo.
+   */
+  async estornarPagamento(uuid: string, version: number, tenantId: string): Promise<Commission> {
+    return this.dataSource.transaction(async (manager) => {
+      const commissionRepo = manager.getRepository(Commission);
+      const commission = await commissionRepo.findOne({ where: { uuid, tenant_id: tenantId, deleted_at: IsNull() } });
+      if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
+      if (commission.status !== 'pago') {
+        throw new ConflictException('Só é possível estornar comissão paga.');
+      }
+      return optimisticUpdate({
+        repository: commissionRepo, uuid, tenantId, expectedVersion: version, resource: 'commission',
+        notFoundMessage: `Comissão ${uuid} não encontrada.`, patch: { data_pagamento: null, status: 'faturado' },
+      });
     });
   }
 
@@ -410,7 +440,10 @@ export class FinanceService {
   async findAllComissoes(
     tenantId: string,
     pagination: PaginationDto,
-    filters?: { fornecedor_id?: number; mes?: number; ano?: number; data_inicio?: string; data_fim?: string; status?: string; search?: string },
+    filters?: {
+      fornecedor_id?: number; mes?: number; ano?: number; data_inicio?: string; data_fim?: string;
+      status?: string; search?: string; ordem?: 'asc' | 'desc';
+    },
   ): Promise<PaginatedResponse<Commission>> {
     const { page = 1, limit = 50 } = pagination;
 
@@ -443,11 +476,14 @@ export class FinanceService {
       qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
     }
 
+    // Direção só de literal: `ordem` chega validado, mas nunca vai cru ao SQL.
+    const direcao = filters?.ordem === 'asc' ? 'ASC' : 'DESC';
     const [data, total] = await qb
       // Expressão direto no orderBy + skip/take + join quebra no TypeORM
       // ("alias was not found"); ordenar pelo alias de um addSelect é suportado.
       .addSelect('COALESCE(c.data_faturamento, c.data_pedido)', 'data_ordem')
-      .orderBy('data_ordem', 'DESC')
+      .orderBy('data_ordem', direcao)
+      .addOrderBy('c.id', direcao)
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();

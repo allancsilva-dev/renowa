@@ -133,7 +133,7 @@ describe('FinanceService — notas faturadas', () => {
 describe('FinanceService — listagem de comissões', () => {
   it('ordena pela data de faturamento via alias (expressão no orderBy quebra skip/take com join)', async () => {
     const qb: any = {};
-    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']) {
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
       qb[method] = jest.fn().mockReturnValue(qb);
     }
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -147,9 +147,37 @@ describe('FinanceService — listagem de comissões', () => {
     expect(qb.orderBy).not.toHaveBeenCalledWith(expect.stringContaining('('), expect.anything());
   });
 
+  it('ordena crescente quando ordem=asc, com desempate estável por id', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { ordem: 'asc' });
+
+    expect(qb.orderBy).toHaveBeenCalledWith('data_ordem', 'ASC');
+    expect(qb.addOrderBy).toHaveBeenCalledWith('c.id', 'ASC');
+  });
+
+  it('ignora ordem desconhecida e mantém DESC', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { ordem: 'x; DROP TABLE comissoes' as any });
+
+    expect(qb.orderBy).toHaveBeenCalledWith('data_ordem', 'DESC');
+    expect(qb.addOrderBy).toHaveBeenCalledWith('c.id', 'DESC');
+  });
+
   it('prioriza intervalo inclusivo sobre mês e ano', async () => {
     const qb: any = {};
-    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']) {
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
       qb[method] = jest.fn().mockReturnValue(qb);
     }
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -210,7 +238,7 @@ describe('FinanceService — busca nas listagens', () => {
   const searchCall = (qb: any) => qb.andWhere.mock.calls.find(([sql]: [string]) => sql.includes('ILIKE'));
 
   it('comissões: sem busca não faz join com pedido nem filtra texto', async () => {
-    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']);
+    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']);
     const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
 
     await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { search: '  ' });
@@ -220,7 +248,7 @@ describe('FinanceService — busca nas listagens', () => {
   });
 
   it('comissões: busca nº pedido interno e externo, NF, razão social e CNPJ', async () => {
-    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']);
+    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']);
     const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
 
     await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { search: 'PED-77' });
@@ -386,6 +414,81 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
       expect(updateBuilder.set).toHaveBeenCalledWith(
         expect.objectContaining({ data_pagamento: '2026-07-20', status: 'pago' }),
       );
+    });
+  });
+
+  describe('registrarPagamento — data coerente', () => {
+    function serviceComComissao(commission: Record<string, unknown>) {
+      const updateBuilder = optimisticWriteBuilder({
+        execute: jest.fn().mockResolvedValue({ affected: 1, raw: [{ uuid, status: 'pago' }] }),
+      });
+      const lookupBuilder = optimisticWriteBuilder();
+      const commissionRepo = {
+        findOne: jest.fn().mockResolvedValue({ uuid, status: 'faturado', ...commission }),
+        createQueryBuilder: jest.fn((alias?: string) => (alias ? lookupBuilder : updateBuilder)),
+      };
+      return { service: buildServiceWithCommissionRepo(commissionRepo), updateBuilder };
+    }
+
+    it('rejeita ano incompleto digitado (0002) por ser anterior à NF', async () => {
+      const { service, updateBuilder } = serviceComComissao({ data_faturamento: '2026-07-10' });
+
+      await expect(service.registrarPagamento(uuid, '0002-07-20', 1, tenantId)).rejects.toThrow('anterior à data da NF (10/07/2026)');
+      expect(updateBuilder.set).not.toHaveBeenCalled();
+    });
+
+    it('usa a data do pedido quando a comissão não tem data de faturamento', async () => {
+      const { service } = serviceComComissao({ data_faturamento: null, data_pedido: '2026-07-15' });
+
+      await expect(service.registrarPagamento(uuid, '2026-07-14', 1, tenantId)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejeita data futura', async () => {
+      const { service, updateBuilder } = serviceComComissao({ data_faturamento: '2026-07-10' });
+
+      await expect(service.registrarPagamento(uuid, '2999-01-01', 1, tenantId)).rejects.toThrow('não pode ser futura');
+      expect(updateBuilder.set).not.toHaveBeenCalled();
+    });
+
+    it('aceita pagamento no mesmo dia da NF', async () => {
+      const { service, updateBuilder } = serviceComComissao({ data_faturamento: '2026-07-10' });
+
+      await service.registrarPagamento(uuid, '2026-07-10', 1, tenantId);
+
+      expect(updateBuilder.set).toHaveBeenCalledWith(expect.objectContaining({ data_pagamento: '2026-07-10', status: 'pago' }));
+    });
+  });
+
+  describe('estornarPagamento', () => {
+    it('volta comissão paga para em aberto e limpa a data', async () => {
+      const updateBuilder = optimisticWriteBuilder({
+        execute: jest.fn().mockResolvedValue({ affected: 1, raw: [{ uuid, status: 'faturado' }] }),
+      });
+      const lookupBuilder = optimisticWriteBuilder();
+      const commissionRepo = {
+        findOne: jest.fn().mockResolvedValue({ uuid, status: 'pago', data_pagamento: '0002-07-20' }),
+        createQueryBuilder: jest.fn((alias?: string) => (alias ? lookupBuilder : updateBuilder)),
+      };
+      const service = buildServiceWithCommissionRepo(commissionRepo);
+
+      await service.estornarPagamento(uuid, 3, tenantId);
+
+      expect(commissionRepo.findOne).toHaveBeenCalledWith({ where: expect.objectContaining({ uuid, tenant_id: tenantId }) });
+      expect(updateBuilder.set).toHaveBeenCalledWith(expect.objectContaining({ data_pagamento: null, status: 'faturado' }));
+    });
+
+    it('409 quando a comissão não está paga', async () => {
+      const commissionRepo = { findOne: jest.fn().mockResolvedValue({ uuid, status: 'faturado' }) };
+      const service = buildServiceWithCommissionRepo(commissionRepo);
+
+      await expect(service.estornarPagamento(uuid, 1, tenantId)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('404 quando a comissão não existe no tenant', async () => {
+      const commissionRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      const service = buildServiceWithCommissionRepo(commissionRepo);
+
+      await expect(service.estornarPagamento(uuid, 1, tenantId)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

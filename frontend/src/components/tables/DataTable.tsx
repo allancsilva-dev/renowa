@@ -5,9 +5,11 @@ import ErrorState from '@/components/feedback/ErrorState';
 
 interface Column<T> {
   key: string;
-  header: string;
+  header: React.ReactNode;
   cell: (row: T) => React.ReactNode;
   className?: string;
+  /** Coluna ordenada: anuncia a direção atual para leitor de tela. */
+  ariaSort?: 'ascending' | 'descending';
 }
 
 interface DataTableProps<T> {
@@ -54,6 +56,7 @@ export default function DataTable<T>({
               {columns.map((col) => (
                 <th
                   key={col.key}
+                  aria-sort={col.ariaSort}
                   className={cn('px-4 py-3 text-left font-semibold', col.className)}
                 >
                   {col.header}

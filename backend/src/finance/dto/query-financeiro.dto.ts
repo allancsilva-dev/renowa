@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 export class LancamentosQueryDto extends PaginationDto {
@@ -40,6 +40,11 @@ export class ComissoesQueryDto extends PaginationDto {
   @IsOptional()
   @IsString()
   status?: string;
+
+  /** Direção pela data da NF (`COALESCE(data_faturamento, data_pedido)`). */
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  ordem?: 'asc' | 'desc';
 }
 
 export class ParceirosQueryDto extends PaginationDto {

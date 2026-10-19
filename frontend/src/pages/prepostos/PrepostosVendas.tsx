@@ -13,6 +13,7 @@ import {
 import { moneyForDisplay } from '@/lib/decimal';
 import { formatDate } from '@/lib/format';
 import { getApiErrorMessage } from '@/lib/errors';
+import { isDataCompleta } from '@/lib/date';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const inputClass =
@@ -58,18 +59,27 @@ export default function PrepostosVendas() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Período só vale completo: meio período é ignorado em vez de virar 400.
-  const periodoValido = Boolean(inicio && fim && inicio <= fim);
-  const periodoInvertido = Boolean(inicio && fim && inicio > fim);
+  // Ano pela metade (`0002-…`, emitido a cada dígito) não filtra nem acusa
+  // inversão: enquanto o usuário digita, fica valendo o último período aplicado.
+  const periodoCompleto = isDataCompleta(inicio) && isDataCompleta(fim);
+  const periodoValido = periodoCompleto && inicio <= fim;
+  const periodoInvertido = periodoCompleto && inicio > fim;
+  const digitando = Boolean((inicio && !isDataCompleta(inicio)) || (fim && !isDataCompleta(fim)));
+  const [periodoAplicado, setPeriodoAplicado] = useState({ inicio: '', fim: '' });
+  if (!digitando) {
+    const proximo = periodoValido ? { inicio, fim } : { inicio: '', fim: '' };
+    if (proximo.inicio !== periodoAplicado.inicio || proximo.fim !== periodoAplicado.fim) setPeriodoAplicado(proximo);
+  }
 
   const fetcher = useCallback(
     (params: { page: number; limit: number }) => fetchPrepostoVendas({
       ...params,
       preposto_uuid: prepostoUuid ?? undefined,
       status: status || undefined,
-      data_inicio: periodoValido ? inicio : undefined,
-      data_fim: periodoValido ? fim : undefined,
+      data_inicio: periodoAplicado.inicio || undefined,
+      data_fim: periodoAplicado.fim || undefined,
     }),
-    [prepostoUuid, status, periodoValido, inicio, fim],
+    [prepostoUuid, status, periodoAplicado.inicio, periodoAplicado.fim],
   );
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<PrepostoVenda>({ fetcher });
   const totais = (meta as (typeof meta & { totais?: PrepostoVendasTotais }) | null)?.totais;
@@ -112,7 +122,7 @@ export default function PrepostosVendas() {
   function handlePagar(event: React.FormEvent) {
     event.preventDefault();
     if (!pagarVenda) return;
-    if (!dataPagamento) { setFormError('Informe a data do pagamento.'); return; }
+    if (!isDataCompleta(dataPagamento)) { setFormError('Informe a data do pagamento completa.'); return; }
     void run(() => registrarPagamentoVenda(pagarVenda.uuid, { data_pagamento: dataPagamento, version: pagarVenda.version }));
   }
 
