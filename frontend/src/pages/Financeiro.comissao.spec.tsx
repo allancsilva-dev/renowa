@@ -61,6 +61,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('Financeiro — Comissão: colunas e ordenação', () => {
+  it('mostra as colunas na ordem combinada, com a data da NF', async () => {
+    mockLista([comissao({})]);
+    await abrirComissao();
+
+    await screen.findByText('Cliente Um');
+    const headers = screen.getAllByRole('columnheader').map((th) => th.textContent?.trim());
+    expect(headers).toEqual(['Origem', 'Data NF', 'NF', 'Fornecedor', 'Cliente', 'Valor faturado', '%', 'Comissão', 'Status', 'Ações']);
+    expect(screen.getByText('10/07/2026')).toBeInTheDocument();
+  });
+
   it('clicar em Data NF alterna a ordem e refaz a busca', async () => {
     mockLista([comissao({})]);
     await abrirComissao();
