@@ -15,6 +15,7 @@ import type { PaginatedResponse } from '@/types';
 import { AsyncCombobox, type AsyncComboboxFetchResult } from '@/components/ui/AsyncCombobox';
 import { filterLocalOptions } from '@/lib/relationOptions';
 import EmptyState from '@/components/feedback/EmptyState';
+import { isDataCompleta } from '@/lib/date';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -151,25 +152,37 @@ function FiltroIntervaloDatas({
   value: Periodo;
   onChange: (periodo: Periodo) => void;
 }) {
-  function changeInicio(inicio: string) {
-    if (!inicio) return;
-    onChange({ inicio, fim: inicio > value.fim ? inicio : value.fim });
+  // Rascunho local: o input emite `0002-…` a cada dígito do ano. Só data
+  // completa vira filtro — senão cada tecla buscava e o ano parcial "puxava"
+  // a outra ponta do intervalo.
+  const [inicio, setInicio] = useState(value.inicio);
+  const [fim, setFim] = useState(value.fim);
+  useEffect(() => { setInicio(value.inicio); }, [value.inicio]);
+  useEffect(() => { setFim(value.fim); }, [value.fim]);
+
+  function changeInicio(novo: string) {
+    setInicio(novo);
+    if (!isDataCompleta(novo)) return;
+    onChange({ inicio: novo, fim: novo > value.fim ? novo : value.fim });
   }
 
-  function changeFim(fim: string) {
-    if (!fim) return;
-    onChange({ inicio: fim < value.inicio ? fim : value.inicio, fim });
+  function changeFim(novo: string) {
+    setFim(novo);
+    if (!isDataCompleta(novo)) return;
+    onChange({ inicio: novo < value.inicio ? novo : value.inicio, fim: novo });
   }
 
+  // Ao sair com data incompleta, volta ao período em vigor em vez de deixar
+  // na tela uma data que não está filtrando nada.
   return (
     <div className='grid min-w-0 grid-cols-2 gap-2 xl:w-72 xl:shrink-0'>
       <label className='flex min-w-0 flex-col gap-1'>
         <span className={labelCls}>Data inicial</span>
-        <input type='date' required aria-label='Data inicial' value={value.inicio} max={value.fim} onChange={(event) => changeInicio(event.target.value)} className={`${inputCls} min-h-11`} />
+        <input type='date' required aria-label='Data inicial' value={inicio} max={value.fim} onChange={(event) => changeInicio(event.target.value)} onBlur={() => { if (!isDataCompleta(inicio)) setInicio(value.inicio); }} className={`${inputCls} min-h-11`} />
       </label>
       <label className='flex min-w-0 flex-col gap-1'>
         <span className={labelCls}>Data final</span>
-        <input type='date' required aria-label='Data final' value={value.fim} min={value.inicio} onChange={(event) => changeFim(event.target.value)} className={`${inputCls} min-h-11`} />
+        <input type='date' required aria-label='Data final' value={fim} min={value.inicio} onChange={(event) => changeFim(event.target.value)} onBlur={() => { if (!isDataCompleta(fim)) setFim(value.fim); }} className={`${inputCls} min-h-11`} />
       </label>
     </div>
   );

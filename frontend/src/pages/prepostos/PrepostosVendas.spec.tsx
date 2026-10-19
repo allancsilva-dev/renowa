@@ -56,6 +56,25 @@ describe('Prepostos — vendas', () => {
     await waitFor(() => expect(mocks.vendas).toHaveBeenLastCalledWith(expect.objectContaining({ data_inicio: '2026-10-05', data_fim: '2026-10-31' })));
   });
 
+  it('ano pela metade não refaz a busca nem descarta o período aplicado', async () => {
+    mocks.vendas.mockResolvedValue(resposta([VENDA]));
+    render(<PrepostosVendas />);
+    fireEvent.change(screen.getByLabelText('Faturamento a partir de'), { target: { value: '2026-10-01' } });
+    fireEvent.change(screen.getByLabelText('Faturamento até'), { target: { value: '2026-10-31' } });
+    await waitFor(() => expect(mocks.vendas).toHaveBeenLastCalledWith(expect.objectContaining({ data_inicio: '2026-10-01', data_fim: '2026-10-31' })));
+    const chamadas = mocks.vendas.mock.calls.length;
+
+    // Navegador emite um valor por dígito do ano: 0002, 0020, 0202, 2026.
+    for (const value of ['0002-10-31', '0020-10-31', '0202-10-31']) {
+      fireEvent.change(screen.getByLabelText('Faturamento até'), { target: { value } });
+    }
+    expect(mocks.vendas).toHaveBeenCalledTimes(chamadas);
+    expect(screen.queryByText('A data inicial não pode ser depois da final.')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Faturamento até'), { target: { value: '2026-11-30' } });
+    await waitFor(() => expect(mocks.vendas).toHaveBeenLastCalledWith(expect.objectContaining({ data_inicio: '2026-10-01', data_fim: '2026-11-30' })));
+  });
+
   it('pagar exige financeiro.editar e envia data e versão', async () => {
     mocks.vendas.mockResolvedValue(resposta([VENDA]));
     mocks.permissions.add('prepostos.editar');
