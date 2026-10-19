@@ -919,8 +919,95 @@
     }
     /* abas nunca abertas ficam registradas */
     ok('abas do financeiro percorridas', abas.length > 0, abas.length + ' abas');
+    out.push({ aba: 'Comissão', resultado: await comissaoMenu() });
     return out;
   };
+
+  /* Comissão da NF da p9: colunas, ordenação pela Data NF, data com ano pela
+     metade recusada e pagar/estornar pelo menu ⋮. Termina em aberto, como a
+     p9 deixou — a p14 apaga a nota normalmente. */
+  async function comissaoMenu() {
+    function hojeLocal() {
+      var d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+    async function comissaoDaRodada() {
+      var r = await api('GET', '/financeiro/comissoes?limit=100&search=' + encodeURIComponent(S));
+      var lista = (r.body && (r.body.data || r.body)) || [];
+      return lista.filter(function (c) { return c.nota_fiscal_id != null; })[0] || null;
+    }
+    var c = await comissaoDaRodada();
+    ok('p13: comissão da NF da rodada encontrada', !!c, c && c.status);
+    if (!c) return 'sem comissão da p9';
+
+    var meio = await api('PATCH', '/financeiro/comissoes/' + c.uuid + '/pagamento', { data_pagamento: '0002-07-20', version: c.version });
+    ok('p13: API recusa pagamento com ano pela metade (400)', meio.status === 400, meio.status + ' ' + meio.text.slice(0, 120));
+    var futuro = await api('PATCH', '/financeiro/comissoes/' + c.uuid + '/pagamento', { data_pagamento: '2999-01-01', version: c.version });
+    ok('p13: API recusa pagamento futuro (400)', futuro.status === 400, futuro.status + ' ' + futuro.text.slice(0, 120));
+
+    var aba = btn(/^Comissão$/);
+    ok('p13: aba Comissão', !!aba);
+    if (!aba) return 'sem aba';
+    aba.click(); await sleep(900); await settle(6000);
+    var busca = document.querySelector('input[aria-label="Buscar comissões"]');
+    if (busca) { Q.nativeSet(busca, S); await sleep(1200); await settle(); }
+
+    var heads = all('thead th').filter(Q.vis).map(function (th) { return (th.innerText || '').trim(); });
+    ok('p13: colunas da comissão na ordem combinada',
+      heads.join('|') === 'Origem|Data NF|NF|Fornecedor|Cliente|Valor faturado|%|Comissão|Status|Ações', heads.join('|'));
+    var thData = all('thead th').filter(function (th) { return /Data NF/.test(th.innerText || ''); })[0];
+    ok('p13: Data NF começa decrescente', thData && thData.getAttribute('aria-sort') === 'descending', thData && thData.getAttribute('aria-sort'));
+    var ordenar = thData && thData.querySelector('button');
+    if (ordenar) { ordenar.click(); await sleep(900); await settle(); }
+    thData = all('thead th').filter(function (th) { return /Data NF/.test(th.innerText || ''); })[0];
+    ok('p13: clique em Data NF inverte para crescente', thData && thData.getAttribute('aria-sort') === 'ascending', thData && thData.getAttribute('aria-sort'));
+    ok('p13: lista pediu ordem=asc', st.net.some(function (t) { return /\/financeiro\/comissoes\?.*ordem=asc/.test(t.u || ''); }));
+
+    async function menuDaComissao() {
+      var g = document.querySelector('button[aria-haspopup="menu"][aria-label^="Ações da comissão NF ' + (c.numero_nfe || 'sem número') + '"]');
+      ok('p13: botão ⋮ da comissão', !!g);
+      if (!g) return [];
+      g.click(); await sleep(400);
+      return all('[role=menu] [role=menuitem]').filter(Q.vis);
+    }
+
+    var pagar = item(await menuDaComissao(), /Registrar pagamento/);
+    ok('p13: menu tem "Registrar pagamento"', !!pagar);
+    if (pagar) {
+      pagar.click();
+      var d1 = await waitFor(function () { return Q.dlg(); }, 6000);
+      var data = d1 && d1.querySelector('input[type=date]');
+      var confirmar = btn(/Confirmar pagamento/, d1 || document);
+      var antes = (await comissaoDaRodada()) || {};
+      ['0002-07-20', '0020-07-20', '0202-07-20'].forEach(function (v) { if (data) Q.nativeSet(data, v); });
+      await sleep(600);
+      ok('p13: confirmar desabilitado com ano pela metade', !!confirmar && confirmar.disabled);
+      var depoisMeio = (await comissaoDaRodada()) || {};
+      ok('p13: digitar o ano não lança pagamento', depoisMeio.status === antes.status && depoisMeio.version === antes.version, depoisMeio.status);
+      if (data) Q.nativeSet(data, hojeLocal());
+      await sleep(400);
+      if (confirmar && !confirmar.disabled) confirmar.click();
+      await sleep(1200); await settle();
+    }
+    c = await comissaoDaRodada();
+    ok('p13: comissão paga com a data de hoje', c && c.status === 'pago' && c.data_pagamento === hojeLocal(), c && JSON.stringify([c.status, c.data_pagamento]));
+    ok('p13: tela mostra "Pago em"', /Pago em/.test(Q.bodyText()));
+
+    var estornar = item(await menuDaComissao(), /Estornar pagamento/);
+    ok('p13: menu da comissão paga tem "Estornar pagamento"', !!estornar);
+    if (estornar) {
+      estornar.click();
+      var d2 = await waitFor(function () { return Q.dlg(); }, 6000);
+      var b2 = btn(/^Estornar$/, d2 || document);
+      if (b2) b2.click();
+      await sleep(1200); await settle();
+    }
+    c = await comissaoDaRodada();
+    ok('p13: estorno volta a comissão para em aberto', c && c.status === 'faturado' && c.data_pagamento == null, c && JSON.stringify([c.status, c.data_pagamento]));
+    var e = Q.screenErrors();
+    ok('p13: aba Comissão sem erro', !e, e || '');
+    return c && c.status;
+  }
 
   /* ---------------- P15 — prepostos, menu ⋮ do faturamento, ajuste de valor ----------------
      Roda antes da p14 (usa cliente/fornecedor da rodada) e limpa o que cria. */
