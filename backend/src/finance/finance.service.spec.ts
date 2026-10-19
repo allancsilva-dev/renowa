@@ -389,6 +389,48 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
     });
   });
 
+  describe('registrarPagamento — data coerente', () => {
+    function serviceComComissao(commission: Record<string, unknown>) {
+      const updateBuilder = optimisticWriteBuilder({
+        execute: jest.fn().mockResolvedValue({ affected: 1, raw: [{ uuid, status: 'pago' }] }),
+      });
+      const lookupBuilder = optimisticWriteBuilder();
+      const commissionRepo = {
+        findOne: jest.fn().mockResolvedValue({ uuid, status: 'faturado', ...commission }),
+        createQueryBuilder: jest.fn((alias?: string) => (alias ? lookupBuilder : updateBuilder)),
+      };
+      return { service: buildServiceWithCommissionRepo(commissionRepo), updateBuilder };
+    }
+
+    it('rejeita ano incompleto digitado (0002) por ser anterior à NF', async () => {
+      const { service, updateBuilder } = serviceComComissao({ data_faturamento: '2026-07-10' });
+
+      await expect(service.registrarPagamento(uuid, '0002-07-20', 1, tenantId)).rejects.toThrow('anterior à data da NF (10/07/2026)');
+      expect(updateBuilder.set).not.toHaveBeenCalled();
+    });
+
+    it('usa a data do pedido quando a comissão não tem data de faturamento', async () => {
+      const { service } = serviceComComissao({ data_faturamento: null, data_pedido: '2026-07-15' });
+
+      await expect(service.registrarPagamento(uuid, '2026-07-14', 1, tenantId)).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('rejeita data futura', async () => {
+      const { service, updateBuilder } = serviceComComissao({ data_faturamento: '2026-07-10' });
+
+      await expect(service.registrarPagamento(uuid, '2999-01-01', 1, tenantId)).rejects.toThrow('não pode ser futura');
+      expect(updateBuilder.set).not.toHaveBeenCalled();
+    });
+
+    it('aceita pagamento no mesmo dia da NF', async () => {
+      const { service, updateBuilder } = serviceComComissao({ data_faturamento: '2026-07-10' });
+
+      await service.registrarPagamento(uuid, '2026-07-10', 1, tenantId);
+
+      expect(updateBuilder.set).toHaveBeenCalledWith(expect.objectContaining({ data_pagamento: '2026-07-10', status: 'pago' }));
+    });
+  });
+
   describe('registrarAtraso', () => {
     it('bloqueia comissão e cria inadimplência vinculada ao fornecedor', async () => {
       const updateBuilder = optimisticWriteBuilder({

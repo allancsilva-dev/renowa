@@ -17,6 +17,7 @@ import { NotaFiscal } from '../faturamento/entities/nota-fiscal.entity';
 import { applySearch } from '../common/persistence/search-filter';
 import { randomUUID } from 'crypto';
 import { orderValorEfetivoSql } from '../orders/order-valor';
+import { saoPauloDate } from '../common/dates/sao-paulo-date';
 
 @Injectable()
 export class FinanceService {
@@ -353,6 +354,15 @@ export class FinanceService {
       if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
       if (!['faturado', 'bloqueado'].includes(commission.status)) {
         throw new ConflictException('Comissão precisa estar em aberto ou bloqueada para registrar o pagamento.');
+      }
+      // Data de digitação incompleta (ano 0002) já gravou pagamento; o backend
+      // não confia no navegador: paga entre a data da NF e hoje.
+      const referencia = commission.data_faturamento ?? commission.data_pedido;
+      if (referencia && dataPagamento < referencia) {
+        throw new BadRequestException(`Data de pagamento não pode ser anterior à data da NF (${referencia.split('-').reverse().join('/')}).`);
+      }
+      if (dataPagamento > saoPauloDate()) {
+        throw new BadRequestException('Data de pagamento não pode ser futura.');
       }
       const saved = await optimisticUpdate({
         repository: commissionRepo, uuid, tenantId, expectedVersion: version, resource: 'commission',

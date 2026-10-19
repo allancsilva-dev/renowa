@@ -1,4 +1,4 @@
-import { IsDateString, IsDecimal } from 'class-validator';
+import { IsDateString, IsDecimal, Matches } from 'class-validator';
 import { VersionDto } from '../../common/dto/version.dto';
 
 export class InformarPercentualDto extends VersionDto {
@@ -7,7 +7,8 @@ export class InformarPercentualDto extends VersionDto {
 }
 
 export class RegistrarPagamentoDto extends VersionDto {
-  @IsDateString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'data_pagamento deve estar no formato YYYY-MM-DD.' })
+  @IsDateString({ strict: true })
   data_pagamento: string;
 }
 

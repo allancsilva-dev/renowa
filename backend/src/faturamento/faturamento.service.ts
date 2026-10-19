@@ -17,16 +17,12 @@ import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
 import { orderValorEfetivo } from '../orders/order-valor';
 import { Preposto } from '../prepostos/entities/preposto.entity';
 import { PrepostoComissao } from '../prepostos/entities/preposto-comissao.entity';
+import { saoPauloDate } from '../common/dates/sao-paulo-date';
 
 const VENDA_PREPOSTO_PAGA = 'A comissão do preposto desta nota já foi paga. Estorne o pagamento na aba Vendas do preposto antes de alterar ou excluir a nota.';
 
 /** Pedidos elegíveis para registrar nota fiscal (fora de em_aberto/cancelado). */
 const FATURAVEL_STATUSES = ['liberado', 'parcialmente_faturado', 'faturado'];
-
-/** Data civil (YYYY-MM-DD) em America/Sao_Paulo — `toISOString` usa UTC e vira o dia após 21h. */
-function saoPauloDate(date: Date): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(date);
-}
 
 export interface PedidoFaturamentoRow {
   uuid: string;
