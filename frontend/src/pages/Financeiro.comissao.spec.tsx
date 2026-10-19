@@ -47,6 +47,10 @@ async function abrirComissao() {
   await waitFor(() => expect(chamadasLista().length).toBeGreaterThan(0));
 }
 
+async function abrirMenu(nf = '1001') {
+  fireEvent.click(await screen.findByRole('button', { name: `Ações da comissão NF ${nf}` }));
+}
+
 beforeEach(() => {
   mocks.canEdit = true;
   // jsdom não implementa <dialog>; o atributo `open` deixa o conteúdo acessível às queries por role.
@@ -75,5 +79,118 @@ describe('Financeiro — Comissão: filtro de período', () => {
 
     fireEvent.change(screen.getByLabelText('Data final'), { target: { value: '2026-03-31' } });
     await waitFor(() => expect(chamadasLista().at(-1)).toMatch(/data_inicio=2026-01-01.*data_fim=2026-03-31/));
+  });
+});
+
+describe('Financeiro — Comissão: ações no menu ⋮', () => {
+  it('registrar pagamento só envia com data completa e depois de confirmar', async () => {
+    mockLista([comissao({})]);
+    await abrirComissao();
+    await abrirMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar pagamento' }));
+
+    const input = screen.getByLabelText('Data de pagamento');
+    expect(input).toHaveAttribute('min', '2026-07-10');
+    const confirmar = screen.getByRole('button', { name: 'Confirmar pagamento' });
+    for (const value of ['0002-07-20', '0020-07-20', '0202-07-20']) {
+      fireEvent.change(input, { target: { value } });
+      expect(confirmar).toBeDisabled();
+    }
+    fireEvent.submit(input.closest('form')!);
+    expect(mocks.patch).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: '2026-07-20' } });
+    expect(confirmar).toBeEnabled();
+    fireEvent.click(confirmar);
+
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
+    expect(mocks.patch).toHaveBeenCalledWith('/financeiro/comissoes/c1/pagamento', { data_pagamento: '2026-07-20', version: 3 });
+  });
+
+  it('recusa data anterior à NF sem chamar a API', async () => {
+    mockLista([comissao({})]);
+    await abrirComissao();
+    await abrirMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar pagamento' }));
+    const input = screen.getByLabelText('Data de pagamento');
+
+    fireEvent.change(input, { target: { value: '2026-07-09' } });
+    fireEvent.submit(input.closest('form')!);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('entre a data da NF e hoje');
+    expect(mocks.patch).not.toHaveBeenCalled();
+  });
+
+  it('mostra no diálogo o erro de validação do backend', async () => {
+    mockLista([comissao({})]);
+    mocks.patch.mockRejectedValue({ response: { status: 400, data: { error: { message: 'Data de pagamento não pode ser futura.' } } } });
+    await abrirComissao();
+    await abrirMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar pagamento' }));
+    fireEvent.change(screen.getByLabelText('Data de pagamento'), { target: { value: '2026-07-20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar pagamento' }));
+
+    expect(await screen.findByText('Data de pagamento não pode ser futura.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Data de pagamento')).toBeInTheDocument();
+  });
+
+  it('pendente não oferece pagamento (backend exige faturado ou bloqueado)', async () => {
+    mockLista([comissao({ status: 'pendente' })]);
+    await abrirComissao();
+    await abrirMenu();
+
+    expect(screen.queryByRole('menuitem', { name: 'Registrar pagamento' })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Atraso de pagamento' })).toBeInTheDocument();
+  });
+
+  it('atraso pede confirmação antes de bloquear', async () => {
+    mockLista([comissao({})]);
+    await abrirComissao();
+    await abrirMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Atraso de pagamento' }));
+    expect(mocks.patch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar atraso' }));
+
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith('/financeiro/comissoes/c1/atraso', { version: 3 }));
+  });
+
+  it('estorno só aparece em comissão paga, pede confirmação e envia a versão', async () => {
+    mockLista([comissao({ status: 'pago', data_pagamento: '2026-07-20' })]);
+    await abrirComissao();
+    expect(await screen.findByText('Pago em 20/07/2026')).toBeInTheDocument();
+    await abrirMenu();
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Estornar pagamento']);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Estornar pagamento' }));
+    expect(screen.getByText(/O pagamento de 20\/07\/2026 será desfeito/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Estornar' }));
+
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledWith('/financeiro/comissoes/c1/estorno', { version: 3 }));
+  });
+
+  it('conflito de versão fecha o diálogo, recarrega e avisa', async () => {
+    mockLista([comissao({ status: 'pago', data_pagamento: '2026-07-20' })]);
+    mocks.patch.mockRejectedValue({ response: { status: 409, data: { error: { code: 'CONCURRENT_MODIFICATION' } } } });
+    await abrirComissao();
+    await abrirMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Estornar pagamento' }));
+    const antes = chamadasLista().length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Estornar' }));
+
+    expect(await screen.findByText(/Registro alterado por outro usuário/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Estornar' })).not.toBeInTheDocument();
+    await waitFor(() => expect(chamadasLista().length).toBeGreaterThan(antes));
+  });
+
+  it('sem financeiro.editar não há coluna nem menu de ações', async () => {
+    mocks.canEdit = false;
+    mockLista([comissao({})]);
+    await abrirComissao();
+    await screen.findByText('Fornecedor Um');
+
+    expect(screen.queryByRole('columnheader', { name: 'Ações' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ações da comissão/ })).not.toBeInTheDocument();
   });
 });
