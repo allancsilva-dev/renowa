@@ -133,7 +133,7 @@ describe('FinanceService — notas faturadas', () => {
 describe('FinanceService — listagem de comissões', () => {
   it('ordena pela data de faturamento via alias (expressão no orderBy quebra skip/take com join)', async () => {
     const qb: any = {};
-    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']) {
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
       qb[method] = jest.fn().mockReturnValue(qb);
     }
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -147,9 +147,37 @@ describe('FinanceService — listagem de comissões', () => {
     expect(qb.orderBy).not.toHaveBeenCalledWith(expect.stringContaining('('), expect.anything());
   });
 
+  it('ordena crescente quando ordem=asc, com desempate estável por id', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { ordem: 'asc' });
+
+    expect(qb.orderBy).toHaveBeenCalledWith('data_ordem', 'ASC');
+    expect(qb.addOrderBy).toHaveBeenCalledWith('c.id', 'ASC');
+  });
+
+  it('ignora ordem desconhecida e mantém DESC', async () => {
+    const qb: any = {};
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
+      qb[method] = jest.fn().mockReturnValue(qb);
+    }
+    qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
+    const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
+
+    await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { ordem: 'x; DROP TABLE comissoes' as any });
+
+    expect(qb.orderBy).toHaveBeenCalledWith('data_ordem', 'DESC');
+    expect(qb.addOrderBy).toHaveBeenCalledWith('c.id', 'DESC');
+  });
+
   it('prioriza intervalo inclusivo sobre mês e ano', async () => {
     const qb: any = {};
-    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']) {
+    for (const method of ['leftJoinAndSelect', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']) {
       qb[method] = jest.fn().mockReturnValue(qb);
     }
     qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
@@ -210,7 +238,7 @@ describe('FinanceService — busca nas listagens', () => {
   const searchCall = (qb: any) => qb.andWhere.mock.calls.find(([sql]: [string]) => sql.includes('ILIKE'));
 
   it('comissões: sem busca não faz join com pedido nem filtra texto', async () => {
-    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']);
+    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']);
     const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
 
     await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { search: '  ' });
@@ -220,7 +248,7 @@ describe('FinanceService — busca nas listagens', () => {
   });
 
   it('comissões: busca nº pedido interno e externo, NF, razão social e CNPJ', async () => {
-    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'skip', 'take']);
+    const qb = chainQb(['leftJoinAndSelect', 'leftJoin', 'where', 'andWhere', 'addSelect', 'orderBy', 'addOrderBy', 'skip', 'take']);
     const service = new FinanceService({} as any, { createQueryBuilder: () => qb } as any, {} as any, {} as any, {} as any);
 
     await service.findAllComissoes('tenant-a', { page: 1, limit: 50 }, { search: 'PED-77' });

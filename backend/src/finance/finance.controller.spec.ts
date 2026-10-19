@@ -55,6 +55,14 @@ describe('FinanceController — filtro de faturados', () => {
     expect(financeService.findAllParceiros).toHaveBeenCalledWith('tenant-a', query, expect.objectContaining(query));
   });
 
+  it('repassa a ordem da listagem de comissões', async () => {
+    const query = { data_inicio: '2026-01-01', data_fim: '2026-02-01', ordem: 'asc' as const };
+
+    await controller.findAllComissoes(query, user);
+
+    expect(financeService.findAllComissoes).toHaveBeenCalledWith('tenant-a', query, expect.objectContaining({ ordem: 'asc' }));
+  });
+
   it('estorna pagamento no tenant do usuário', async () => {
     await controller.estornarPagamento('a1a1a1a1-1111-1111-1111-111111111111', { version: 4 }, user);
 

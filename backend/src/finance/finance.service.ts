@@ -440,7 +440,10 @@ export class FinanceService {
   async findAllComissoes(
     tenantId: string,
     pagination: PaginationDto,
-    filters?: { fornecedor_id?: number; mes?: number; ano?: number; data_inicio?: string; data_fim?: string; status?: string; search?: string },
+    filters?: {
+      fornecedor_id?: number; mes?: number; ano?: number; data_inicio?: string; data_fim?: string;
+      status?: string; search?: string; ordem?: 'asc' | 'desc';
+    },
   ): Promise<PaginatedResponse<Commission>> {
     const { page = 1, limit = 50 } = pagination;
 
@@ -473,11 +476,14 @@ export class FinanceService {
       qb.andWhere('EXTRACT(YEAR FROM COALESCE(c.data_faturamento, c.data_pedido)) = :ano', { ano: filters.ano });
     }
 
+    // Direção só de literal: `ordem` chega validado, mas nunca vai cru ao SQL.
+    const direcao = filters?.ordem === 'asc' ? 'ASC' : 'DESC';
     const [data, total] = await qb
       // Expressão direto no orderBy + skip/take + join quebra no TypeORM
       // ("alias was not found"); ordenar pelo alias de um addSelect é suportado.
       .addSelect('COALESCE(c.data_faturamento, c.data_pedido)', 'data_ordem')
-      .orderBy('data_ordem', 'DESC')
+      .orderBy('data_ordem', direcao)
+      .addOrderBy('c.id', direcao)
       .skip((page - 1) * limit)
       .take(limit)
       .getManyAndCount();

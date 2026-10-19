@@ -209,6 +209,7 @@ export class FinanceController {
       data_fim: query.data_fim,
       status: query.status || undefined,
       search: query.search || undefined,
+      ordem: query.ordem,
     });
   }
 

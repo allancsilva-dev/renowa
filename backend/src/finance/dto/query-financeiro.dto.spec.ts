@@ -21,3 +21,13 @@ describe.each(queryTypes)('%p — intervalo de datas', (QueryType) => {
     expect(await validate(dto)).toHaveLength(0);
   });
 });
+
+describe('ComissoesQueryDto — ordem', () => {
+  it.each(['asc', 'desc'])('aceita %s', async (ordem) => {
+    expect(await validate(Object.assign(new ComissoesQueryDto(), { ordem }))).toHaveLength(0);
+  });
+
+  it.each(['ASC', 'data_ordem', 'desc; DROP TABLE comissoes'])('recusa %s', async (ordem) => {
+    expect(await validate(Object.assign(new ComissoesQueryDto(), { ordem }))).not.toHaveLength(0);
+  });
+});
