@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import Financeiro from './Financeiro';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), navigate: vi.fn(), canEdit: true }));
@@ -59,6 +59,21 @@ beforeEach(() => {
   mocks.patch.mockResolvedValue({ data: {} });
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+describe('Financeiro — Comissão: colunas e ordenação', () => {
+  it('clicar em Data NF alterna a ordem e refaz a busca', async () => {
+    mockLista([comissao({})]);
+    await abrirComissao();
+    expect(chamadasLista().at(-1)).toContain('ordem=desc');
+    const th = screen.getAllByRole('columnheader')[1];
+    expect(th).toHaveAttribute('aria-sort', 'descending');
+
+    fireEvent.click(within(th).getByRole('button', { name: /Ordenar por data NF/ }));
+
+    await waitFor(() => expect(chamadasLista().at(-1)).toContain('ordem=asc'));
+    expect(screen.getAllByRole('columnheader')[1]).toHaveAttribute('aria-sort', 'ascending');
+  });
+});
 
 describe('Financeiro — Comissão: filtro de período', () => {
   it('ano digitado pela metade não dispara busca nem arrasta a outra data', async () => {

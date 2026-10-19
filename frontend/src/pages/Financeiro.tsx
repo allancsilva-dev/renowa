@@ -1,7 +1,7 @@
 import { cloneElement, useState, useEffect, useCallback, useId, useRef } from 'react';
 import {
   Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2, Pencil,
-  CalendarCheck, AlertTriangle, Undo2,
+  ArrowDown, ArrowUp, CalendarCheck, AlertTriangle, Undo2,
 } from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
@@ -691,6 +691,7 @@ function ComissaoAlune() {
   const [dataPagamento, setDataPagamento] = useState('');
   const [savingAcao, setSavingAcao] = useState(false);
   const [acaoError, setAcaoError] = useState<string | null>(null);
+  const [ordem, setOrdem] = useState<'asc' | 'desc'>('desc');
 
   const { search, setSearch, debouncedSearch } = useBusca();
   const novaRequisicao = useRequisicaoAtual();
@@ -699,7 +700,7 @@ function ComissaoAlune() {
     const atual = novaRequisicao();
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams({ data_inicio: periodo.inicio, data_fim: periodo.fim, limit: '100' });
+    const params = new URLSearchParams({ data_inicio: periodo.inicio, data_fim: periodo.fim, limit: '100', ordem });
     if (status) params.set('status', status);
     if (fornecedorId) params.set('fornecedor_id', fornecedorId);
     if (debouncedSearch) params.set('search', debouncedSearch);
@@ -716,7 +717,7 @@ function ComissaoAlune() {
       })
       .catch(() => { if (atual()) setError('Não foi possível carregar comissões.'); })
       .finally(() => { if (atual()) setLoading(false); });
-  }, [periodo, status, fornecedorId, debouncedSearch, novaRequisicao]);
+  }, [periodo, status, fornecedorId, debouncedSearch, ordem, novaRequisicao]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -869,7 +870,22 @@ function ComissaoAlune() {
                 <span className='inline-flex rounded-full bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-400'>Manual</span>
               ),
           },
-          { key: 'data_pedido', header: 'Data Ped.', cell: (c) => <span className='text-slate-500'>{fmtDate(c.data_pedido)}</span> },
+          {
+            key: 'data_nf',
+            header: (
+              <button
+                type='button'
+                onClick={() => setOrdem((atual) => (atual === 'desc' ? 'asc' : 'desc'))}
+                aria-label={ordem === 'desc' ? 'Ordenar por data NF: mais antigas primeiro' : 'Ordenar por data NF: mais recentes primeiro'}
+                className='-mx-1 inline-flex items-center gap-1 whitespace-nowrap rounded px-1 font-semibold hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white'
+              >
+                Data NF
+                {ordem === 'desc' ? <ArrowDown className='h-3.5 w-3.5' aria-hidden /> : <ArrowUp className='h-3.5 w-3.5' aria-hidden />}
+              </button>
+            ),
+            ariaSort: ordem === 'desc' ? 'descending' : 'ascending',
+            cell: (c) => <span className='whitespace-nowrap text-slate-500'>{fmtDate(dataNf(c))}</span>,
+          },
           { key: 'fornecedor', header: 'Fornecedor', cell: (c) => <span className='text-slate-700'>{c.fornecedor?.razao_social ?? '—'}</span> },
           { key: 'nfe', header: 'NF-e', cell: (c) => <span className='text-slate-500'>{c.numero_nfe ?? '—'}</span> },
           {
