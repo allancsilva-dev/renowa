@@ -1,12 +1,14 @@
 import {
   BadRequestException, Controller, Get, Post, Patch, Body, Param, Query,
-  Delete, HttpCode, HttpStatus,
+  Delete, HttpCode, HttpStatus, ParseUUIDPipe,
 } from '@nestjs/common';
 import { FinanceService } from './finance.service';
 import { CreateMovementDto } from './dto/create-movement.dto';
 import { UpdateMovementDto } from './dto/update-movement.dto';
 import { CreateComissaoDto, UpdateComissaoDto } from './dto/create-comissao.dto';
-import { BloquearComissaoDto, InformarPercentualDto, RegistrarPagamentoDto } from './dto/commission-action.dto';
+import {
+  BloquearComissaoDto, EstornarPagamentoDto, InformarPercentualDto, RegistrarPagamentoDto,
+} from './dto/commission-action.dto';
 import { CreateInadimplenciaDto, UpdateInadimplenciaDto } from './dto/create-inadimplencia.dto';
 import { CreateParceiroDto, UpdateParceiroDto } from './dto/create-parceiro.dto';
 import { PaginationDto } from '../common/dto/pagination.dto';
@@ -230,6 +232,16 @@ export class FinanceController {
     @CurrentUser() user: RequestUser,
   ) {
     return this.financeService.registrarPagamento(uuid, dto.data_pagamento, dto.version, user.tenantId);
+  }
+
+  @Patch('comissoes/:uuid/estorno')
+  @RequirePermission('financeiro.editar')
+  async estornarPagamento(
+    @Param('uuid', ParseUUIDPipe) uuid: string,
+    @Body() dto: EstornarPagamentoDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.financeService.estornarPagamento(uuid, dto.version, user.tenantId);
   }
 
   @Patch('comissoes/:uuid/atraso')

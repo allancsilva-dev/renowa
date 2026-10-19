@@ -376,6 +376,26 @@ export class FinanceService {
     });
   }
 
+  /**
+   * Desfaz o pagamento: volta para em aberto (`faturado`) e limpa a data.
+   * Não recria a Inadimplência apagada no pagamento; se ainda houver atraso,
+   * o usuário marca de novo.
+   */
+  async estornarPagamento(uuid: string, version: number, tenantId: string): Promise<Commission> {
+    return this.dataSource.transaction(async (manager) => {
+      const commissionRepo = manager.getRepository(Commission);
+      const commission = await commissionRepo.findOne({ where: { uuid, tenant_id: tenantId, deleted_at: IsNull() } });
+      if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
+      if (commission.status !== 'pago') {
+        throw new ConflictException('Só é possível estornar comissão paga.');
+      }
+      return optimisticUpdate({
+        repository: commissionRepo, uuid, tenantId, expectedVersion: version, resource: 'commission',
+        notFoundMessage: `Comissão ${uuid} não encontrada.`, patch: { data_pagamento: null, status: 'faturado' },
+      });
+    });
+  }
+
   /** Marca atraso e cria, na mesma transação, registro único em Inadimplência. */
   async registrarAtraso(uuid: string, version: number, tenantId: string): Promise<Commission> {
     return this.dataSource.transaction(async (manager) => {

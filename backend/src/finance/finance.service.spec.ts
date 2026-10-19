@@ -431,6 +431,39 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
     });
   });
 
+  describe('estornarPagamento', () => {
+    it('volta comissão paga para em aberto e limpa a data', async () => {
+      const updateBuilder = optimisticWriteBuilder({
+        execute: jest.fn().mockResolvedValue({ affected: 1, raw: [{ uuid, status: 'faturado' }] }),
+      });
+      const lookupBuilder = optimisticWriteBuilder();
+      const commissionRepo = {
+        findOne: jest.fn().mockResolvedValue({ uuid, status: 'pago', data_pagamento: '0002-07-20' }),
+        createQueryBuilder: jest.fn((alias?: string) => (alias ? lookupBuilder : updateBuilder)),
+      };
+      const service = buildServiceWithCommissionRepo(commissionRepo);
+
+      await service.estornarPagamento(uuid, 3, tenantId);
+
+      expect(commissionRepo.findOne).toHaveBeenCalledWith({ where: expect.objectContaining({ uuid, tenant_id: tenantId }) });
+      expect(updateBuilder.set).toHaveBeenCalledWith(expect.objectContaining({ data_pagamento: null, status: 'faturado' }));
+    });
+
+    it('409 quando a comissão não está paga', async () => {
+      const commissionRepo = { findOne: jest.fn().mockResolvedValue({ uuid, status: 'faturado' }) };
+      const service = buildServiceWithCommissionRepo(commissionRepo);
+
+      await expect(service.estornarPagamento(uuid, 1, tenantId)).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('404 quando a comissão não existe no tenant', async () => {
+      const commissionRepo = { findOne: jest.fn().mockResolvedValue(null) };
+      const service = buildServiceWithCommissionRepo(commissionRepo);
+
+      await expect(service.estornarPagamento(uuid, 1, tenantId)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
   describe('registrarAtraso', () => {
     it('bloqueia comissão e cria inadimplência vinculada ao fornecedor', async () => {
       const updateBuilder = optimisticWriteBuilder({

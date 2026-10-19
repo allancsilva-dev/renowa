@@ -13,3 +13,5 @@ export class RegistrarPagamentoDto extends VersionDto {
 }
 
 export class BloquearComissaoDto extends VersionDto {}
+
+export class EstornarPagamentoDto extends VersionDto {}
