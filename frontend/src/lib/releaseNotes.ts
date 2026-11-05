@@ -28,6 +28,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.1.1',
+    date: '2026-11-05',
+    commit: '384e260',
+    items: [
+      { tipo: 'melhoria', texto: 'Ao preencher Clientes e Fornecedores pelo CNPJ, a busca tenta outra fonte se a primeira estiver indisponível.' },
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-11-05',
     commit: '4f28614',
