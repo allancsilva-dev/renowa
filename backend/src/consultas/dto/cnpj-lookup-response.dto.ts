@@ -1,8 +1,8 @@
 /**
- * Resposta normalizada da consulta de CNPJ (BrasilAPI), usada para
+ * Resposta normalizada da consulta de CNPJ, usada para
  * pré-preencher formulários de cliente/fornecedor.
  *
- * `inscricao_estadual` é SEMPRE `null` — a BrasilAPI não retorna dado
+ * `inscricao_estadual` é SEMPRE `null` — a consulta não usa dado
  * estadual (é uma informação por UF, não federal). Mantido no shape só
  * para o frontend reaproveitar o mesmo formulário de endereço sem checagem
  * condicional de campo ausente.
