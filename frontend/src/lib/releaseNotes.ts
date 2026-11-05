@@ -26,7 +26,18 @@ export interface ReleaseNote {
   items: ReleaseItem[];
 }
 
-export const RELEASE_NOTES: ReleaseNote[] = [];
+export const RELEASE_NOTES: ReleaseNote[] = [
+  {
+    version: '1.1.0',
+    date: '2026-11-05',
+    commit: '4f28614',
+    items: [
+      { tipo: 'novo', texto: 'Agora, sempre que o sistema for atualizado, esta janela mostra o que mudou. Para rever, use o ícone de brilho no topo da tela.' },
+      { tipo: 'novo', texto: 'A comissão do vendedor só fica liberada para pagamento depois que a comissão da empresa da mesma nota fiscal for paga.' },
+      { tipo: 'melhoria', texto: 'No Financeiro, os vendedores ganharam uma aba própria, com cadastro, comissões, filtros e totais por situação.' },
+    ],
+  },
+];
 
 export const RELEASE_ITEM_LABEL: Record<ReleaseItemTipo, string> = {
   novo: 'Novidade',
