@@ -2,19 +2,23 @@ import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnav
 import { isValidCnpj } from '../common/validators/brazilian-document.validators';
 import { CnpjLookupResponseDto } from './dto/cnpj-lookup-response.dto';
 
-const BRASIL_API_TIMEOUT_MS = 5_000;
+const PROVIDER_TIMEOUT_MS = 5_000;
+const PROVIDERS = [
+  { name: 'BrasilAPI', url: (cnpj: string) => `https://brasilapi.com.br/api/cnpj/v1/${cnpj}` },
+  { name: 'Minha Receita', url: (cnpj: string) => `https://minhareceita.org/${cnpj}` },
+] as const;
 
 // A BrasilAPI fica atrás do WAF da Vercel, que responde 403 a requisição sem
 // `User-Agent`. O `fetch` global do Node (undici) não manda um por padrão — por
 // isso a mesma URL devolve 200 no curl e 403 na aplicação, e a consulta nunca
 // funcionou até esta correção. Não remover estes headers.
-const BRASIL_API_HEADERS = {
+const CNPJ_API_HEADERS = {
   'User-Agent': 'Renowa/1.0 (+https://renowa.nexostech.com.br)',
   Accept: 'application/json',
 } as const;
 
-/** Shape parcial da resposta da BrasilAPI (só os campos que usamos). */
-interface BrasilApiCnpjResponse {
+/** Campos compartilhados pelas respostas da BrasilAPI e Minha Receita. */
+interface CnpjProviderResponse {
   razao_social?: string | null;
   logradouro?: string | null;
   numero?: string | null;
@@ -33,7 +37,8 @@ export class CnpjLookupService {
   /**
    * Consulta apoio de preenchimento — sem persistência, sem dado sensível de
    * tenant. Normaliza o CNPJ recebido, valida dígito verificador e consulta
-   * a BrasilAPI com timeout curto (a rota não pode travar o formulário).
+   * a BrasilAPI; em falha técnica, consulta a Minha Receita. Cada provedor
+   * tem timeout curto para a rota não travar o formulário.
    */
   async lookup(rawCnpj: string): Promise<CnpjLookupResponseDto> {
     const cnpj = (rawCnpj ?? '').replace(/\D/g, '');
@@ -41,45 +46,55 @@ export class CnpjLookupService {
       throw new BadRequestException('CNPJ inválido.');
     }
 
-    const response = await this.fetchWithTimeout(cnpj);
+    for (const provider of PROVIDERS) {
+      try {
+        const result = await this.fetchWithTimeout(provider.url(cnpj));
+        if (result.status === 404) {
+          throw new NotFoundException('CNPJ não encontrado.');
+        }
+        if (!result.ok) {
+          this.logger.warn(`${provider.name} respondeu ${result.status} na consulta de CNPJ.`);
+          continue;
+        }
 
-    if (response.status === 404) {
-      throw new NotFoundException('CNPJ não encontrado.');
+        const body = result.body;
+        if (!body || typeof body.razao_social !== 'string' || !body.razao_social.trim()) {
+          this.logger.warn(`${provider.name} retornou dados inválidos na consulta de CNPJ.`);
+          continue;
+        }
+        return this.mapResponse(body);
+      } catch (error) {
+        if (error instanceof NotFoundException) throw error;
+        const aborted = (error as Error)?.name === 'AbortError';
+        this.logger.warn(
+          aborted
+            ? `${provider.name} excedeu timeout (${PROVIDER_TIMEOUT_MS}ms) na consulta de CNPJ.`
+            : `${provider.name} falhou na consulta de CNPJ: ${(error as Error)?.name ?? 'erro desconhecido'}.`,
+        );
+      }
     }
-    if (!response.ok) {
-      // Log só o status (nunca o CNPJ nem o corpo da resposta de terceiro).
-      // Sem isto, 403 de WAF e 5xx viram a mesma mensagem opaca no cliente e
-      // não há como distinguir os dois em produção.
-      this.logger.warn(`BrasilAPI respondeu ${response.status} na consulta de CNPJ.`);
-      throw new ServiceUnavailableException('Consulta de CNPJ indisponível no momento.');
-    }
-
-    const body = (await response.json()) as BrasilApiCnpjResponse;
-    return this.mapResponse(body);
+    throw new ServiceUnavailableException('Consulta de CNPJ indisponível no momento.');
   }
 
-  private async fetchWithTimeout(cnpj: string): Promise<Response> {
+  private async fetchWithTimeout(url: string): Promise<{ status: number; ok: boolean; body?: CnpjProviderResponse }> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), BRASIL_API_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
     try {
-      return await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, {
+      const response = await fetch(url, {
         signal: controller.signal,
-        headers: BRASIL_API_HEADERS,
+        headers: CNPJ_API_HEADERS,
       });
-    } catch (error) {
-      const aborted = (error as Error)?.name === 'AbortError';
-      this.logger.warn(
-        aborted
-          ? `Consulta de CNPJ abortada por timeout (${BRASIL_API_TIMEOUT_MS}ms).`
-          : `Falha de rede na consulta de CNPJ: ${(error as Error)?.name ?? 'erro desconhecido'}.`,
-      );
-      throw new ServiceUnavailableException('Consulta de CNPJ indisponível no momento.');
+      return {
+        status: response.status,
+        ok: response.ok,
+        body: response.ok ? (await response.json()) as CnpjProviderResponse : undefined,
+      };
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  private mapResponse(body: BrasilApiCnpjResponse): CnpjLookupResponseDto {
+  private mapResponse(body: CnpjProviderResponse): CnpjLookupResponseDto {
     return {
       razao_social: body.razao_social ?? null,
       endereco: body.logradouro ?? null,

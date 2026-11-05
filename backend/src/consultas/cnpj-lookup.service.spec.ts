@@ -54,6 +54,7 @@ describe('CnpjLookupService', () => {
         headers: expect.objectContaining({ 'User-Agent': expect.any(String) }),
       }),
     );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       razao_social: 'Empresa Teste LTDA',
       endereco: 'Rua das Flores',
@@ -73,31 +74,86 @@ describe('CnpjLookupService', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(service.lookup(VALID_CNPJ)).rejects.toBeInstanceOf(NotFoundException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('erro de rede (timeout/abort) vira ServiceUnavailableException', async () => {
-    const fetchMock = jest.fn().mockRejectedValue(new DOMException('Aborted', 'AbortError'));
+  it('erro de rede na BrasilAPI aciona Minha Receita', async () => {
+    const fetchMock = jest.fn()
+      .mockRejectedValueOnce(new DOMException('Aborted', 'AbortError'))
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ razao_social: 'Empresa Reserva', municipio: 'Recife' }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(service.lookup(VALID_CNPJ)).resolves.toMatchObject({ razao_social: 'Empresa Reserva', cidade: 'Recife' });
+    expect(fetchMock.mock.calls[1][0]).toBe(`https://minhareceita.org/${VALID_CNPJ}`);
+  });
+
+  it('5xx da BrasilAPI aciona Minha Receita', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ razao_social: 'Empresa Reserva' }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(service.lookup(VALID_CNPJ)).resolves.toMatchObject({ razao_social: 'Empresa Reserva' });
+    expect(fetchMock.mock.calls[1][0]).toBe(`https://minhareceita.org/${VALID_CNPJ}`);
+  });
+
+  it('403 do WAF da BrasilAPI aciona Minha Receita', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 403 })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ razao_social: 'Empresa Reserva' }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(service.lookup(VALID_CNPJ)).resolves.toMatchObject({ razao_social: 'Empresa Reserva' });
+  });
+
+  it('resposta inválida da BrasilAPI aciona Minha Receita', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ razao_social: 'Empresa Reserva' }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(service.lookup(VALID_CNPJ)).resolves.toMatchObject({ razao_social: 'Empresa Reserva' });
+  });
+
+  it('JSON inválido da BrasilAPI aciona Minha Receita', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => { throw new SyntaxError('JSON inválido'); } })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ razao_social: 'Empresa Reserva' }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(service.lookup(VALID_CNPJ)).resolves.toMatchObject({ razao_social: 'Empresa Reserva' });
+  });
+
+  it('404 da Minha Receita após falha primária vira NotFoundException', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: false, status: 404 });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(service.lookup(VALID_CNPJ)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('ambos provedores indisponíveis retornam ServiceUnavailableException', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockRejectedValueOnce(new Error('offline'));
     global.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(service.lookup(VALID_CNPJ)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('5xx da BrasilAPI vira ServiceUnavailableException', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 503 });
-    global.fetch = fetchMock as unknown as typeof fetch;
-
-    await expect(service.lookup(VALID_CNPJ)).rejects.toBeInstanceOf(ServiceUnavailableException);
-  });
-
-  it('403 do WAF vira ServiceUnavailableException (modo de falha real do bug)', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 403 });
+  it('resposta inválida da Minha Receita retorna ServiceUnavailableException', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(service.lookup(VALID_CNPJ)).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('envia User-Agent não vazio — sem ele a BrasilAPI responde 403', async () => {
-    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ razao_social: 'Empresa' }) });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     await service.lookup(VALID_CNPJ);
