@@ -35,6 +35,19 @@
     var h = await api('GET', '/health');
     ok('backend saudável', h.status === 200, h.status);
     st.ids.user = me.body && me.body.data;
+    /* Modal de Novidades abre sozinho após atualização e seria pego por
+       `Q.dlg()` nas fases seguintes. Fecha aqui, uma vez por rodada. */
+    var rn = await api('GET', '/users/me/release-notes');
+    ok('estado de novidades responde', rn.status === 200, rn.status + ' ' + JSON.stringify(rn.body && rn.body.data));
+    var novidades = await waitFor(function () { return document.querySelector('dialog[open] [data-release-notes]'); }, 3000);
+    if (novidades) {
+      var entendi = btn(/^Entendi$/);
+      if (entendi) entendi.click();
+      var fechou = await waitFor(function () { return !document.querySelector('dialog[open] [data-release-notes]'); }, 3000);
+      ok('modal de novidades fechado antes das fases', !!fechou);
+    } else {
+      note('info', 'modal de novidades não estava aberto');
+    }
     Q.flush();
     return { stamp: S, email: st.ids.user && st.ids.user.email, roles: st.ids.user && st.ids.user.roles };
   };
