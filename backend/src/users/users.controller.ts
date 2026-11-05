@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -15,6 +16,7 @@ import { RequestUser } from '../common/types/jwt-payload.type';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { MarkReleaseNotesSeenDto } from './dto/mark-release-notes-seen.dto';
 
 @Controller('users')
 export class UsersController {
@@ -33,6 +35,25 @@ export class UsersController {
     @Body() dto: CreateUserDto,
   ) {
     return this.usersService.createTenantUser(user.tenantId, dto, user);
+  }
+
+  /** Modal de Novidades: qualquer usuário logado, sem permissão extra. */
+  @Get('me/release-notes')
+  async releaseNotesState(@CurrentUser() user: RequestUser) {
+    return this.usersService.getReleaseNotesState({ authUserId: user.sub, tenantId: user.tenantId });
+  }
+
+  @Patch('me/release-notes')
+  @HttpCode(204)
+  async markReleaseNotesSeen(
+    @CurrentUser() user: RequestUser,
+    @Body() dto: MarkReleaseNotesSeenDto,
+  ): Promise<void> {
+    await this.usersService.markReleaseNotesSeen({
+      authUserId: user.sub,
+      tenantId: user.tenantId,
+      version: dto.version,
+    });
   }
 
   @Patch(':id')

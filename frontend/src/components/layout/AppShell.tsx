@@ -3,9 +3,16 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import LoadingState from '../feedback/LoadingState';
+import ReleaseNotesDialog from '../feedback/ReleaseNotesDialog';
+import { useReleaseNotes } from '@/hooks/useReleaseNotes';
+import { RELEASE_NOTES } from '@/lib/releaseNotes';
 
 export default function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
+  const { pending, dismiss } = useReleaseNotes();
+  // Reabrir pelo cabeçalho mostra só a última versão e não grava nada.
+  const [manualOpen, setManualOpen] = useState(false);
+  const notesShown = manualOpen ? RELEASE_NOTES.slice(0, 1) : pending;
 
   return (
     <div className='flex h-dvh overflow-hidden bg-background'>
@@ -22,7 +29,11 @@ export default function AppShell() {
       </div>
 
       <div className='flex flex-1 flex-col overflow-hidden min-w-0'>
-        <Header sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((prev) => !prev)} />
+        <Header
+          sidebarOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen((prev) => !prev)}
+          onShowReleaseNotes={RELEASE_NOTES.length > 0 ? () => setManualOpen(true) : undefined}
+        />
 
         <main id='main-content' className='relative flex-1 overflow-y-auto bg-background p-4 sm:p-6'>
           <Suspense fallback={<LoadingState />}>
@@ -30,6 +41,12 @@ export default function AppShell() {
           </Suspense>
         </main>
       </div>
+
+      <ReleaseNotesDialog
+        open={manualOpen || pending.length > 0}
+        notes={notesShown}
+        onClose={manualOpen ? () => setManualOpen(false) : dismiss}
+      />
     </div>
   );
 }
