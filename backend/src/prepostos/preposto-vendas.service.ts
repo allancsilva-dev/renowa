@@ -5,17 +5,35 @@ import { randomUUID } from 'crypto';
 import { PrepostoComissao } from './entities/preposto-comissao.entity';
 import { Preposto } from './entities/preposto.entity';
 import { FinanceMovement } from '../finance/entities/finance-movement.entity';
+import { Commission } from '../finance/entities/commission.entity';
 import { AlterarPercentualVendaDto, ListPrepostoVendasDto, PagamentoVendaDto } from './dto/preposto-vendas.dto';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { money, percentageOf } from '../common/decimal/decimal';
+import { applySearch } from '../common/persistence/search-filter';
+import { saoPauloDate } from '../common/dates/sao-paulo-date';
 
 /** Tipo que o dashboard soma como custo (finance.service: Custo Fixo | Custo Rotativo). */
 const TIPO_SAIDA = 'Custo Rotativo';
+
+/**
+ * A venda só é liberada para o vendedor quando a comissão da EMPRESA da mesma
+ * nota foi paga no Financeiro (aba Comissão). Derivado, não gravado: estornar
+ * a comissão da empresa devolve a venda para "aguardando" sem sincronizar nada.
+ */
+const LIBERADA_SQL = "(comissao_empresa.status = 'pago')";
+const COMISSAO_EMPRESA_NAO_PAGA =
+  'A comissão da empresa desta nota ainda não foi paga. Registre o pagamento na aba Comissão para liberar o vendedor.';
+
+export type SituacaoVenda = 'aguardando' | 'liberada' | 'pago';
 
 export interface PrepostoVendaRow {
   uuid: string;
   version: number;
   status: 'pendente' | 'pago';
+  /** `aguardando` até a empresa receber a comissão da NF; depois `liberada`; `pago` quando o vendedor recebeu. */
+  situacao: SituacaoVenda;
+  /** Data em que a empresa recebeu a comissão desta NF (aba Comissão). */
+  data_liberacao: string | null;
   numero_nfe: string | null;
   data_faturamento: string | null;
   data_pagamento: string | null;
@@ -23,12 +41,15 @@ export interface PrepostoVendaRow {
   perc_comissao: string;
   valor_comissao: string;
   preposto: { uuid: string; nome: string };
-  pedido: { uuid: string; numero_pedido: number | null; cliente: string | null };
+  pedido: { uuid: string; numero_pedido: number | null; cliente: string | null; fornecedor: string | null };
 }
 
 export interface PrepostoVendasTotais {
   faturado: string;
+  /** Não paga ao vendedor (aguardando + liberada). */
   comissao_pendente: string;
+  comissao_aguardando: string;
+  comissao_liberada: string;
   comissao_paga: string;
 }
 
@@ -52,22 +73,37 @@ export class PrepostoVendasService {
       .innerJoin('v.preposto', 'preposto')
       .innerJoin('v.pedido', 'pedido')
       .leftJoin('pedido.cliente', 'cliente')
+      .leftJoin('pedido.fornecedor', 'fornecedor')
+      // Índice único (tenant_id, nota_fiscal_id) em comissoes ativas: N:1, não multiplica linhas.
+      .leftJoin(
+        Commission, 'comissao_empresa',
+        'comissao_empresa.tenant_id = v.tenant_id AND comissao_empresa.nota_fiscal_id = v.nota_fiscal_id AND comissao_empresa.deleted_at IS NULL',
+      )
       .where('v.tenant_id = :tenantId', { tenantId })
       .andWhere('v.deleted_at IS NULL');
     if (dto.preposto_uuid) qb.andWhere('preposto.uuid = :prepostoUuid', { prepostoUuid: dto.preposto_uuid });
+    if (dto.fornecedor_id) qb.andWhere('pedido.fornecedor_id = :fornecedorId', { fornecedorId: dto.fornecedor_id });
     if (dto.data_inicio && dto.data_fim) {
       qb.andWhere('v.data_faturamento BETWEEN :inicio AND :fim', { inicio: dto.data_inicio, fim: dto.data_fim });
     }
+    applySearch(qb, dto.search, {
+      text: ['v.numero_nfe', 'CAST(pedido.numero_pedido AS TEXT)', 'pedido.numero_pedido_externo', 'preposto.nome', 'cliente.razao_social', 'fornecedor.razao_social'],
+      cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
+    });
 
-    // Totais ignoram o filtro de status de propósito: a tela mostra pendente e
-    // pago lado a lado para o mesmo preposto/período.
+    // Totais ignoram o filtro de situação de propósito: a tela mostra aguardando,
+    // liberada e paga lado a lado para o mesmo período/busca.
     const totaisRaw = await qb.clone()
       .select('COALESCE(SUM(v.valor_faturado), 0)', 'faturado')
       .addSelect("COALESCE(SUM(v.valor_comissao) FILTER (WHERE v.status = 'pendente'), 0)", 'comissao_pendente')
+      .addSelect(`COALESCE(SUM(v.valor_comissao) FILTER (WHERE v.status = 'pendente' AND NOT COALESCE(${LIBERADA_SQL}, false)), 0)`, 'comissao_aguardando')
+      .addSelect(`COALESCE(SUM(v.valor_comissao) FILTER (WHERE v.status = 'pendente' AND COALESCE(${LIBERADA_SQL}, false)), 0)`, 'comissao_liberada')
       .addSelect("COALESCE(SUM(v.valor_comissao) FILTER (WHERE v.status = 'pago'), 0)", 'comissao_paga')
       .getRawOne<Record<keyof PrepostoVendasTotais, string>>();
 
-    if (dto.status) qb.andWhere('v.status = :status', { status: dto.status });
+    if (dto.status === 'pago' || dto.status === 'pendente') qb.andWhere('v.status = :status', { status: dto.status });
+    if (dto.status === 'liberada') qb.andWhere(`v.status = 'pendente' AND COALESCE(${LIBERADA_SQL}, false)`);
+    if (dto.status === 'aguardando') qb.andWhere(`v.status = 'pendente' AND NOT COALESCE(${LIBERADA_SQL}, false)`);
 
     const total = await qb.clone().getCount();
     const rows = await qb
@@ -75,20 +111,28 @@ export class PrepostoVendasService {
         'v.uuid AS uuid', 'v.version AS version', 'v.status AS status', 'v.numero_nfe AS numero_nfe',
         "to_char(v.data_faturamento, 'YYYY-MM-DD') AS data_faturamento",
         "to_char(v.data_pagamento, 'YYYY-MM-DD') AS data_pagamento",
+        `COALESCE(${LIBERADA_SQL}, false) AS liberada`,
+        "to_char(comissao_empresa.data_pagamento, 'YYYY-MM-DD') AS data_liberacao",
         'v.valor_faturado AS valor_faturado', 'v.perc_comissao AS perc_comissao', 'v.valor_comissao AS valor_comissao',
         'preposto.uuid AS preposto_uuid', 'preposto.nome AS preposto_nome',
         'pedido.uuid AS pedido_uuid', 'pedido.numero_pedido AS numero_pedido', 'cliente.razao_social AS cliente',
+        'fornecedor.razao_social AS fornecedor',
       ])
       .orderBy('v.data_faturamento', 'DESC', 'NULLS LAST')
       .addOrderBy('v.id', 'DESC')
       .offset((page - 1) * limit)
       .limit(limit)
-      .getRawMany<Record<string, string | number | null>>();
+      .getRawMany<Record<string, string | number | boolean | null>>();
 
-    const data: PrepostoVendaRow[] = rows.map((row) => ({
+    const data: PrepostoVendaRow[] = rows.map((row) => {
+      const status = row.status as PrepostoVendaRow['status'];
+      const liberada = row.liberada === true || row.liberada === 'true';
+      return {
       uuid: String(row.uuid),
       version: Number(row.version),
-      status: row.status as PrepostoVendaRow['status'],
+      status,
+      situacao: status === 'pago' ? 'pago' : liberada ? 'liberada' : 'aguardando',
+      data_liberacao: liberada ? ((row.data_liberacao as string | null) ?? null) : null,
       numero_nfe: (row.numero_nfe as string | null) ?? null,
       data_faturamento: (row.data_faturamento as string | null) ?? null,
       data_pagamento: (row.data_pagamento as string | null) ?? null,
@@ -100,12 +144,16 @@ export class PrepostoVendasService {
         uuid: String(row.pedido_uuid),
         numero_pedido: row.numero_pedido === null ? null : Number(row.numero_pedido),
         cliente: (row.cliente as string | null) ?? null,
+        fornecedor: (row.fornecedor as string | null) ?? null,
       },
-    }));
+      };
+    });
 
     const totais: PrepostoVendasTotais = {
       faturado: money(totaisRaw?.faturado),
       comissao_pendente: money(totaisRaw?.comissao_pendente),
+      comissao_aguardando: money(totaisRaw?.comissao_aguardando),
+      comissao_liberada: money(totaisRaw?.comissao_liberada),
       comissao_paga: money(totaisRaw?.comissao_paga),
     };
 
@@ -146,6 +194,21 @@ export class PrepostoVendasService {
         if (!(Number(venda.valor_comissao) > 0)) {
           throw new ConflictException('Comissão zerada não gera pagamento. Ajuste o percentual antes.');
         }
+        if (venda.data_faturamento && dto.data_pagamento < venda.data_faturamento) {
+          throw new BadRequestException(`Data de pagamento não pode ser anterior à data da NF (${venda.data_faturamento.split('-').reverse().join('/')}).`);
+        }
+        if (dto.data_pagamento > saoPauloDate()) {
+          throw new BadRequestException('Data de pagamento não pode ser futura.');
+        }
+        // FOR SHARE: o estorno da comissão da empresa espera este pagamento
+        // terminar e então vê a venda paga (e recusa), em vez de cruzar com ele.
+        const [comissaoEmpresa] = await manager.query(
+          `SELECT status FROM comissoes
+            WHERE tenant_id = $1 AND nota_fiscal_id = $2 AND deleted_at IS NULL
+            LIMIT 1 FOR SHARE`,
+          [tenantId, venda.nota_fiscal_id],
+        ) as Array<{ status: string }>;
+        if (comissaoEmpresa?.status !== 'pago') throw new ConflictException(COMISSAO_EMPRESA_NAO_PAGA);
         const preposto = await manager.getRepository(Preposto).findOne({
           where: { id: venda.preposto_id, tenant_id: tenantId },
           withDeleted: true,

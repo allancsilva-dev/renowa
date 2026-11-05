@@ -19,7 +19,7 @@ function venda(overrides: Partial<PrepostoComissao> = {}): PrepostoComissao {
   } as PrepostoComissao;
 }
 
-function subject(current: PrepostoComissao | null) {
+function subject(current: PrepostoComissao | null, comissaoEmpresa: { status: string } | null = { status: 'pago' }) {
   const vendaRepo = {
     findOne: jest.fn().mockResolvedValue(current),
     findOneOrFail: jest.fn().mockResolvedValue(current),
@@ -32,6 +32,7 @@ function subject(current: PrepostoComissao | null) {
   };
   const prepostoRepo = { findOne: jest.fn().mockResolvedValue({ id: 7, nome: 'Paula' }) };
   const manager = {
+    query: jest.fn().mockResolvedValue(comissaoEmpresa ? [comissaoEmpresa] : []),
     getRepository: jest.fn((entity: unknown) => {
       if (entity === PrepostoComissao) return vendaRepo;
       if (entity === FinanceMovement) return movimentoRepo;
@@ -40,7 +41,7 @@ function subject(current: PrepostoComissao | null) {
     }),
   };
   const dataSource = { transaction: jest.fn((work: any) => work(manager)) };
-  return { vendaRepo, movimentoRepo, service: new PrepostoVendasService({} as any, dataSource as any) };
+  return { vendaRepo, movimentoRepo, manager, service: new PrepostoVendasService({} as any, dataSource as any) };
 }
 
 describe('PrepostoVendasService — pagamento', () => {
@@ -68,6 +69,26 @@ describe('PrepostoVendasService — pagamento', () => {
     const zerada = subject(venda({ valor_comissao: '0.00' }));
     await expect(zerada.service.registrarPagamento(uuid, { data_pagamento: '2026-10-11', version: 2 }, tenantId))
       .rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('só paga o vendedor depois que a comissão da empresa da mesma NF foi paga', async () => {
+    for (const comissaoEmpresa of [{ status: 'faturado' }, { status: 'bloqueado' }, null]) {
+      const { movimentoRepo, manager, service } = subject(venda(), comissaoEmpresa);
+      await expect(service.registrarPagamento(uuid, { data_pagamento: '2026-10-10', version: 2 }, tenantId))
+        .rejects.toThrow('comissão da empresa desta nota ainda não foi paga');
+      expect(manager.query).toHaveBeenCalledWith(expect.stringContaining('FOR SHARE'), [tenantId, 5]);
+      expect(movimentoRepo.save).not.toHaveBeenCalled();
+    }
+  });
+
+  it('recusa data de pagamento futura ou anterior à NF', async () => {
+    const futura = subject(venda());
+    await expect(futura.service.registrarPagamento(uuid, { data_pagamento: '2999-01-01', version: 2 }, tenantId))
+      .rejects.toBeInstanceOf(BadRequestException);
+    const antes = subject(venda({ data_faturamento: '2026-10-05' }));
+    await expect(antes.service.registrarPagamento(uuid, { data_pagamento: '2026-10-04', version: 2 }, tenantId))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(antes.movimentoRepo.save).not.toHaveBeenCalled();
   });
 
   it('estornar volta a pendente e apaga a saída do Financeiro', async () => {
@@ -122,7 +143,9 @@ describe('PrepostoVendasService — listagem', () => {
       const c: any = { ...qb, andWhere: jest.fn().mockReturnThis() };
       c.select = jest.fn().mockReturnValue(c);
       c.addSelect = jest.fn().mockReturnValue(c);
-      c.getRawOne = jest.fn().mockResolvedValue({ faturado: '1000', comissao_pendente: '30', comissao_paga: '12.5' });
+      c.getRawOne = jest.fn().mockResolvedValue({
+        faturado: '1000', comissao_pendente: '30', comissao_aguardando: '10', comissao_liberada: '20', comissao_paga: '12.5',
+      });
       c.getCount = jest.fn().mockResolvedValue(1);
       clones.push(c);
       return c;
@@ -130,7 +153,12 @@ describe('PrepostoVendasService — listagem', () => {
     qb.getRawMany = jest.fn().mockResolvedValue([{
       uuid, version: 2, status: 'pendente', numero_nfe: 'NF-9', data_faturamento: '2026-10-01', data_pagamento: null,
       valor_faturado: '1000', perc_comissao: '3', valor_comissao: '30', preposto_uuid: 'p1', preposto_nome: 'Paula',
-      pedido_uuid: 'ped', numero_pedido: 42, cliente: 'Cliente',
+      pedido_uuid: 'ped', numero_pedido: 42, cliente: 'Cliente', fornecedor: 'Fornecedor X',
+      liberada: true, data_liberacao: '2026-10-08',
+    }, {
+      uuid: 'u2', version: 1, status: 'pendente', numero_nfe: 'NF-10', data_faturamento: '2026-10-02', data_pagamento: null,
+      valor_faturado: '500', perc_comissao: '2', valor_comissao: '10', preposto_uuid: 'p1', preposto_nome: 'Paula',
+      pedido_uuid: 'ped2', numero_pedido: 43, cliente: null, fornecedor: null, liberada: false, data_liberacao: null,
     }]);
     const repo = { createQueryBuilder: jest.fn(() => qb) };
     return { qb, clones, service: new PrepostoVendasService(repo as any, {} as any) };
@@ -141,10 +169,27 @@ describe('PrepostoVendasService — listagem', () => {
     const result = await service.list(tenantId, { page: 1, limit: 20, preposto_uuid: 'p1', status: 'pendente' });
     expect(qb.where).toHaveBeenCalledWith('v.tenant_id = :tenantId', { tenantId });
     expect(qb.andWhere).toHaveBeenCalledWith('v.deleted_at IS NULL');
-    expect(result.meta.totais).toEqual({ faturado: '1000.00', comissao_pendente: '30.00', comissao_paga: '12.50' });
+    expect(result.meta.totais).toEqual({
+      faturado: '1000.00', comissao_pendente: '30.00', comissao_aguardando: '10.00', comissao_liberada: '20.00', comissao_paga: '12.50',
+    });
     expect(result.data[0]).toEqual(expect.objectContaining({
-      valor_comissao: '30.00', perc_comissao: '3.00', pedido: { uuid: 'ped', numero_pedido: 42, cliente: 'Cliente' },
+      valor_comissao: '30.00', perc_comissao: '3.00', situacao: 'liberada', data_liberacao: '2026-10-08',
+      pedido: { uuid: 'ped', numero_pedido: 42, cliente: 'Cliente', fornecedor: 'Fornecedor X' },
     }));
+    expect(result.data[1]).toEqual(expect.objectContaining({ situacao: 'aguardando', data_liberacao: null }));
+  });
+
+  it('filtra fornecedor, busca e situação liberada/aguardando pela comissão da empresa', async () => {
+    const { qb, service } = listSubject();
+    await service.list(tenantId, { page: 1, limit: 20, fornecedor_id: 9, search: 'NF-9', status: 'liberada' });
+    expect(qb.leftJoin).toHaveBeenCalledWith(expect.anything(), 'comissao_empresa', expect.stringContaining('comissao_empresa.nota_fiscal_id = v.nota_fiscal_id'));
+    expect(qb.andWhere).toHaveBeenCalledWith('pedido.fornecedor_id = :fornecedorId', { fornecedorId: 9 });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('preposto.nome ILIKE :search'), expect.objectContaining({ search: '%NF-9%' }));
+    expect(qb.andWhere).toHaveBeenCalledWith("v.status = 'pendente' AND COALESCE((comissao_empresa.status = 'pago'), false)");
+
+    const aguardando = listSubject();
+    await aguardando.service.list(tenantId, { page: 1, limit: 20, status: 'aguardando' });
+    expect(aguardando.qb.andWhere).toHaveBeenCalledWith("v.status = 'pendente' AND NOT COALESCE((comissao_empresa.status = 'pago'), false)");
   });
 
   it('recusa período incompleto ou invertido', async () => {

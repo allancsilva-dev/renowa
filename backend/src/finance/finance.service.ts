@@ -122,8 +122,8 @@ export class FinanceService {
   }
 
   /**
-   * Saída criada pelo pagamento de comissão de preposto só muda pela aba Vendas
-   * do preposto (estorno). Editar ou apagar aqui deixaria a venda "paga" com um
+   * Saída criada pelo pagamento de comissão de preposto só muda pela aba Vendedores do Financeiro
+   * (estorno). Editar ou apagar aqui deixaria a venda "paga" com um
    * caixa que não confere.
    */
   private async assertMovimentoLivre(uuid: string, tenantId: string): Promise<void> {
@@ -135,7 +135,7 @@ export class FinanceService {
       [uuid, tenantId],
     ) as unknown[];
     if (vinculo.length) {
-      throw new ConflictException('Lançamento gerado pelo pagamento de comissão de preposto. Estorne pela aba Vendas do preposto.');
+      throw new ConflictException('Lançamento gerado pelo pagamento de comissão de preposto. Estorne pela aba Vendedores do Financeiro.');
     }
   }
 
@@ -388,6 +388,19 @@ export class FinanceService {
       if (!commission) throw new NotFoundException(`Comissão ${uuid} não encontrada.`);
       if (commission.status !== 'pago') {
         throw new ConflictException('Só é possível estornar comissão paga.');
+      }
+      // A comissão paga é o que libera o vendedor da nota; com o vendedor já
+      // pago, estornar aqui deixaria dinheiro saindo sem a empresa ter recebido.
+      if (commission.nota_fiscal_id) {
+        const vendedorPago = await manager.query(
+          `SELECT 1 FROM preposto_comissoes
+            WHERE tenant_id = $1 AND nota_fiscal_id = $2 AND deleted_at IS NULL AND status = 'pago'
+            LIMIT 1 FOR SHARE`,
+          [tenantId, commission.nota_fiscal_id],
+        ) as unknown[];
+        if (vendedorPago.length) {
+          throw new ConflictException('O vendedor desta nota já recebeu a comissão. Estorne o pagamento na aba Vendedores antes.');
+        }
       }
       return optimisticUpdate({
         repository: commissionRepo, uuid, tenantId, expectedVersion: version, resource: 'commission',
