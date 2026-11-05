@@ -28,7 +28,7 @@ describe('Sidebar', () => {
       'faturamento.ver', 'financeiro.ver', 'prepostos.ver', 'sac.ver'].forEach((slug) => mocks.permissions.add(slug));
     render(<MemoryRouter><Sidebar /></MemoryRouter>);
 
-    const esperado = ['Dashboard', 'Clientes', 'Produtos', 'Fornecedores', 'Transporte', 'Pedidos', 'Faturamento', 'Financeiro', 'Prepostos', 'SAC'];
+    const esperado = ['Dashboard', 'Clientes', 'Produtos', 'Fornecedores', 'Transporte', 'Pedidos', 'Faturamento', 'Financeiro', 'SAC'];
     const labels = navLabels();
     expect(labels.filter((label) => esperado.includes(label))).toEqual(esperado);
     expect(labels.indexOf('Faturamento') - labels.indexOf('Pedidos')).toBe(1);

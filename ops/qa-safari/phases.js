@@ -1009,7 +1009,7 @@
     return c && c.status;
   }
 
-  /* ---------------- P15 — prepostos, menu ⋮ do faturamento, ajuste de valor ----------------
+  /* ---------------- P15 — vendedores (prepostos) no Financeiro, menu ⋮ do faturamento, ajuste de valor ----------------
      Roda antes da p14 (usa cliente/fornecedor da rodada) e limpa o que cria. */
   function dataOf(r) { return r && r.body && (r.body.data !== undefined ? r.body.data : r.body); }
 
@@ -1048,15 +1048,26 @@
     var admin = roles.some(function (r) { return String(r).toUpperCase() === 'ADMIN'; });
     ok('p15: usuário da rodada é ADMIN (Editar valor)', admin, JSON.stringify(roles));
 
-    /* 1. menu lateral: Pedidos acima de Faturamento, Prepostos acima de SAC */
+    /* 1. menu lateral: Pedidos acima de Faturamento; Prepostos saiu do menu (virou aba Vendedores do Financeiro) */
     var nav = all('nav a').map(function (a) { return a.innerText.trim(); }).filter(Boolean);
     ok('p15: menu tem Pedidos logo acima de Faturamento', nav.indexOf('Faturamento') - nav.indexOf('Pedidos') === 1, nav.join(' > '));
-    ok('p15: menu tem Prepostos logo acima de SAC', nav.indexOf('SAC') - nav.indexOf('Prepostos') === 1, nav.join(' > '));
+    ok('p15: menu não tem mais Prepostos', nav.indexOf('Prepostos') < 0, nav.join(' > '));
 
-    /* 2. cadastro de preposto pela tela */
-    await screen('/prepostos', 'Prepostos');
-    var novo = btn(/Novo Preposto/i);
-    if (!ok('p15: botão "Novo Preposto"', !!novo)) return 'sem botão';
+    /* Data civil de São Paulo: Q.today() é UTC e vira o dia seguinte depois das 21h (backend recusa data futura). */
+    var hojeSP = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+    async function abrirVendedores(visao) {
+      await screen('/prepostos', 'Prepostos → Financeiro');
+      ok('p15: /prepostos redireciona para /financeiro?aba=vendedores', location.pathname === '/financeiro' && location.search === '?aba=vendedores', location.pathname + location.search);
+      var abaV = btn(/^Vendedores$/);
+      ok('p15: aba Vendedores existe no Financeiro', !!abaV);
+      await sleep(400); await settle();
+      if (visao) { var v = btn(new RegExp('^' + visao + '$')); if (v) v.click(); await sleep(500); await settle(); }
+    }
+
+    /* 2. cadastro de vendedor pela tela (aba Vendedores → Cadastro) */
+    await abrirVendedores('Cadastro');
+    var novo = btn(/Novo Vendedor/i);
+    if (!ok('p15: botão "Novo Vendedor"', !!novo)) return 'sem botão';
     novo.click();
     var dlg = await waitFor(function () { return Q.dlg(); }, 6000);
     var root = dlg || document;
@@ -1132,28 +1143,48 @@
     var fdepois = dataOf(await api('GET', '/faturamento/pedidos/' + ped.uuid));
     ok('p15: nota igual ao valor ajustado conclui o pedido', fdepois && fdepois.status === 'faturado', fdepois && fdepois.status);
 
-    await screen('/prepostos', 'Prepostos');
-    var tabVendas = all('[role=tab]').filter(function (t) { return t.innerText.trim() === 'Vendas'; })[0];
-    if (tabVendas) tabVendas.click();
-    await sleep(600); await settle();
-    ok('p15: aba Vendas grava ?aba=vendas na URL', location.search === '?aba=vendas', location.search);
-    var aba = document.querySelector('[role=tab][aria-selected=true]');
-    ok('p15: aba Vendas selecionada', aba && aba.innerText.trim() === 'Vendas', aba && aba.innerText);
+    await abrirVendedores();
     var temLinha = await waitFor(function () { return Q.bodyText().indexOf(S + '-NF1') >= 0; }, 8000);
-    ok('p15: venda da nota aparece na aba Vendas', !!temLinha);
+    ok('p15: venda da nota aparece na aba Vendedores', !!temLinha);
     var esperado = round2(valorNota * 0.03);
     ok('p15: comissão = 3% da nota na tela', hasScreenNum(esperado), esperado);
     var vendas = dataOf(await api('GET', '/prepostos/vendas?preposto_uuid=' + preposto.uuid)) || [];
     var venda = vendas[0];
     ok('p15: API da venda com 3%', venda && venda.perc_comissao === '3.00' && near(venda.valor_comissao, esperado), venda && JSON.stringify([venda.perc_comissao, venda.valor_comissao]));
 
-    /* 6. pagar pela tela → saída no Financeiro → trava → estornar */
+    /* 6. vendedor só libera depois que a empresa recebe a comissão da NF (aba Comissão) */
+    ok('p15: venda nasce aguardando a empresa', venda && venda.situacao === 'aguardando', venda && venda.situacao);
+    ok('p15: tela mostra "AGUARDANDO EMPRESA"', /AGUARDANDO EMPRESA/.test(Q.bodyText()));
     function linhaVenda() { return all('tbody tr').filter(function (tr) { return Q.vis(tr) && tr.innerText.indexOf(S + '-NF1') >= 0; })[0]; }
     var lv = linhaVenda();
     var g = lv && lv.querySelector('button[aria-haspopup="menu"]');
     if (g) { g.click(); await sleep(400); }
-    var pagar = item(all('[role=menu] [role=menuitem]').filter(Q.vis), /Marcar como pago/);
-    ok('p15: menu da venda tem "Marcar como pago"', !!pagar);
+    var bloqueado = item(all('[role=menu] [role=menuitem]').filter(Q.vis), /aguardando empresa/);
+    ok('p15: pagamento ao vendedor desabilitado enquanto aguarda', !!bloqueado && bloqueado.disabled, bloqueado && String(bloqueado.disabled));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(300);
+    var cedo = await api('PATCH', '/prepostos/vendas/' + venda.uuid + '/pagamento', { data_pagamento: hojeSP, version: venda.version });
+    ok('p15: API recusa pagar vendedor antes da empresa receber (409)', cedo.status === 409, cedo.status + ' ' + cedo.text.slice(0, 120));
+
+    var listaCom = dataOf(await api('GET', '/financeiro/comissoes?limit=100&search=' + encodeURIComponent(S + '-NF1'))) || [];
+    var comEmpresa = listaCom.filter(function (c) { return c.numero_nfe === S + '-NF1'; })[0];
+    ok('p15: comissão da empresa existe para a NF', !!comEmpresa, listaCom.length);
+    if (comEmpresa) {
+      var pagaEmp = await api('PATCH', '/financeiro/comissoes/' + comEmpresa.uuid + '/pagamento', { data_pagamento: hojeSP, version: comEmpresa.version });
+      ok('p15: comissão da empresa paga', pagaEmp.status === 200, pagaEmp.status + ' ' + pagaEmp.text.slice(0, 120));
+      comEmpresa = dataOf(pagaEmp) || comEmpresa;
+    }
+    venda = (dataOf(await api('GET', '/prepostos/vendas?preposto_uuid=' + preposto.uuid)) || [])[0];
+    ok('p15: venda liberada para o vendedor', venda && venda.situacao === 'liberada', venda && venda.situacao);
+
+    /* 7. pagar pela tela → saída no Financeiro → trava → estornar */
+    await abrirVendedores();
+    await waitFor(function () { return !!linhaVenda(); }, 8000);
+    ok('p15: tela mostra "LIBERADA"', /LIBERADA/.test(Q.bodyText()));
+    lv = linhaVenda();
+    g = lv && lv.querySelector('button[aria-haspopup="menu"]');
+    if (g) { g.click(); await sleep(400); }
+    var pagar = item(all('[role=menu] [role=menuitem]').filter(Q.vis), /^Registrar pagamento$/);
+    ok('p15: menu da venda tem "Registrar pagamento"', !!pagar);
     if (pagar) {
       pagar.click();
       var d3 = await waitFor(function () { return Q.dlg(); }, 6000);
@@ -1174,6 +1205,10 @@
     var notaReg = dataOf(nota);
     var delNota = await api('DELETE', '/faturamento/notas/' + notaReg.uuid + '?version=' + notaReg.version);
     ok('p15: nota com comissão de preposto paga não exclui (409)', delNota.status === 409, delNota.status);
+    if (comEmpresa) {
+      var estEmp = await api('PATCH', '/financeiro/comissoes/' + comEmpresa.uuid + '/estorno', { version: comEmpresa.version });
+      ok('p15: estornar comissão da empresa com vendedor pago é recusado (409)', estEmp.status === 409, estEmp.status + ' ' + estEmp.text.slice(0, 120));
+    }
 
     lv = linhaVenda(); g = lv && lv.querySelector('button[aria-haspopup="menu"]');
     if (g) { g.click(); await sleep(400); }
@@ -1187,13 +1222,21 @@
       await sleep(1200); await settle();
     }
     venda = (dataOf(await api('GET', '/prepostos/vendas?preposto_uuid=' + preposto.uuid)) || [])[0];
-    ok('p15: estorno volta a venda para pendente', venda && venda.status === 'pendente', venda && venda.status);
+    ok('p15: estorno volta a venda para liberada', venda && venda.status === 'pendente' && venda.situacao === 'liberada', venda && (venda.status + '/' + venda.situacao));
+    if (comEmpresa) {
+      var emp = (dataOf(await api('GET', '/financeiro/comissoes?limit=100&search=' + encodeURIComponent(S + '-NF1'))) || [])
+        .filter(function (c) { return c.uuid === comEmpresa.uuid; })[0];
+      var estEmp2 = emp && await api('PATCH', '/financeiro/comissoes/' + emp.uuid + '/estorno', { version: emp.version });
+      ok('p15: comissão da empresa estornada depois do vendedor', !!estEmp2 && estEmp2.status === 200, estEmp2 && estEmp2.status);
+      venda = (dataOf(await api('GET', '/prepostos/vendas?preposto_uuid=' + preposto.uuid)) || [])[0];
+      ok('p15: estorno da empresa volta a venda para aguardando', venda && venda.situacao === 'aguardando', venda && venda.situacao);
+    }
     if (mov) {
       var movDepois = await api('GET', '/financeiro/lancamentos/' + mov.uuid);
       ok('p15: estorno apaga a saída do Financeiro', movDepois.status === 404, movDepois.status);
     }
 
-    /* 7. cancelar pedido pelo ⋮ (pedido sem nota) */
+    /* 8. cancelar pedido pelo ⋮ (pedido sem nota) */
     var ped2 = await pedidoExternoLiberado('P2');
     if (ped2) {
       st.ids.pedidoCancelar = ped2.uuid; Q.flush();

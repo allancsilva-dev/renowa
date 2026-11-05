@@ -1,7 +1,7 @@
 import { cloneElement, useState, useEffect, useCallback, useId, useRef } from 'react';
 import {
   Plus, Wallet, TrendingDown, BarChart2, Trash2, Package, User, Pin, RefreshCw, CheckCircle2, Pencil,
-  ArrowDown, ArrowUp, CalendarCheck, AlertTriangle, Undo2,
+  ArrowDown, ArrowUp, CalendarCheck, AlertTriangle, Undo2, Percent,
 } from 'lucide-react';
 import api from '@/lib/apiClient';
 import { InputMoney } from '@/components/ui/InputMoney';
@@ -20,6 +20,11 @@ import { filterLocalOptions } from '@/lib/relationOptions';
 import EmptyState from '@/components/feedback/EmptyState';
 import { RowMenu, type RowMenuItem } from '@/components/tables/RowMenu';
 import { hojeLocal, isDataCompleta } from '@/lib/date';
+import PrepostosCadastro from '@/pages/prepostos/PrepostosCadastro';
+import {
+  alterarPercentualVenda, fetchPrepostoVendas, fetchPrepostos, registrarPagamentoVenda,
+  type PrepostoVenda, type PrepostoVendasTotais, type SituacaoVenda,
+} from '@/services/prepostos.service';
 
 // ─── Formatação ──────────────────────────────────────────────────────────────
 
@@ -998,6 +1003,9 @@ function ComissaoAlune() {
                 />
               </Field>
             )}
+            {acao.tipo === 'pagamento' && acao.comissao.nota_fiscal_id != null && (
+              <p className='text-sm text-slate-600'>Se o pedido tiver vendedor, a comissão dele fica liberada na aba Vendedores.</p>
+            )}
             {acao.tipo === 'atraso' && (
               <p className='text-sm text-slate-600'>A comissão fica bloqueada e entra na aba Inadimplência.</p>
             )}
@@ -1017,6 +1025,310 @@ function ComissaoAlune() {
         </Modal>
       )}
 
+    </div>
+  );
+}
+
+// ─── Tab: Vendedores ──────────────────────────────────────────────────────────
+
+const SITUACAO_VENDA: Record<SituacaoVenda, { label: string; cls: string }> = {
+  aguardando: { label: 'AGUARDANDO EMPRESA', cls: 'bg-slate-100 text-slate-700' },
+  liberada: { label: 'LIBERADA', cls: 'bg-amber-100 text-amber-800' },
+  pago: { label: 'PAGO', cls: 'bg-emerald-100 text-emerald-800' },
+};
+
+function prepostoFetcher(term: string, page: number): Promise<AsyncComboboxFetchResult> {
+  return fetchPrepostos({ search: term.trim() || undefined, page, limit: 20 }).then((result) => ({
+    options: result.data.map((preposto) => ({ value: preposto.uuid, label: preposto.nome })),
+    hasMore: result.meta.page < result.meta.totalPages,
+  }));
+}
+
+type AcaoVendedor = { tipo: 'percentual' | 'pagamento' | 'estorno'; venda: PrepostoVenda };
+
+/**
+ * Comissão do vendedor (preposto) por nota. Nasce "aguardando" com a NF e só
+ * é liberada quando a comissão da empresa da mesma nota é paga na aba Comissão;
+ * aí o vendedor pode ser pago (lança a saída no Fluxo de Caixa).
+ */
+function VendedoresComissoes() {
+  const { hasPermission } = useAuth();
+  const canAlterarPercentual = hasPermission('prepostos.editar');
+  const canPagar = hasPermission('financeiro.editar');
+
+  const [periodo, setPeriodo] = useState<Periodo>({ inicio: currentMonthStart, fim: currentMonthEnd });
+  const [status, setStatus] = useState<'' | SituacaoVenda>('');
+  const [fornecedorId, setFornecedorId] = useState('');
+  const [fornecedorLabel, setFornecedorLabel] = useState('');
+  const [prepostoUuid, setPrepostoUuid] = useState<string | null>(null);
+  const [prepostoLabel, setPrepostoLabel] = useState('');
+  const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
+  const { search, setSearch, debouncedSearch } = useBusca();
+
+  const [acao, setAcao] = useState<AcaoVendedor | null>(null);
+  const [percentual, setPercentual] = useState('');
+  const [dataPagamento, setDataPagamento] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [acaoError, setAcaoError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
+
+  const fetcher = useCallback(
+    (params: { page: number; limit: number }) => fetchPrepostoVendas({
+      ...params,
+      data_inicio: periodo.inicio,
+      data_fim: periodo.fim,
+      status: status || undefined,
+      fornecedor_id: fornecedorId ? Number(fornecedorId) : undefined,
+      preposto_uuid: prepostoUuid ?? undefined,
+      search: debouncedSearch || undefined,
+    }),
+    [periodo, status, fornecedorId, prepostoUuid, debouncedSearch],
+  );
+  const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<PrepostoVenda>({ fetcher });
+  const totais = (meta as (typeof meta & { totais?: PrepostoVendasTotais }) | null)?.totais;
+
+  const hoje = hojeLocal();
+  const dataMinima = acao?.venda.data_faturamento ?? null;
+  const dataPagamentoValida = isDataCompleta(dataPagamento) && dataPagamento <= hoje && (!dataMinima || dataPagamento >= dataMinima);
+
+  function abrir(tipo: AcaoVendedor['tipo'], venda: PrepostoVenda) {
+    setAcao({ tipo, venda });
+    setAcaoError(null);
+    setPageError(null);
+    if (tipo === 'percentual') setPercentual(String(Number(venda.perc_comissao)));
+    if (tipo === 'pagamento') setDataPagamento(hoje);
+  }
+
+  async function confirmar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!acao || saving) return;
+    const { tipo, venda } = acao;
+    let request: () => Promise<unknown>;
+    if (tipo === 'percentual') {
+      const value = Number(percentual.replace(',', '.'));
+      if (percentual.trim() === '' || !Number.isFinite(value) || value < 0 || value > 100) {
+        setAcaoError('Percentual deve estar entre 0 e 100.');
+        return;
+      }
+      request = () => alterarPercentualVenda(venda.uuid, { perc_comissao: Math.round(value * 100) / 100, version: venda.version });
+    } else if (tipo === 'pagamento') {
+      if (!dataPagamentoValida) {
+        setAcaoError('Informe uma data de pagamento completa, entre a data da NF e hoje.');
+        return;
+      }
+      request = () => registrarPagamentoVenda(venda.uuid, { data_pagamento: dataPagamento, version: venda.version });
+    } else {
+      request = () => registrarPagamentoVenda(venda.uuid, { data_pagamento: null, version: venda.version });
+    }
+    setSaving(true);
+    setAcaoError(null);
+    try {
+      await request();
+      setAcao(null);
+      reload();
+    } catch (requestError) {
+      const message = writeErrorMessage(requestError);
+      // Versão velha ou situação mudou: repetir não adianta. Fecha, recarrega e avisa.
+      if ((requestError as { response?: { status?: number } }).response?.status === 409) {
+        setAcao(null);
+        reload();
+        setPageError(message);
+      } else {
+        setAcaoError(message);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function acoesDaVenda(v: PrepostoVenda): RowMenuItem[] {
+    const items: RowMenuItem[] = [];
+    if (v.situacao !== 'pago' && canAlterarPercentual) {
+      items.push({ label: 'Editar percentual', icon: Percent, onSelect: () => abrir('percentual', v) });
+    }
+    if (v.situacao !== 'pago' && canPagar) {
+      items.push({
+        label: v.situacao === 'aguardando' ? 'Registrar pagamento (aguardando empresa)' : 'Registrar pagamento',
+        icon: CalendarCheck,
+        disabled: v.situacao === 'aguardando' || !(moneyForDisplay(v.valor_comissao) > 0),
+        onSelect: () => abrir('pagamento', v),
+      });
+    }
+    if (v.situacao === 'pago' && canPagar) {
+      items.push({ label: 'Estornar pagamento', icon: Undo2, danger: true, onSelect: () => abrir('estorno', v) });
+    }
+    return items;
+  }
+
+  const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
+    fornecedores.map((fornecedor) => ({ value: String(fornecedor.id), label: fornecedor.razao_social })), term, page,
+  ));
+
+  return (
+    <div className='space-y-5'>
+      <FinanceToolbar>
+        <FiltroIntervaloDatas value={periodo} onChange={setPeriodo} />
+        <BuscaInput value={search} onChange={setSearch} label='Buscar comissões de vendedores' placeholder='NF, nº pedido, vendedor ou cliente' />
+        {podeVerFornecedores && (
+          <RelationFilter label='Fornecedor'>
+            <AsyncCombobox key={`vendedores-${fornecedores.length}`} value={fornecedorId || null} displayValue={fornecedorLabel} onChange={(value, option) => { setFornecedorId(value ?? ''); setFornecedorLabel(option?.label ?? ''); }} fetcher={fornecedorFetcher} ariaLabel='Filtrar por fornecedor' placeholder='Todos fornecedores' className={`${inputCls} min-h-11`} />
+          </RelationFilter>
+        )}
+        <RelationFilter label='Vendedor'>
+          <AsyncCombobox value={prepostoUuid} displayValue={prepostoLabel} onChange={(value, option) => { setPrepostoUuid(value); setPrepostoLabel(option?.label ?? ''); }} fetcher={prepostoFetcher} ariaLabel='Filtrar por vendedor' placeholder='Todos vendedores' className={`${inputCls} min-h-11`} />
+        </RelationFilter>
+        <label className='flex min-w-0 flex-col gap-1 xl:w-44 xl:shrink-0'>
+          <span className={labelCls}>Status</span>
+          <select aria-label='Filtrar por status' value={status} onChange={(e) => setStatus(e.target.value as '' | SituacaoVenda)} className={`${inputCls} h-11`}>
+            <option value=''>Todos status</option>
+            <option value='aguardando'>Aguardando empresa</option>
+            <option value='liberada'>Liberada</option>
+            <option value='pago'>Pago</option>
+          </select>
+        </label>
+      </FinanceToolbar>
+      <WriteError message={fornecedoresError} />
+      <WriteError message={pageError} />
+
+      <div className='grid grid-cols-2 sm:grid-cols-4 gap-3'>
+        {[
+          { label: 'Vendido (notas)', value: totais?.faturado, color: 'text-slate-900' },
+          { label: 'Aguardando empresa', value: totais?.comissao_aguardando, color: 'text-slate-700' },
+          { label: 'Liberada a pagar', value: totais?.comissao_liberada, color: 'text-amber-700' },
+          { label: 'Pago', value: totais?.comissao_paga, color: 'text-teal-700' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className='rounded-xl bg-white border border-slate-100 shadow-sm p-4'>
+            <p className='text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1'>{label}</p>
+            <p className={`text-xl font-bold tabular-nums ${color}`}>{BRL.format(moneyForDisplay(value ?? '0'))}</p>
+          </div>
+        ))}
+      </div>
+
+      <DataTable<PrepostoVenda>
+        columns={[
+          { key: 'data_nf', header: 'Data NF', cell: (v) => <span className='whitespace-nowrap text-slate-500'>{fmtDate(v.data_faturamento)}</span> },
+          { key: 'nf', header: 'NF', cell: (v) => <span className='font-mono text-slate-500'>{v.numero_nfe ?? '—'}</span> },
+          {
+            key: 'pedido',
+            header: 'Pedido',
+            cell: (v) => (
+              <span>
+                <span className='font-mono text-slate-700'>{v.pedido.numero_pedido != null ? `#${v.pedido.numero_pedido}` : '—'}</span>
+                {v.pedido.cliente && <span className='block text-xs text-slate-500'>{v.pedido.cliente}</span>}
+              </span>
+            ),
+          },
+          { key: 'fornecedor', header: 'Fornecedor', cell: (v) => <span className='text-slate-700'>{v.pedido.fornecedor ?? '—'}</span> },
+          { key: 'vendedor', header: 'Vendedor', cell: (v) => <span className='font-medium text-slate-900'>{v.preposto.nome}</span> },
+          { key: 'valor', header: 'Valor da nota', className: 'text-right', cell: (v) => <span className='tabular-nums text-slate-900'>{BRL.format(moneyForDisplay(v.valor_faturado))}</span> },
+          { key: 'perc', header: '%', className: 'text-right', cell: (v) => <span className='tabular-nums text-slate-600'>{Number(v.perc_comissao).toLocaleString('pt-BR')}%</span> },
+          { key: 'comissao', header: 'Comissão', className: 'text-right', cell: (v) => <span className='font-semibold tabular-nums text-teal-700'>{BRL.format(moneyForDisplay(v.valor_comissao))}</span> },
+          {
+            key: 'status',
+            header: 'Status',
+            cell: (v) => (
+              <span className='flex flex-col items-start gap-1'>
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${SITUACAO_VENDA[v.situacao].cls}`}>{SITUACAO_VENDA[v.situacao].label}</span>
+                {v.situacao === 'pago' && v.data_pagamento && <span className='whitespace-nowrap text-xs text-slate-500'>Pago em {fmtDate(v.data_pagamento)}</span>}
+                {v.situacao === 'liberada' && v.data_liberacao && <span className='whitespace-nowrap text-xs text-slate-500'>Empresa recebeu em {fmtDate(v.data_liberacao)}</span>}
+              </span>
+            ),
+          },
+          {
+            key: 'acoes',
+            header: 'Ações',
+            cell: (v) => {
+              const items = acoesDaVenda(v);
+              return items.length > 0
+                ? <RowMenu label={`Ações da comissão de ${v.preposto.nome} NF ${v.numero_nfe ?? 'sem número'}`} items={items} />
+                : <span className='text-slate-400'>—</span>;
+            },
+          },
+        ]}
+        data={data}
+        isLoading={isLoading}
+        error={error}
+        onRetry={reload}
+        meta={meta ?? undefined}
+        onPageChange={goToPage}
+        emptyTitle='Nenhuma comissão de vendedor no período'
+        emptyDescription='Notas fiscais de pedidos com vendedor aparecem aqui. A comissão é liberada quando a empresa recebe a comissão da nota na aba Comissão.'
+      />
+
+      {acao && (
+        <Modal
+          title={{ percentual: 'Editar percentual', pagamento: 'Registrar pagamento ao vendedor', estorno: 'Estornar pagamento' }[acao.tipo]}
+          onClose={() => { if (!saving) setAcao(null); }}
+        >
+          <form onSubmit={confirmar} className='space-y-4'>
+            <WriteError message={acaoError} />
+            <p className='text-sm text-slate-600'>
+              {acao.venda.preposto.nome} · NF {acao.venda.numero_nfe ?? 'sem número'} · nota de{' '}
+              <span className='font-semibold text-slate-900'>{BRL.format(moneyForDisplay(acao.venda.valor_faturado))}</span>
+            </p>
+            {acao.tipo === 'percentual' && (
+              <Field label='% Comissão'>
+                <div className='relative'>
+                  <input type='number' aria-label='Percentual de comissão' step='0.01' min='0' max='100' required value={percentual} onChange={(e) => setPercentual(e.target.value)} className={`${inputCls} pr-8`} />
+                  <span className='absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none'>%</span>
+                </div>
+              </Field>
+            )}
+            {acao.tipo === 'pagamento' && (
+              <>
+                <p className='text-sm text-slate-600'>
+                  Lança uma saída de <strong>{BRL.format(moneyForDisplay(acao.venda.valor_comissao))}</strong> no Fluxo de Caixa.
+                </p>
+                <Field label='Data de pagamento'>
+                  <input type='date' required value={dataPagamento} min={dataMinima ?? undefined} max={hoje} onChange={(e) => setDataPagamento(e.target.value)} className={inputCls} />
+                </Field>
+              </>
+            )}
+            {acao.tipo === 'estorno' && (
+              <p className='text-sm text-slate-600'>
+                O pagamento de {fmtDate(acao.venda.data_pagamento)} é desfeito e a saída de {BRL.format(moneyForDisplay(acao.venda.valor_comissao))} sai do Fluxo de Caixa.
+              </p>
+            )}
+            <ModalBtns
+              onClose={() => setAcao(null)}
+              saving={saving}
+              disabled={acao.tipo === 'pagamento' && !dataPagamentoValida}
+              danger={acao.tipo === 'estorno'}
+              submitLabel={{ percentual: 'Salvar', pagamento: 'Confirmar pagamento', estorno: 'Estornar' }[acao.tipo]}
+            />
+          </form>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+const VENDEDORES_VISOES = [
+  { id: 'comissoes', label: 'Comissões' },
+  { id: 'cadastro', label: 'Cadastro' },
+] as const;
+
+/** Aba Vendedores: comissões dos vendedores (prepostos) e o cadastro deles. */
+function Vendedores() {
+  const [visao, setVisao] = useState<(typeof VENDEDORES_VISOES)[number]['id']>('comissoes');
+  return (
+    <div className='space-y-5'>
+      <div role='group' aria-label='Visão de vendedores' className='inline-flex rounded-lg border border-slate-200 bg-white p-1'>
+        {VENDEDORES_VISOES.map((item) => (
+          <button
+            key={item.id}
+            type='button'
+            aria-pressed={visao === item.id}
+            onClick={() => setVisao(item.id)}
+            className={`min-h-11 rounded-md px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+              visao === item.id ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {visao === 'comissoes' ? <VendedoresComissoes /> : <PrepostosCadastro />}
     </div>
   );
 }
@@ -1528,28 +1840,43 @@ function InadimplenciaTab() {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
-type Tab = 'fluxo-caixa' | 'faturados' | 'empresas' | 'parceiros' | 'comissao' | 'custos' | 'inadimplencia';
+type Tab = 'fluxo-caixa' | 'faturados' | 'empresas' | 'parceiros' | 'comissao' | 'vendedores' | 'custos' | 'inadimplencia';
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS: { id: Tab; label: string; permission?: string }[] = [
   { id: 'fluxo-caixa', label: 'Fluxo de Caixa' },
   { id: 'faturados', label: 'Faturados' },
   { id: 'empresas', label: 'Empresas' },
   { id: 'parceiros', label: 'Parceiros' },
   { id: 'comissao', label: 'Comissão' },
+  { id: 'vendedores', label: 'Vendedores', permission: 'prepostos.ver' },
   { id: 'custos', label: 'Custos' },
   { id: 'inadimplencia', label: 'Inadimplência' },
 ];
 
+/** `?aba=vendedores` abre direto na aba (o antigo /prepostos redireciona para cá). */
+function abaInicial(): Tab {
+  const aba = new URLSearchParams(window.location.search).get('aba');
+  return TABS.some((t) => t.id === aba) ? (aba as Tab) : 'fluxo-caixa';
+}
+
 export default function Financeiro() {
-  const [tab, setTab] = useState<Tab>('fluxo-caixa');
+  const { hasPermission } = useAuth();
+  const tabs = TABS.filter((t) => !t.permission || hasPermission(t.permission));
+  const [escolhida, setTab] = useState<Tab>(abaInicial);
+  const tab = tabs.some((t) => t.id === escolhida) ? escolhida : 'fluxo-caixa';
+  // No celular a faixa de abas rola; aberta por link (`?aba=vendedores`), a aba ativa ficava fora de vista.
+  const abaAtivaRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => { abaAtivaRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); }, [tab]);
 
   return (
     <div className='space-y-5'>
       {/* Tabs navigation */}
       <div className='flex overflow-x-auto border-b border-slate-200'>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
+            ref={tab === t.id ? abaAtivaRef : undefined}
+            aria-current={tab === t.id ? 'page' : undefined}
             onClick={() => setTab(t.id)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               tab === t.id
@@ -1568,6 +1895,7 @@ export default function Financeiro() {
       {tab === 'empresas' && <Empresas />}
       {tab === 'parceiros' && <Parceiros />}
       {tab === 'comissao' && <ComissaoAlune />}
+      {tab === 'vendedores' && <Vendedores />}
       {tab === 'custos' && <Custos />}
       {tab === 'inadimplencia' && <InadimplenciaTab />}
     </div>

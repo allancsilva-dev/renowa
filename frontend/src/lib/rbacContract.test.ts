@@ -25,7 +25,6 @@ const MODULE_ROUTES: Array<[path: string, permission: string]> = [
   ['transporte', 'transportadoras.ver'],
   ['financeiro', 'financeiro.ver'],
   ['faturamento', 'faturamento.ver'],
-  ['prepostos', 'prepostos.ver'],
   ['sac', 'sac.ver'],
 ];
 

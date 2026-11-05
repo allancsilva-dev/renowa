@@ -35,7 +35,7 @@ function formatPercent(value: string | number): string {
   return `${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`;
 }
 
-/** Aba "Cadastro" de Prepostos: mesmo desenho do cadastro de Transporte. */
+/** Cadastro de vendedores (prepostos), dentro da aba Vendedores do Financeiro. */
 export default function PrepostosCadastro() {
   const { hasPermission } = useAuth();
   const [search, setSearch] = useState('');
@@ -92,7 +92,7 @@ export default function PrepostosCadastro() {
     const nome = form.nome.trim();
     const documento = form.documento.replace(/\D/g, '');
     const percentual = Number(form.percentual_comissao.replace(',', '.'));
-    if (nome.length < 2) { setFormError('Informe o nome do preposto.'); return; }
+    if (nome.length < 2) { setFormError('Informe o nome do vendedor.'); return; }
     if (documento && documento.length !== 11 && documento.length !== 14) {
       setFormError('CPF deve ter 11 dígitos e CNPJ 14.');
       return;
@@ -167,7 +167,7 @@ export default function PrepostosCadastro() {
           <Search className='absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400' aria-hidden='true' />
           <input
             type='search'
-            aria-label='Buscar prepostos'
+            aria-label='Buscar vendedores'
             placeholder='Nome, CPF/CNPJ, telefone ou e-mail'
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -181,7 +181,7 @@ export default function PrepostosCadastro() {
             className='flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors'
           >
             <Plus className='h-4 w-4' />
-            Novo Preposto
+            Novo Vendedor
           </button>
         </Can>
       </div>
@@ -198,13 +198,13 @@ export default function PrepostosCadastro() {
         onRetry={reload}
         meta={meta ?? undefined}
         onPageChange={goToPage}
-        emptyTitle={debouncedSearch ? 'Nenhum preposto encontrado' : 'Nenhum preposto cadastrado'}
-        emptyDescription={debouncedSearch ? undefined : 'Prepostos cadastrados aparecem no campo Vendedor do pedido.'}
+        emptyTitle={debouncedSearch ? 'Nenhum vendedor encontrado' : 'Nenhum vendedor cadastrado'}
+        emptyDescription={debouncedSearch ? undefined : 'Vendedores cadastrados aparecem no campo Vendedor do pedido.'}
       />
 
       {viewing && (
         <DetailDialog
-          title='Preposto'
+          title='Vendedor'
           onClose={() => setViewing(null)}
           fields={[
             { label: 'Nome', value: viewing.nome },
@@ -229,7 +229,7 @@ export default function PrepostosCadastro() {
       )}
 
       {deleting && (
-        <Dialog open title='Excluir preposto' onClose={() => setDeleting(null)} className='max-w-md'>
+        <Dialog open title='Excluir vendedor' onClose={() => setDeleting(null)} className='max-w-md'>
           <div className='space-y-4'>
             <p className='text-sm text-slate-700'>
               Excluir <strong>{deleting.nome}</strong>? Ele deixa de aparecer no campo Vendedor. O histórico de vendas é mantido.
@@ -247,7 +247,7 @@ export default function PrepostosCadastro() {
       )}
 
       {isOpen && (
-        <Dialog open title={editing ? 'Editar Preposto' : 'Novo Preposto'} onClose={() => setIsOpen(false)} className='max-w-md'>
+        <Dialog open title={editing ? 'Editar Vendedor' : 'Novo Vendedor'} onClose={() => setIsOpen(false)} className='max-w-md'>
           <form onSubmit={handleSubmit} className='space-y-4'>
             {formError && (
               <div role='alert' className='rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700'>{formError}</div>
@@ -281,7 +281,7 @@ export default function PrepostosCadastro() {
               </div>
             </div>
             <p className='text-xs text-slate-500'>
-              O percentual vale para as próximas notas. Vendas já lançadas mantêm o percentual delas (ajustável na aba Vendas).
+              O percentual vale para as próximas notas. Vendas já lançadas mantêm o percentual delas (ajustável em Comissões de vendedores).
             </p>
             <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
               <div className='flex flex-col gap-1'>

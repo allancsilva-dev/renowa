@@ -1,11 +1,23 @@
+import { Type } from 'class-transformer';
 import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsUUID, Matches, Max, Min, ValidateIf } from 'class-validator';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Situação da venda para o vendedor (preposto):
+ * - `aguardando`: a empresa ainda não recebeu a comissão da NF no Financeiro;
+ * - `liberada`: comissão da empresa paga, falta pagar o vendedor;
+ * - `pago`: vendedor pago;
+ * - `pendente`: não pago (aguardando + liberada), mantido por compatibilidade.
+ */
+export const SITUACOES_VENDA = ['pendente', 'aguardando', 'liberada', 'pago'] as const;
+export type SituacaoVendaFiltro = (typeof SITUACOES_VENDA)[number];
+
 export class ListPrepostoVendasDto extends PaginationDto {
   @IsOptional() @IsUUID('4') preposto_uuid?: string;
-  @IsOptional() @IsIn(['pendente', 'pago']) status?: 'pendente' | 'pago';
+  @IsOptional() @IsIn(SITUACOES_VENDA) status?: SituacaoVendaFiltro;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) fornecedor_id?: number;
   @IsOptional() @Matches(DATA) @IsDateString({ strict: true }) data_inicio?: string;
   @IsOptional() @Matches(DATA) @IsDateString({ strict: true }) data_fim?: string;
 }

@@ -33,6 +33,10 @@ export interface PrepostoVenda {
   uuid: string;
   version: number;
   status: 'pendente' | 'pago';
+  /** `aguardando`: a empresa ainda não recebeu a comissão da NF (aba Comissão); `liberada`: falta pagar o vendedor. */
+  situacao: SituacaoVenda;
+  /** Data em que a empresa recebeu a comissão desta NF. */
+  data_liberacao: string | null;
   numero_nfe: string | null;
   data_faturamento: string | null;
   data_pagamento: string | null;
@@ -40,12 +44,16 @@ export interface PrepostoVenda {
   perc_comissao: string;
   valor_comissao: string;
   preposto: { uuid: string; nome: string };
-  pedido: { uuid: string; numero_pedido: number | null; cliente: string | null };
+  pedido: { uuid: string; numero_pedido: number | null; cliente: string | null; fornecedor: string | null };
 }
+
+export type SituacaoVenda = 'aguardando' | 'liberada' | 'pago';
 
 export interface PrepostoVendasTotais {
   faturado: string;
   comissao_pendente: string;
+  comissao_aguardando: string;
+  comissao_liberada: string;
   comissao_paga: string;
 }
 
@@ -54,8 +62,8 @@ export type PrepostoVendasResponse = PaginatedResponse<PrepostoVenda> & {
 };
 
 export async function fetchPrepostoVendas(params: {
-  page?: number; limit?: number; preposto_uuid?: string; status?: 'pendente' | 'pago';
-  data_inicio?: string; data_fim?: string;
+  page?: number; limit?: number; preposto_uuid?: string; status?: SituacaoVenda | 'pendente';
+  fornecedor_id?: number; search?: string; data_inicio?: string; data_fim?: string;
 }): Promise<PrepostoVendasResponse> {
   const { data } = await api.get<PrepostoVendasResponse>('/prepostos/vendas', { params });
   return data;

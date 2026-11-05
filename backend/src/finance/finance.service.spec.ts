@@ -484,6 +484,17 @@ describe('FinanceService — comissão por nota (percentual/pagamento) e fluxo d
       await expect(service.estornarPagamento(uuid, 1, tenantId)).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it('recusa estorno quando o vendedor da mesma NF já foi pago', async () => {
+      const commissionRepo = { findOne: jest.fn().mockResolvedValue({ uuid, status: 'pago', nota_fiscal_id: 5 }) };
+      const query = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
+      const service = buildServiceWithCommissionRepo(commissionRepo, {
+        transaction: jest.fn(async (work) => work({ query, getRepository: jest.fn(() => commissionRepo) })),
+      });
+
+      await expect(service.estornarPagamento(uuid, 3, tenantId)).rejects.toThrow('aba Vendedores');
+      expect(query).toHaveBeenCalledWith(expect.stringContaining('preposto_comissoes'), [tenantId, 5]);
+    });
+
     it('404 quando a comissão não existe no tenant', async () => {
       const commissionRepo = { findOne: jest.fn().mockResolvedValue(null) };
       const service = buildServiceWithCommissionRepo(commissionRepo);
