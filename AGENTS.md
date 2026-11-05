@@ -6,6 +6,7 @@
 - Não altere arquivos do workspace `mobile` nem implemente funcionalidades para mobile.
 - Não inclua o mobile nas validações da tarefa.
 - Essa restrição só pode ser removida por uma nova instrução explícita do usuário.
+- Ao subir o ambiente local, use backend 7100, frontend 7101 e o banco Renowa 7102; não crie banco nem usuário temporário sem pedido explícito.
 
 ## Validação obrigatória após alterações de código
 
