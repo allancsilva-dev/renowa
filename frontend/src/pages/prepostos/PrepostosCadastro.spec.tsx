@@ -43,7 +43,7 @@ describe('Prepostos — cadastro', () => {
     mocks.permissions.add('prepostos.criar');
     mocks.create.mockResolvedValue({});
     render(<PrepostosCadastro />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Novo Preposto' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Novo Vendedor' }));
     fireEvent.change(screen.getByLabelText(/Nome/), { target: { value: '  Carlos  ' } });
     fireEvent.change(screen.getByLabelText('CPF/CNPJ'), { target: { value: '52998224725' } });
     fireEvent.change(screen.getByLabelText(/% Comissão/), { target: { value: '2.5' } });
