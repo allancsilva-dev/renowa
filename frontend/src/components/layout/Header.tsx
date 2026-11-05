@@ -1,9 +1,11 @@
-import { Bell, Menu, Search } from 'lucide-react';
+import { Bell, Menu, Search, Sparkles } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 interface HeaderProps {
   onToggle: () => void;
   sidebarOpen: boolean;
+  /** Ausente quando não há novidades publicadas: o botão some. */
+  onShowReleaseNotes?: () => void;
 }
 
 function getInitials(email: string): string {
@@ -14,7 +16,7 @@ function getInitials(email: string): string {
   return email.substring(0, 2).toUpperCase();
 }
 
-export default function Header({ onToggle, sidebarOpen }: HeaderProps) {
+export default function Header({ onToggle, sidebarOpen, onShowReleaseNotes }: HeaderProps) {
   const { user } = useAuth();
   const initials = user?.email ? getInitials(user.email) : 'U';
 
@@ -47,6 +49,18 @@ export default function Header({ onToggle, sidebarOpen }: HeaderProps) {
 
       {/* Direita: sino + avatar */}
       <div className='flex items-center gap-3 shrink-0'>
+        {onShowReleaseNotes && (
+          <button
+            type='button'
+            onClick={onShowReleaseNotes}
+            aria-label='Ver novidades da última atualização'
+            title='Novidades'
+            className='inline-flex h-11 w-11 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'
+          >
+            <Sparkles className='h-5 w-5' aria-hidden='true' />
+          </button>
+        )}
+
         {/* Sino com badge */}
         <button type='button' disabled aria-label='Nenhuma notificação' className='relative inline-flex h-11 w-11 items-center justify-center rounded-full text-slate-500 disabled:opacity-60'>
           <Bell className='h-5 w-5' />

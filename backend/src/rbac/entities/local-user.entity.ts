@@ -43,6 +43,10 @@ export class LocalUser {
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   lastLoginAt: Date | null;
 
+  /** Última versão das Novidades que o usuário fechou (migration 0052). */
+  @Column({ name: 'release_notes_seen_version', type: 'varchar', length: 32, nullable: true })
+  releaseNotesSeenVersion: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

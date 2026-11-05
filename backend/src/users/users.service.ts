@@ -135,6 +135,42 @@ export class UsersService {
     };
   }
 
+  /**
+   * Estado do modal de Novidades do usuário logado. `supported: false` quando
+   * não há `local_users` (SUPERADMIN sem tenant): sem onde gravar, o front não
+   * abre o modal — senão ele reapareceria em todo acesso.
+   */
+  async getReleaseNotesState(params: { authUserId: string; tenantId?: string | null }): Promise<{
+    supported: boolean;
+    seenVersion: string | null;
+    createdAt: string | null;
+  }> {
+    if (!params.tenantId) return { supported: false, seenVersion: null, createdAt: null };
+    const localUser = await this.localUserRepo.findOne({
+      where: { authUserId: params.authUserId, tenantId: params.tenantId },
+      select: ['id', 'releaseNotesSeenVersion', 'createdAt'],
+    });
+    if (!localUser) return { supported: false, seenVersion: null, createdAt: null };
+    return {
+      supported: true,
+      seenVersion: localUser.releaseNotesSeenVersion ?? null,
+      createdAt: localUser.createdAt ? new Date(localUser.createdAt).toISOString() : null,
+    };
+  }
+
+  /** Grava a versão vista. Escopo: só o próprio usuário no tenant do token. Idempotente. */
+  async markReleaseNotesSeen(params: {
+    authUserId: string;
+    tenantId?: string | null;
+    version: string;
+  }): Promise<void> {
+    if (!params.tenantId) return;
+    await this.localUserRepo.update(
+      { authUserId: params.authUserId, tenantId: params.tenantId },
+      { releaseNotesSeenVersion: params.version },
+    );
+  }
+
   async findAnyLocalUserByAuthUserId(authUserId: string): Promise<LocalUser | null> {
     return this.localUserRepo.findOne({
       where: { authUserId },

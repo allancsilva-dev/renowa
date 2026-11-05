@@ -45,6 +45,13 @@ O host em `DATABASE_URL` e `db` — nome do servico na rede `renowa`, nao `local
 
 Com proxy same-origin em `/api`, o browser nao depende de CORS. `CORS_ORIGIN` fica como defesa caso a API seja chamada direto.
 
+## Novidades para o cliente (antes de subir)
+
+Toda atualização com mudança visível deve levar o texto do modal "O que há de novo". No Claude Code, rode `/novidades` **antes** do deploy: a skill lê os commits desde a última versão, escreve em linguagem leiga em `frontend/src/lib/releaseNotes.ts`, pede sua aprovação e commita (`chore(novidades): versão X.Y.Z`). Depois é o deploy normal abaixo — o texto vai junto no build do frontend.
+
+- Sem entrada nova no arquivo → nenhum modal aparece (útil para correção interna).
+- Cada usuário vê uma vez; a versão vista fica em `local_users.release_notes_seen_version` (migration `0052`), roda sozinha no boot da API.
+
 ## Subir
 
 O contexto de build e a **raiz do monorepo** (backend e frontend dependem do workspace privado `@renowa/shared`, que nao existe no registry npm). Rode sempre da raiz do repo.
