@@ -40,6 +40,7 @@ Ao finalizar, resuma as validações executadas e seus resultados.
 - Cada commit deve conter somente um grupo coerente e completo. Mantenha migration, backend, frontend e testes no commit da funcionalidade da qual dependem; se forem melhorias independentes, use commits separados.
 - Use Conventional Commits com assunto curto, objetivo e sempre em português.
 - Faça staging explícito somente dos arquivos pertencentes ao grupo atual. Revise `git diff --cached` antes de criar cada commit.
+- Antes de publicar cada atualização, acrescente às notificações de novidades uma frase clara para o cliente, sem termos técnicos.
 
 ## Automação de teste no Safari (obrigatório ler antes de automatizar navegador)
 
