@@ -28,6 +28,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.0',
+    date: '2026-11-16',
+    commit: '5e011ec',
+    items: [
+      { tipo: 'melhoria', texto: 'Agora, ao selecionar vendedor e período, o Financeiro mostra as notas liberadas e os valores a pagar.' },
+    ],
+  },
+  {
     version: '1.1.2',
     date: '2026-11-16',
     commit: '03a8b5d',
