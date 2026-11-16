@@ -28,6 +28,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.1.2',
+    date: '2026-11-16',
+    commit: '03a8b5d',
+    items: [
+      { tipo: 'melhoria', texto: 'O campo Série foi removido do registro e da consulta de notas fiscais.' },
+    ],
+  },
+  {
     version: '1.1.1',
     date: '2026-11-05',
     commit: '384e260',

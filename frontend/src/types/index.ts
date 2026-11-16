@@ -133,7 +133,6 @@ export interface NotaFiscal {
   version: number;
   pedido_id: number;
   numero_nota: string;
-  serie: string | null;
   valor: string;
   data_emissao: string | null;
   observacao: string | null;

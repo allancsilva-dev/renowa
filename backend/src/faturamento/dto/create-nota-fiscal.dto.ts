@@ -5,7 +5,6 @@ export class CreateNotaFiscalDto {
   uuid: string;
 
   @IsDefined() @IsString() numero_nota: string;
-  @IsOptional() @IsString() serie?: string;
 
   @IsDefined() @IsNumber() @IsPositive() valor: number;
 

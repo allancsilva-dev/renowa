@@ -21,6 +21,22 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn(), useParams: () =
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('FaturamentoDetalhe — fechamento manual', () => {
+  it('lista e edita nota sem campo Série', async () => {
+    mocks.load.mockResolvedValue({
+      uuid: 'pedido-1', version: 4, numero_pedido: 10, status: 'faturado',
+      cliente: null, fornecedor: null, valor: '40.00', total_faturado: '40.00', divergencia: '0.00',
+      notas: [{ uuid: 'nota-1', version: 1, numero_nota: 'NF-1', valor: '40.00', data_emissao: null, observacao: null }],
+      finalizacao_ativa: null, finalizacoes: [],
+    });
+
+    render(<FaturamentoDetalhe />);
+    expect(await screen.findByText('NF-1')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Série' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Editar nota NF-1' }));
+    expect(screen.getByRole('dialog', { name: 'Editar nota NF-1' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Série')).not.toBeInTheDocument();
+  });
+
   it('confirma o saldo explícito e envia versão/motivo', async () => {
     mocks.load.mockResolvedValue({
       uuid: 'pedido-1', version: 4, numero_pedido: 10, status: 'parcialmente_faturado',

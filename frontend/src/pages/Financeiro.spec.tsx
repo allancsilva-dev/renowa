@@ -22,7 +22,7 @@ describe('Financeiro — Faturados', () => {
       if (url === '/financeiro/faturados') {
         return { data: {
           data: [{
-            uuid: 'nota-1', numero_nota: '123', serie: '1', valor: '40.00', data_faturamento: '2026-09-15',
+            uuid: 'nota-1', numero_nota: '123', valor: '40.00', data_faturamento: '2026-09-15',
             pedido_uuid: 'pedido-1', numero_pedido: 10, cliente: 'Cliente Um', fornecedor_uuid: 'forn-1', fornecedor: 'Fornecedor Um',
           }],
           meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
@@ -35,7 +35,8 @@ describe('Financeiro — Faturados', () => {
     render(<Financeiro />);
     fireEvent.click(screen.getByRole('button', { name: 'Faturados' }));
 
-    expect(await screen.findByText('123 / 1')).toBeInTheDocument();
+    expect(await screen.findByText('123')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'NF' })).toBeInTheDocument();
     expect(screen.getByText('R$ 40,00')).toBeInTheDocument();
     expect(screen.getAllByText('Fornecedor Um').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Ver detalhe' }));

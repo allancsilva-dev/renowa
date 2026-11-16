@@ -108,6 +108,8 @@ describe('FinanceService — notas faturadas', () => {
       expect.stringMatching(/^TO_CHAR\(COALESCE\(n\.data_emissao.*'YYYY-MM-DD'\) AS data_faturamento$/),
       'n.valor AS valor',
     ]));
+    expect(qb.select.mock.calls[0][0]).not.toContain('n.serie AS serie');
+    expect(qb.andWhere.mock.calls.flat().join(' ')).not.toContain('n.serie');
   });
 
   it('prioriza intervalo inclusivo sobre mês e ano', async () => {

@@ -19,8 +19,8 @@ import { orderStatusLabel, orderStatusColor, orderOrigemLabel, orderOrigemColor,
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
-type NotaForm = { numero_nota: string; serie: string; valor: number | null; perc_comissao: string; data_emissao: string; observacao: string };
-const EMPTY_NOTA_FORM: NotaForm = { numero_nota: '', serie: '', valor: null, perc_comissao: '5', data_emissao: '', observacao: '' };
+type NotaForm = { numero_nota: string; valor: number | null; perc_comissao: string; data_emissao: string; observacao: string };
+const EMPTY_NOTA_FORM: NotaForm = { numero_nota: '', valor: null, perc_comissao: '5', data_emissao: '', observacao: '' };
 
 function pedidoLabel(row: Pick<FaturamentoPedidoRow, 'numero_pedido'>): string {
   return row.numero_pedido != null ? `#${row.numero_pedido}` : '';
@@ -152,7 +152,6 @@ export default function Faturamento() {
       await registrarNota(notaPedido.uuid, {
         uuid: uuidDaNota,
         numero_nota: notaForm.numero_nota.trim(),
-        serie: notaForm.serie.trim() || undefined,
         valor: normalizeMoney(notaForm.valor),
         perc_comissao: percentualComissao,
         data_emissao: notaForm.data_emissao || undefined,
@@ -294,7 +293,7 @@ export default function Faturamento() {
                 {formError}
               </div>
             )}
-            <div className='grid grid-cols-2 gap-3'>
+            <div className='grid gap-3'>
               <div className='flex flex-col gap-1'>
                 <label htmlFor='numero_nota' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
                   Número da nota <span className='text-red-500'>*</span>
@@ -304,15 +303,6 @@ export default function Faturamento() {
                   required
                   value={notaForm.numero_nota}
                   onChange={(e) => setNotaForm((p) => ({ ...p, numero_nota: e.target.value }))}
-                  className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
-                />
-              </div>
-              <div className='flex flex-col gap-1'>
-                <label htmlFor='serie' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Série</label>
-                <input
-                  id='serie'
-                  value={notaForm.serie}
-                  onChange={(e) => setNotaForm((p) => ({ ...p, serie: e.target.value }))}
                   className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
                 />
               </div>

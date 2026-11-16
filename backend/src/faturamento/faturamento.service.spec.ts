@@ -7,6 +7,8 @@ import { ConcurrentModificationException } from '../common/errors/concurrent-mod
 import { FaturamentoFinalizacao } from './entities/faturamento-finalizacao.entity';
 import { FinalizarFaturamentoDto, ReabrirFaturamentoDto } from './dto/finalizar-faturamento.dto';
 import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
+import { CreateNotaFiscalDto } from './dto/create-nota-fiscal.dto';
+import { UpdateNotaFiscalDto } from './dto/update-nota-fiscal.dto';
 import { Preposto } from '../prepostos/entities/preposto.entity';
 import { PrepostoComissao } from '../prepostos/entities/preposto-comissao.entity';
 import { plainToInstance } from 'class-transformer';
@@ -413,6 +415,22 @@ describe('Finalizar/ReabrirFaturamentoDto — motivo', () => {
       pipeOptions,
     );
     expect(reabrir.map((error) => error.property)).toEqual(['motivo']);
+  });
+});
+
+describe('DTOs de nota fiscal — série removida', () => {
+  const pipeOptions = { whitelist: true, forbidNonWhitelisted: true };
+
+  it('recusa série ao criar', async () => {
+    const errors = await validate(plainToInstance(CreateNotaFiscalDto, {
+      uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', numero_nota: 'NF-1', valor: 10, serie: '1',
+    }), pipeOptions);
+    expect(errors.map((error) => error.property)).toContain('serie');
+  });
+
+  it('recusa série ao editar', async () => {
+    const errors = await validate(plainToInstance(UpdateNotaFiscalDto, { version: 1, serie: '1' }), pipeOptions);
+    expect(errors.map((error) => error.property)).toContain('serie');
   });
 });
 

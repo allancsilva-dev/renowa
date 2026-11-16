@@ -28,9 +28,6 @@ export class NotaFiscal extends VersionedBaseEntity {
   @Column({ name: 'numero_nota', type: 'varchar' })
   numero_nota: string;
 
-  @Column({ name: 'serie', type: 'varchar', nullable: true })
-  serie: string | null;
-
   @Column({ name: 'valor', type: 'decimal', precision: 18, scale: 2 })
   valor: string;
 

@@ -291,7 +291,6 @@ export default function PedidoDetalhe() {
               <thead>
                 <tr className='border-b bg-primary text-white'>
                   <th className='px-4 py-2 text-left font-semibold'>Número</th>
-                  <th className='px-4 py-2 text-left font-semibold'>Série</th>
                   <th className='px-4 py-2 text-left font-semibold'>Emissão</th>
                   <th className='px-4 py-2 text-right font-semibold'>Valor</th>
                   <th className='px-4 py-2 text-left font-semibold'>Observação</th>
@@ -301,7 +300,6 @@ export default function PedidoDetalhe() {
                 {notas.map((nota) => (
                   <tr key={nota.uuid} className='border-b last:border-0'>
                     <td className='px-4 py-2 font-mono'>{nota.numero_nota}</td>
-                    <td className='px-4 py-2'>{nota.serie ?? '—'}</td>
                     <td className='px-4 py-2'>{formatDate(nota.data_emissao)}</td>
                     <td className='px-4 py-2 text-right font-medium'>{BRL.format(moneyForDisplay(nota.valor))}</td>
                     <td className='px-4 py-2 max-w-xs truncate'>{nota.observacao ?? '—'}</td>

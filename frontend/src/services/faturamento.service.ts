@@ -68,7 +68,6 @@ export async function fetchFaturamentoPedidoDetalhe(uuid: string): Promise<Fatur
 export interface CreateNotaFiscalPayload {
   uuid: string;
   numero_nota: string;
-  serie?: string | null;
   valor: number;
   perc_comissao?: number;
   data_emissao?: string | null;
@@ -83,7 +82,6 @@ export async function registrarNota(pedidoUuid: string, payload: CreateNotaFisca
 export interface UpdateNotaFiscalPayload {
   version: number;
   numero_nota?: string;
-  serie?: string | null;
   valor?: number;
   data_emissao?: string | null;
   observacao?: string | null;

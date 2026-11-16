@@ -565,7 +565,7 @@ export class OrdersService {
   /**
    * Detalhe do pedido com as notas fiscais emitidas. O faturamento só devolve
    * o status para o pedido (ver FaturamentoService#recalculateOrderStatus); é
-   * aqui que número, série, emissão e valor das notas voltam para a tela de
+   * aqui que número, emissão e valor das notas voltam para a tela de
    * Pedidos — inclusive depois que o pedido sai da fila de faturamento.
    */
   async findOneDetalhe(uuid: string, user: RequestUser): Promise<OrderDetalhe> {

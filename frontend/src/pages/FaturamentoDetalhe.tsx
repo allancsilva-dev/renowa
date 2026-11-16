@@ -20,12 +20,11 @@ import { orderStatusLabel, orderStatusColor, type OrderStatus } from '@/types';
 
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
-type NotaForm = { numero_nota: string; serie: string; valor: number | null; data_emissao: string; observacao: string };
+type NotaForm = { numero_nota: string; valor: number | null; data_emissao: string; observacao: string };
 
 function notaToForm(n: NotaFiscal): NotaForm {
   return {
     numero_nota: n.numero_nota,
-    serie: n.serie ?? '',
     valor: Number(n.valor),
     data_emissao: n.data_emissao ?? '',
     observacao: n.observacao ?? '',
@@ -85,7 +84,6 @@ export default function FaturamentoDetalhe() {
       await atualizarNota(editingNota.uuid, {
         version: editingNota.version,
         numero_nota: editForm.numero_nota.trim(),
-        serie: editForm.serie.trim() || null,
         valor: normalizeMoney(editForm.valor),
         data_emissao: editForm.data_emissao || null,
         observacao: editForm.observacao.trim() || null,
@@ -278,7 +276,6 @@ export default function FaturamentoDetalhe() {
               <thead>
                 <tr className='border-b bg-primary text-white'>
                   <th className='px-4 py-2 text-left font-semibold'>Número</th>
-                  <th className='px-4 py-2 text-left font-semibold'>Série</th>
                   <th className='px-4 py-2 text-left font-semibold'>Emissão</th>
                   <th className='px-4 py-2 text-right font-semibold'>Valor</th>
                   <th className='px-4 py-2 text-left font-semibold'>Observação</th>
@@ -289,7 +286,6 @@ export default function FaturamentoDetalhe() {
                 {pedido.notas.map((nota) => (
                   <tr key={nota.uuid} className='border-b last:border-0'>
                     <td className='px-4 py-2 font-mono'>{nota.numero_nota}</td>
-                    <td className='px-4 py-2'>{nota.serie ?? '—'}</td>
                     <td className='px-4 py-2'>{formatDate(nota.data_emissao)}</td>
                     <td className='px-4 py-2 text-right font-medium'>{BRL.format(moneyForDisplay(nota.valor))}</td>
                     <td className='px-4 py-2 max-w-xs truncate'>{nota.observacao ?? '—'}</td>
@@ -332,7 +328,7 @@ export default function FaturamentoDetalhe() {
                 {formError}
               </div>
             )}
-            <div className='grid grid-cols-2 gap-3'>
+            <div className='grid gap-3'>
               <div className='flex flex-col gap-1'>
                 <label htmlFor='edit_numero_nota' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
                   Número da nota <span className='text-red-500'>*</span>
@@ -342,15 +338,6 @@ export default function FaturamentoDetalhe() {
                   required
                   value={editForm.numero_nota}
                   onChange={(e) => setEditForm((p) => (p ? { ...p, numero_nota: e.target.value } : p))}
-                  className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
-                />
-              </div>
-              <div className='flex flex-col gap-1'>
-                <label htmlFor='edit_serie' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Série</label>
-                <input
-                  id='edit_serie'
-                  value={editForm.serie}
-                  onChange={(e) => setEditForm((p) => (p ? { ...p, serie: e.target.value } : p))}
                   className='rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-primary focus:ring-1 focus:ring-primary/40'
                 />
               </div>

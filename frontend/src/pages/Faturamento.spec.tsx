@@ -77,6 +77,7 @@ describe('Faturamento — registro de nota', () => {
 
     await abrirMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar nota' }));
+    expect(screen.queryByLabelText('Série')).not.toBeInTheDocument();
     const percentual = screen.getByLabelText(/% Comissão/);
     expect(percentual).toHaveValue(5);
 
@@ -91,6 +92,7 @@ describe('Faturamento — registro de nota', () => {
     await waitFor(() => expect(mocks.registrar).toHaveBeenCalledWith('pedido-1', expect.objectContaining({
       numero_nota: 'NF-1', valor: 100, perc_comissao: 7.5,
     })));
+    expect(mocks.registrar.mock.calls[0][1]).not.toHaveProperty('serie');
   });
 
   it('menu ⋮ reúne todas as ações; Editar valor só para ADMIN', async () => {

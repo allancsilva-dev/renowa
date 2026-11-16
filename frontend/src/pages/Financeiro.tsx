@@ -106,7 +106,6 @@ interface Fornecedor {
 interface Faturado {
   uuid: string;
   numero_nota: string;
-  serie: string | null;
   valor: string;
   data_faturamento: string;
   pedido_uuid: string;
@@ -552,7 +551,7 @@ function Faturados() {
     <WriteError message={fornecedoresError} />
     <DataTable<Faturado>
       columns={[
-        { key: 'nota', header: 'NF / Série', cell: (row) => <span className='font-mono'>{row.numero_nota}{row.serie ? ` / ${row.serie}` : ''}</span> },
+        { key: 'nota', header: 'NF', cell: (row) => <span className='font-mono'>{row.numero_nota}</span> },
         { key: 'data', header: 'Emissão efetiva', cell: (row) => fmtDate(row.data_faturamento) },
         { key: 'pedido', header: 'Pedido', cell: (row) => row.numero_pedido != null ? `#${row.numero_pedido}` : '—' },
         { key: 'cliente', header: 'Cliente', cell: (row) => row.cliente ?? '—' },

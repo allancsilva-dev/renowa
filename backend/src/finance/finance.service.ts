@@ -75,14 +75,14 @@ export class FinanceService {
     if (filters.fornecedor_uuid) qb.andWhere('fornecedor.uuid = :fornecedorUuid', { fornecedorUuid: filters.fornecedor_uuid });
     applySearch(qb, filters.search, {
       text: [
-        'n.numero_nota', 'n.serie', 'CAST(pedido.numero_pedido AS TEXT)', 'pedido.numero_pedido_externo',
+        'n.numero_nota', 'CAST(pedido.numero_pedido AS TEXT)', 'pedido.numero_pedido_externo',
         'cliente.razao_social', 'fornecedor.razao_social',
       ],
       cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
     });
     const total = await qb.getCount();
     const data = await qb.select([
-      'n.uuid AS uuid', 'n.version AS version', 'n.numero_nota AS numero_nota', 'n.serie AS serie',
+      'n.uuid AS uuid', 'n.version AS version', 'n.numero_nota AS numero_nota',
       // TO_CHAR: `date` cru chega como Date JS (ISO com hora/fuso) e o front espera YYYY-MM-DD.
       'n.valor AS valor', `TO_CHAR(${effectiveDate}, 'YYYY-MM-DD') AS data_faturamento`, 'pedido.uuid AS pedido_uuid',
       'pedido.numero_pedido AS numero_pedido', 'cliente.razao_social AS cliente',

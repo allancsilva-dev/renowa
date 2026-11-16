@@ -131,8 +131,8 @@ export const PII_REGISTRY: readonly PiiTablePlan[] = [
     columns: { observacao: { set: 'null' } },
     bumpVersion: true,
     motivo:
-      'Observação livre da nota, alcançável pelo titular via pedido. Número, série '
-      + 'e valor ficam: são registro fiscal com retenção legal própria.',
+      'Observação livre da nota, alcançável pelo titular via pedido. Número e '
+      + 'valor ficam: são registro fiscal com retenção legal própria.',
   },
   {
     table: 'faturamento_finalizacoes',

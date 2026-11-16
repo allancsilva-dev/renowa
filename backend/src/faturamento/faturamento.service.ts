@@ -294,7 +294,6 @@ export class FaturamentoService {
         tenant_id: tenantId,
         pedido_id: order.id,
         numero_nota: dto.numero_nota,
-        serie: dto.serie ?? null,
         valor: money(dto.valor),
         data_emissao: dto.data_emissao ?? null,
         observacao: dto.observacao ?? null,
@@ -376,7 +375,6 @@ export class FaturamentoService {
       const valorChanged = novoValor !== nota.valor;
 
       if (dto.numero_nota !== undefined) nota.numero_nota = dto.numero_nota;
-      if (dto.serie !== undefined) nota.serie = dto.serie ?? null;
       if (dto.valor !== undefined) nota.valor = novoValor;
       if (dto.data_emissao !== undefined) nota.data_emissao = dto.data_emissao ?? null;
       if (dto.observacao !== undefined) nota.observacao = dto.observacao ?? null;
