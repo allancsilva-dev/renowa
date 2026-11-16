@@ -16,6 +16,7 @@ interface TenantUser {
   role: string;
   tenantId: string;
   active: boolean;
+  percentual_comissao: string;
 }
 
 interface UserUpsertForm {
@@ -23,6 +24,7 @@ interface UserUpsertForm {
   nome: string;
   senha: string;
   role: string;
+  percentual_comissao: string;
 }
 
 const PAGE_LIMIT = 10;
@@ -37,6 +39,7 @@ const DEFAULT_FORM: UserUpsertForm = {
   nome: '',
   senha: '',
   role: '',
+  percentual_comissao: '0',
 };
 
 export default function UsuariosPage() {
@@ -56,6 +59,7 @@ export default function UsuariosPage() {
   const [editRole, setEditRole] = useState('');
   const [editActive, setEditActive] = useState(true);
   const [editNewPassword, setEditNewPassword] = useState('');
+  const [editPercentualComissao, setEditPercentualComissao] = useState('0');
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
 
@@ -137,6 +141,11 @@ export default function UsuariosPage() {
       cell: (row: TenantUser) => row.active ? 'Ativo' : 'Inativo',
     },
     {
+      key: 'comissao',
+      header: '% Comissão',
+      cell: (row: TenantUser) => `${Number(row.percentual_comissao ?? 0).toLocaleString('pt-BR')}%`,
+    },
+    {
       key: 'acoes',
       header: 'Ações',
       cell: (row: TenantUser) => (
@@ -148,6 +157,7 @@ export default function UsuariosPage() {
               setEditRole(row.role);
               setEditActive(row.active);
               setEditNewPassword('');
+              setEditPercentualComissao(String(Number(row.percentual_comissao ?? 0)));
               setUpdateError(null);
             }}
             className='rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50'
@@ -191,6 +201,7 @@ export default function UsuariosPage() {
         nome: createForm.nome.trim(),
         senha: createForm.senha,
         role: createForm.role,
+        percentual_comissao: Number(createForm.percentual_comissao),
       });
       setCreateForm(DEFAULT_FORM);
       setIsCreateOpen(false);
@@ -214,6 +225,7 @@ export default function UsuariosPage() {
       await apiClient.patch(`/users/${editingUser.id}`, {
         role: editRole,
         active: editActive,
+        percentual_comissao: Number(editPercentualComissao),
         ...(editNewPassword ? { new_password: editNewPassword } : {}),
       });
       setEditingUser(null);
@@ -329,6 +341,13 @@ export default function UsuariosPage() {
                 ))}
               </select>
             </div>
+            <div className='space-y-1'>
+              <label htmlFor='new-user-commission' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>% Comissão</label>
+              <input id='new-user-commission' type='number' required min='0' max='100' step='0.01'
+                value={createForm.percentual_comissao}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, percentual_comissao: e.target.value }))}
+                className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40' />
+            </div>
             <div className='flex justify-end gap-3'>
               <button
                 type='button'
@@ -391,6 +410,14 @@ export default function UsuariosPage() {
               />
               Usuário ativo
             </label>
+
+            <div className='space-y-1'>
+              <label htmlFor='edit-user-commission' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>% Comissão</label>
+              <input id='edit-user-commission' type='number' required min='0' max='100' step='0.01'
+                value={editPercentualComissao} onChange={(e) => setEditPercentualComissao(e.target.value)}
+                className='w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/40' />
+              <p className='text-xs text-slate-400'>Vale para novas notas e pendências antigas ainda zeradas.</p>
+            </div>
 
             <div className='space-y-1'>
               <label htmlFor='edit-user-password' className='text-xs font-semibold uppercase tracking-wide text-slate-500'>Nova senha</label>

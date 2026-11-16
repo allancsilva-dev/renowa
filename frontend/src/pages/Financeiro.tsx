@@ -20,9 +20,8 @@ import { filterLocalOptions } from '@/lib/relationOptions';
 import EmptyState from '@/components/feedback/EmptyState';
 import { RowMenu, type RowMenuItem } from '@/components/tables/RowMenu';
 import { hojeLocal, isDataCompleta } from '@/lib/date';
-import PrepostosCadastro from '@/pages/prepostos/PrepostosCadastro';
 import {
-  alterarPercentualVenda, fetchPrepostoVendas, fetchPrepostos, registrarPagamentoVenda,
+  alterarPercentualVenda, fetchPrepostoVendas, fetchVendedoresOpcoes, registrarPagamentoVenda,
   type PrepostoVenda, type PrepostoVendasTotais, type SituacaoVenda,
 } from '@/services/prepostos.service';
 
@@ -1036,13 +1035,6 @@ const SITUACAO_VENDA: Record<SituacaoVenda, { label: string; cls: string }> = {
   pago: { label: 'PAGO', cls: 'bg-emerald-100 text-emerald-800' },
 };
 
-function prepostoFetcher(term: string, page: number): Promise<AsyncComboboxFetchResult> {
-  return fetchPrepostos({ search: term.trim() || undefined, page, limit: 20 }).then((result) => ({
-    options: result.data.map((preposto) => ({ value: preposto.uuid, label: preposto.nome })),
-    hasMore: result.meta.page < result.meta.totalPages,
-  }));
-}
-
 type AcaoVendedor = { tipo: 'percentual' | 'pagamento' | 'estorno'; venda: PrepostoVenda };
 
 /**
@@ -1052,15 +1044,15 @@ type AcaoVendedor = { tipo: 'percentual' | 'pagamento' | 'estorno'; venda: Prepo
  */
 function VendedoresComissoes() {
   const { hasPermission } = useAuth();
-  const canAlterarPercentual = hasPermission('prepostos.editar');
+  const canAlterarPercentual = hasPermission('financeiro.editar');
   const canPagar = hasPermission('financeiro.editar');
 
   const [periodo, setPeriodo] = useState<Periodo>({ inicio: currentMonthStart, fim: currentMonthEnd });
-  const [status, setStatus] = useState<'' | SituacaoVenda>('');
+  const [status, setStatus] = useState<'' | SituacaoVenda>('liberada');
   const [fornecedorId, setFornecedorId] = useState('');
   const [fornecedorLabel, setFornecedorLabel] = useState('');
-  const [prepostoUuid, setPrepostoUuid] = useState<string | null>(null);
-  const [prepostoLabel, setPrepostoLabel] = useState('');
+  const [vendedorKey, setVendedorKey] = useState<string | null>(null);
+  const [vendedorLabel, setVendedorLabel] = useState('');
   const { fornecedores, fornecedoresError, podeVerFornecedores } = useFornecedoresFiltro();
   const { search, setSearch, debouncedSearch } = useBusca();
 
@@ -1078,10 +1070,11 @@ function VendedoresComissoes() {
       data_fim: periodo.fim,
       status: status || undefined,
       fornecedor_id: fornecedorId ? Number(fornecedorId) : undefined,
-      preposto_uuid: prepostoUuid ?? undefined,
+      vendedor_tipo: vendedorKey?.split(':', 1)[0] as 'usuario' | 'preposto' | undefined,
+      vendedor_uuid: vendedorKey?.split(':')[1],
       search: debouncedSearch || undefined,
     }),
-    [periodo, status, fornecedorId, prepostoUuid, debouncedSearch],
+    [periodo, status, fornecedorId, vendedorKey, debouncedSearch],
   );
   const { data, meta, isLoading, error, goToPage, reload } = usePaginatedQuery<PrepostoVenda>({ fetcher });
   const totais = (meta as (typeof meta & { totais?: PrepostoVendasTotais }) | null)?.totais;
@@ -1162,6 +1155,19 @@ function VendedoresComissoes() {
   const fornecedorFetcher = (term: string, page: number): Promise<AsyncComboboxFetchResult> => Promise.resolve(filterLocalOptions(
     fornecedores.map((fornecedor) => ({ value: String(fornecedor.id), label: fornecedor.razao_social })), term, page,
   ));
+  const vendedorFetcher = useCallback((term: string): Promise<AsyncComboboxFetchResult> => fetchVendedoresOpcoes({
+    data_inicio: periodo.inicio,
+    data_fim: periodo.fim,
+    status: status || undefined,
+    search: term.trim() || undefined,
+  }).then((options) => ({
+    options: options.map((vendedor) => ({
+      value: `${vendedor.tipo}:${vendedor.uuid}`,
+      label: vendedor.nome,
+      description: vendedor.tipo === 'preposto' ? 'Preposto' : 'Usuário',
+    })),
+    hasMore: false,
+  })), [periodo, status]);
 
   return (
     <div className='space-y-5'>
@@ -1174,7 +1180,7 @@ function VendedoresComissoes() {
           </RelationFilter>
         )}
         <RelationFilter label='Vendedor'>
-          <AsyncCombobox value={prepostoUuid} displayValue={prepostoLabel} onChange={(value, option) => { setPrepostoUuid(value); setPrepostoLabel(option?.label ?? ''); }} fetcher={prepostoFetcher} ariaLabel='Filtrar por vendedor' placeholder='Todos vendedores' className={`${inputCls} min-h-11`} />
+          <AsyncCombobox key={`${periodo.inicio}:${periodo.fim}:${status}`} value={vendedorKey} displayValue={vendedorLabel} onChange={(value, option) => { setVendedorKey(value); setVendedorLabel(option?.label ?? ''); }} fetcher={vendedorFetcher} ariaLabel='Filtrar por vendedor' placeholder='Todos vendedores' className={`${inputCls} min-h-11`} />
         </RelationFilter>
         <label className='flex min-w-0 flex-col gap-1 xl:w-44 xl:shrink-0'>
           <span className={labelCls}>Status</span>
@@ -1218,7 +1224,7 @@ function VendedoresComissoes() {
             ),
           },
           { key: 'fornecedor', header: 'Fornecedor', cell: (v) => <span className='text-slate-700'>{v.pedido.fornecedor ?? '—'}</span> },
-          { key: 'vendedor', header: 'Vendedor', cell: (v) => <span className='font-medium text-slate-900'>{v.preposto.nome}</span> },
+          { key: 'vendedor', header: 'Vendedor', cell: (v) => <span className='font-medium text-slate-900'>{v.vendedor.nome}</span> },
           { key: 'valor', header: 'Valor da nota', className: 'text-right', cell: (v) => <span className='tabular-nums text-slate-900'>{BRL.format(moneyForDisplay(v.valor_faturado))}</span> },
           { key: 'perc', header: '%', className: 'text-right', cell: (v) => <span className='tabular-nums text-slate-600'>{Number(v.perc_comissao).toLocaleString('pt-BR')}%</span> },
           { key: 'comissao', header: 'Comissão', className: 'text-right', cell: (v) => <span className='font-semibold tabular-nums text-teal-700'>{BRL.format(moneyForDisplay(v.valor_comissao))}</span> },
@@ -1239,7 +1245,7 @@ function VendedoresComissoes() {
             cell: (v) => {
               const items = acoesDaVenda(v);
               return items.length > 0
-                ? <RowMenu label={`Ações da comissão de ${v.preposto.nome} NF ${v.numero_nfe ?? 'sem número'}`} items={items} />
+                ? <RowMenu label={`Ações da comissão de ${v.vendedor.nome} NF ${v.numero_nfe ?? 'sem número'}`} items={items} />
                 : <span className='text-slate-400'>—</span>;
             },
           },
@@ -1262,7 +1268,7 @@ function VendedoresComissoes() {
           <form onSubmit={confirmar} className='space-y-4'>
             <WriteError message={acaoError} />
             <p className='text-sm text-slate-600'>
-              {acao.venda.preposto.nome} · NF {acao.venda.numero_nfe ?? 'sem número'} · nota de{' '}
+              {acao.venda.vendedor.nome} · NF {acao.venda.numero_nfe ?? 'sem número'} · nota de{' '}
               <span className='font-semibold text-slate-900'>{BRL.format(moneyForDisplay(acao.venda.valor_faturado))}</span>
             </p>
             {acao.tipo === 'percentual' && (
@@ -1302,34 +1308,9 @@ function VendedoresComissoes() {
   );
 }
 
-const VENDEDORES_VISOES = [
-  { id: 'comissoes', label: 'Comissões' },
-  { id: 'cadastro', label: 'Cadastro' },
-] as const;
-
-/** Aba Vendedores: comissões dos vendedores (prepostos) e o cadastro deles. */
+/** Aba Vendedores: pagamentos derivados do vendedor escolhido no pedido. */
 function Vendedores() {
-  const [visao, setVisao] = useState<(typeof VENDEDORES_VISOES)[number]['id']>('comissoes');
-  return (
-    <div className='space-y-5'>
-      <div role='group' aria-label='Visão de vendedores' className='inline-flex rounded-lg border border-slate-200 bg-white p-1'>
-        {VENDEDORES_VISOES.map((item) => (
-          <button
-            key={item.id}
-            type='button'
-            aria-pressed={visao === item.id}
-            onClick={() => setVisao(item.id)}
-            className={`min-h-11 rounded-md px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-              visao === item.id ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      {visao === 'comissoes' ? <VendedoresComissoes /> : <PrepostosCadastro />}
-    </div>
-  );
+  return <VendedoresComissoes />;
 }
 
 // ─── Tab: Parceiros ───────────────────────────────────────────────────────────
@@ -1847,7 +1828,7 @@ const TABS: { id: Tab; label: string; permission?: string }[] = [
   { id: 'empresas', label: 'Empresas' },
   { id: 'parceiros', label: 'Parceiros' },
   { id: 'comissao', label: 'Comissão' },
-  { id: 'vendedores', label: 'Vendedores', permission: 'prepostos.ver' },
+  { id: 'vendedores', label: 'Vendedores', permission: 'financeiro.ver' },
   { id: 'custos', label: 'Custos' },
   { id: 'inadimplencia', label: 'Inadimplência' },
 ];

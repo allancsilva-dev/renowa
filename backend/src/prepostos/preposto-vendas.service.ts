@@ -4,6 +4,7 @@ import { DataSource, EntityManager, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { PrepostoComissao } from './entities/preposto-comissao.entity';
 import { Preposto } from './entities/preposto.entity';
+import { User } from '../users/entities/user.entity';
 import { FinanceMovement } from '../finance/entities/finance-movement.entity';
 import { Commission } from '../finance/entities/commission.entity';
 import { AlterarPercentualVendaDto, ListPrepostoVendasDto, PagamentoVendaDto } from './dto/preposto-vendas.dto';
@@ -40,7 +41,7 @@ export interface PrepostoVendaRow {
   valor_faturado: string;
   perc_comissao: string;
   valor_comissao: string;
-  preposto: { uuid: string; nome: string };
+  vendedor: { tipo: 'usuario' | 'preposto'; uuid: string; nome: string };
   pedido: { uuid: string; numero_pedido: number | null; cliente: string | null; fornecedor: string | null };
 }
 
@@ -70,7 +71,8 @@ export class PrepostoVendasService {
     const { page = 1, limit = 20 } = dto;
 
     const qb = this.vendaRepo.createQueryBuilder('v')
-      .innerJoin('v.preposto', 'preposto')
+      .leftJoin('v.preposto', 'preposto')
+      .leftJoin('v.vendedor', 'vendedor')
       .innerJoin('v.pedido', 'pedido')
       .leftJoin('pedido.cliente', 'cliente')
       .leftJoin('pedido.fornecedor', 'fornecedor')
@@ -82,12 +84,19 @@ export class PrepostoVendasService {
       .where('v.tenant_id = :tenantId', { tenantId })
       .andWhere('v.deleted_at IS NULL');
     if (dto.preposto_uuid) qb.andWhere('preposto.uuid = :prepostoUuid', { prepostoUuid: dto.preposto_uuid });
+    if (dto.vendedor_tipo === 'usuario') qb.andWhere('v.vendedor_id IS NOT NULL');
+    if (dto.vendedor_tipo === 'preposto') qb.andWhere('v.preposto_id IS NOT NULL');
+    if (dto.vendedor_uuid) {
+      if (dto.vendedor_tipo === 'usuario') qb.andWhere('vendedor.uuid = :vendedorUuid', { vendedorUuid: dto.vendedor_uuid });
+      else if (dto.vendedor_tipo === 'preposto') qb.andWhere('preposto.uuid = :vendedorUuid', { vendedorUuid: dto.vendedor_uuid });
+      else qb.andWhere('(vendedor.uuid = :vendedorUuid OR preposto.uuid = :vendedorUuid)', { vendedorUuid: dto.vendedor_uuid });
+    }
     if (dto.fornecedor_id) qb.andWhere('pedido.fornecedor_id = :fornecedorId', { fornecedorId: dto.fornecedor_id });
     if (dto.data_inicio && dto.data_fim) {
       qb.andWhere('v.data_faturamento BETWEEN :inicio AND :fim', { inicio: dto.data_inicio, fim: dto.data_fim });
     }
     applySearch(qb, dto.search, {
-      text: ['v.numero_nfe', 'CAST(pedido.numero_pedido AS TEXT)', 'pedido.numero_pedido_externo', 'preposto.nome', 'cliente.razao_social', 'fornecedor.razao_social'],
+      text: ['v.numero_nfe', 'CAST(pedido.numero_pedido AS TEXT)', 'pedido.numero_pedido_externo', 'preposto.nome', 'vendedor.nome', 'cliente.razao_social', 'fornecedor.razao_social'],
       cnpj: ['cliente.cnpj', 'fornecedor.cnpj'],
     });
 
@@ -115,6 +124,7 @@ export class PrepostoVendasService {
         "to_char(comissao_empresa.data_pagamento, 'YYYY-MM-DD') AS data_liberacao",
         'v.valor_faturado AS valor_faturado', 'v.perc_comissao AS perc_comissao', 'v.valor_comissao AS valor_comissao',
         'preposto.uuid AS preposto_uuid', 'preposto.nome AS preposto_nome',
+        'vendedor.uuid AS vendedor_uuid', 'vendedor.nome AS vendedor_nome',
         'pedido.uuid AS pedido_uuid', 'pedido.numero_pedido AS numero_pedido', 'cliente.razao_social AS cliente',
         'fornecedor.razao_social AS fornecedor',
       ])
@@ -139,7 +149,9 @@ export class PrepostoVendasService {
       valor_faturado: money(row.valor_faturado as string),
       perc_comissao: money(row.perc_comissao as string),
       valor_comissao: money(row.valor_comissao as string),
-      preposto: { uuid: String(row.preposto_uuid), nome: String(row.preposto_nome) },
+      vendedor: row.vendedor_uuid
+        ? { tipo: 'usuario', uuid: String(row.vendedor_uuid), nome: String(row.vendedor_nome) }
+        : { tipo: 'preposto', uuid: String(row.preposto_uuid), nome: String(row.preposto_nome) },
       pedido: {
         uuid: String(row.pedido_uuid),
         numero_pedido: row.numero_pedido === null ? null : Number(row.numero_pedido),
@@ -160,10 +172,45 @@ export class PrepostoVendasService {
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit), totais } };
   }
 
+  /** Vendedores que possuem NF no recorte atual; não expõe cadastro sem venda. */
+  async opcoes(tenantId: string, dto: ListPrepostoVendasDto) {
+    if (!dto.data_inicio || !dto.data_fim) throw new BadRequestException('Informe data_inicio e data_fim juntas.');
+    if (dto.data_inicio > dto.data_fim) throw new BadRequestException('data_inicio não pode ser posterior a data_fim.');
+    const qb = this.vendaRepo.createQueryBuilder('v')
+      .leftJoin('v.preposto', 'preposto')
+      .leftJoin('v.vendedor', 'vendedor')
+      .leftJoin(
+        Commission, 'comissao_empresa',
+        'comissao_empresa.tenant_id = v.tenant_id AND comissao_empresa.nota_fiscal_id = v.nota_fiscal_id AND comissao_empresa.deleted_at IS NULL',
+      )
+      .where('v.tenant_id = :tenantId', { tenantId })
+      .andWhere('v.deleted_at IS NULL')
+      .andWhere('v.data_faturamento BETWEEN :inicio AND :fim', { inicio: dto.data_inicio, fim: dto.data_fim });
+    if (dto.status === 'pago') qb.andWhere("v.status = 'pago'");
+    if (dto.status === 'pendente') qb.andWhere("v.status = 'pendente'");
+    if (dto.status === 'liberada') qb.andWhere(`v.status = 'pendente' AND COALESCE(${LIBERADA_SQL}, false)`);
+    if (dto.status === 'aguardando') qb.andWhere(`v.status = 'pendente' AND NOT COALESCE(${LIBERADA_SQL}, false)`);
+    if (dto.search?.trim()) {
+      qb.andWhere('LOWER(COALESCE(vendedor.nome, preposto.nome)) LIKE :busca', { busca: `%${dto.search.trim().toLowerCase()}%` });
+    }
+    const rows = await qb.select([
+      "CASE WHEN v.vendedor_id IS NOT NULL THEN 'usuario' ELSE 'preposto' END AS tipo",
+      'COALESCE(vendedor.uuid, preposto.uuid) AS uuid',
+      'COALESCE(vendedor.nome, preposto.nome) AS nome',
+    ]).distinct(true).orderBy('COALESCE(vendedor.nome, preposto.nome)', 'ASC').limit(100).getRawMany();
+    return rows.map((row) => ({ tipo: row.tipo as 'usuario' | 'preposto', uuid: String(row.uuid), nome: String(row.nome) }));
+  }
+
   /** Percentual da venda (snapshot) — só enquanto não paga. */
-  async alterarPercentual(uuid: string, dto: AlterarPercentualVendaDto, tenantId: string): Promise<PrepostoComissao> {
+  async alterarPercentual(
+    uuid: string,
+    dto: AlterarPercentualVendaDto,
+    tenantId: string,
+    tipoEsperado?: 'usuario' | 'preposto',
+  ): Promise<PrepostoComissao> {
     return this.dataSource.transaction(async (manager) => {
       const venda = await this.lockVenda(manager, uuid, tenantId, dto.version);
+      this.assertTipo(venda, tipoEsperado);
       if (venda.status === 'pago') {
         throw new ConflictException('Comissão já paga. Estorne o pagamento para alterar o percentual.');
       }
@@ -183,9 +230,15 @@ export class PrepostoVendasService {
    * da venda fica travada (FOR UPDATE) — dois cliques não geram duas saídas, e
    * o índice único de `movimento_id` é a segunda barreira.
    */
-  async registrarPagamento(uuid: string, dto: PagamentoVendaDto, tenantId: string): Promise<PrepostoComissao> {
+  async registrarPagamento(
+    uuid: string,
+    dto: PagamentoVendaDto,
+    tenantId: string,
+    tipoEsperado?: 'usuario' | 'preposto',
+  ): Promise<PrepostoComissao> {
     return this.dataSource.transaction(async (manager) => {
       const venda = await this.lockVenda(manager, uuid, tenantId, dto.version);
+      this.assertTipo(venda, tipoEsperado);
       const repo = manager.getRepository(PrepostoComissao);
       const movimentoRepo = manager.getRepository(FinanceMovement);
 
@@ -209,17 +262,19 @@ export class PrepostoVendasService {
           [tenantId, venda.nota_fiscal_id],
         ) as Array<{ status: string }>;
         if (comissaoEmpresa?.status !== 'pago') throw new ConflictException(COMISSAO_EMPRESA_NAO_PAGA);
-        const preposto = await manager.getRepository(Preposto).findOne({
-          where: { id: venda.preposto_id, tenant_id: tenantId },
-          withDeleted: true,
-        });
+        const preposto = venda.preposto_id ? await manager.getRepository(Preposto).findOne({
+          where: { id: venda.preposto_id, tenant_id: tenantId }, withDeleted: true,
+        }) : null;
+        const vendedor = venda.vendedor_id ? await manager.getRepository(User).findOne({
+          where: { id: venda.vendedor_id, tenant_id: tenantId }, withDeleted: true,
+        }) : null;
         const movimento = await movimentoRepo.save(movimentoRepo.create({
           uuid: randomUUID(),
           tenant_id: tenantId,
           tipo: TIPO_SAIDA,
           valor: money(venda.valor_comissao),
           data: dto.data_pagamento,
-          descricao: `Comissão preposto ${preposto?.nome ?? ''} – NF ${venda.numero_nfe ?? 's/n'}`.replace(/\s+/g, ' ').slice(0, 255),
+          descricao: `Comissão vendedor ${vendedor?.nome ?? preposto?.nome ?? ''} – NF ${venda.numero_nfe ?? 's/n'}`.replace(/\s+/g, ' ').slice(0, 255),
         }));
         await repo.update({ id: venda.id, tenant_id: tenantId }, {
           status: 'pago',
@@ -257,5 +312,10 @@ export class PrepostoVendasService {
       throw new ConcurrentModificationException('preposto-venda', uuid, version, venda.version);
     }
     return venda;
+  }
+
+  private assertTipo(venda: PrepostoComissao, tipoEsperado?: 'usuario' | 'preposto'): void {
+    if (tipoEsperado === 'preposto' && !venda.preposto_id) throw new NotFoundException(`Venda ${venda.uuid} não encontrada.`);
+    if (tipoEsperado === 'usuario' && !venda.vendedor_id) throw new NotFoundException(`Venda ${venda.uuid} não encontrada.`);
   }
 }

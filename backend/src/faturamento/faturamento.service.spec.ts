@@ -11,6 +11,7 @@ import { CreateNotaFiscalDto } from './dto/create-nota-fiscal.dto';
 import { UpdateNotaFiscalDto } from './dto/update-nota-fiscal.dto';
 import { Preposto } from '../prepostos/entities/preposto.entity';
 import { PrepostoComissao } from '../prepostos/entities/preposto-comissao.entity';
+import { User } from '../users/entities/user.entity';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
@@ -71,7 +72,7 @@ function buildRepos({ order, notaSumAfter, existingNota = null }: { order: Order
 
 const vendaPrepostoVazia = { findOne: jest.fn().mockResolvedValue(null) };
 
-function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: any; finalizacaoRepo: any; vendaPrepostoRepo?: any; prepostoRepo?: any }) {
+function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: any; finalizacaoRepo: any; vendaPrepostoRepo?: any; prepostoRepo?: any; userRepo?: any }) {
   const manager = {
     getRepository: jest.fn((entity: any) => {
       if (entity === Order) return repos.orderRepo;
@@ -80,6 +81,7 @@ function buildService(repos: { orderRepo: any; notaRepo: any; commissionRepo: an
       if (entity === FaturamentoFinalizacao) return repos.finalizacaoRepo;
       if (entity === PrepostoComissao) return repos.vendaPrepostoRepo ?? vendaPrepostoVazia;
       if (entity === Preposto) return repos.prepostoRepo ?? { findOne: jest.fn().mockResolvedValue(null) };
+      if (entity === User) return repos.userRepo ?? { findOne: jest.fn().mockResolvedValue(null) };
       throw new Error(`repo not mocked for ${String(entity)}`);
     }),
   };
@@ -568,6 +570,22 @@ describe('FaturamentoService — venda do preposto', () => {
     const service = buildService(repos);
     await service.registrarNota(pedidoUuid, { uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', numero_nota: 'NF-9', valor: 40 } as any, tenantId);
     expect(repos.vendaPrepostoRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('nota de pedido com usuário vendedor cria comissão com percentual do usuário', async () => {
+    const order = buildOrder({ vendedor_id: 8, preposto_id: null } as Partial<Order>);
+    const repos = {
+      ...buildRepos({ order, notaSumAfter: '40.00' }),
+      vendaPrepostoRepo: vendaRepo(),
+      userRepo: { findOne: jest.fn().mockResolvedValue({ id: 8, percentual_comissao: '4.00' }) },
+    };
+    const service = buildService(repos);
+
+    await service.registrarNota(pedidoUuid, { uuid: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', numero_nota: 'NF-9', valor: 40 } as any, tenantId);
+
+    expect(repos.vendaPrepostoRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      preposto_id: null, vendedor_id: 8, perc_comissao: '4.00', valor_comissao: '1.60',
+    }));
   });
 
   it('editar nota recalcula venda pendente com o % gravado na venda', async () => {

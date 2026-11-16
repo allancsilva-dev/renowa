@@ -5,10 +5,11 @@ import { PrepostoComissao } from './entities/preposto-comissao.entity';
 import { PrepostoVendasService } from './preposto-vendas.service';
 import { PrepostosController } from './prepostos.controller';
 import { PrepostosService } from './prepostos.service';
+import { VendedoresController } from './vendedores.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Preposto, PrepostoComissao])],
-  controllers: [PrepostosController],
+  controllers: [PrepostosController, VendedoresController],
   providers: [PrepostosService, PrepostoVendasService],
   exports: [PrepostosService],
 })

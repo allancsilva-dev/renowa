@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class CreateUserDto {
   @IsEmail()
@@ -17,4 +17,10 @@ export class CreateUserDto {
   @IsString()
   @MaxLength(100)
   role: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(100)
+  percentual_comissao?: number;
 }

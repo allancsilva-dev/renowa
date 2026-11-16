@@ -17,9 +17,10 @@ import { AjustarValorPedidoDto } from './dto/ajustar-valor-pedido.dto';
 import { orderValorEfetivo } from '../orders/order-valor';
 import { Preposto } from '../prepostos/entities/preposto.entity';
 import { PrepostoComissao } from '../prepostos/entities/preposto-comissao.entity';
+import { User } from '../users/entities/user.entity';
 import { saoPauloDate } from '../common/dates/sao-paulo-date';
 
-const VENDA_PREPOSTO_PAGA = 'A comissão do preposto desta nota já foi paga. Estorne o pagamento na aba Vendedores do Financeiro antes de alterar ou excluir a nota.';
+const VENDA_PREPOSTO_PAGA = 'A comissão do vendedor desta nota já foi paga. Estorne o pagamento na aba Vendedores do Financeiro antes de alterar ou excluir a nota.';
 
 /** Pedidos elegíveis para registrar nota fiscal (fora de em_aberto/cancelado). */
 const FATURAVEL_STATUSES = ['liberado', 'parcialmente_faturado', 'faturado'];
@@ -199,25 +200,33 @@ export class FaturamentoService {
    * preposto pode ter sido excluído depois que o pedido foi feito — a venda
    * dele continua devida.
    */
-  private async criarVendaPreposto(manager: EntityManager, order: Order, nota: NotaFiscal): Promise<void> {
-    if (!order.preposto_id) return;
-    const preposto = await manager.getRepository(Preposto).findOne({
-      where: { id: order.preposto_id, tenant_id: order.tenant_id },
-      withDeleted: true,
-    });
-    if (!preposto) return;
+  private async criarComissaoVendedor(manager: EntityManager, order: Order, nota: NotaFiscal): Promise<void> {
+    if (!order.preposto_id && !order.vendedor_id) return;
+    const preposto = order.preposto_id
+      ? await manager.getRepository(Preposto).findOne({
+          where: { id: order.preposto_id, tenant_id: order.tenant_id }, withDeleted: true,
+        })
+      : null;
+    const vendedor = order.vendedor_id
+      ? await manager.getRepository(User).findOne({
+          where: { id: order.vendedor_id, tenant_id: order.tenant_id }, withDeleted: true,
+        })
+      : null;
+    const recebedor = preposto ?? vendedor;
+    if (!recebedor) return;
     const repo = manager.getRepository(PrepostoComissao);
     await repo.save(repo.create({
       uuid: randomUUID(),
       tenant_id: order.tenant_id,
-      preposto_id: preposto.id,
+      preposto_id: preposto?.id ?? null,
+      vendedor_id: vendedor?.id ?? null,
       pedido_id: order.id,
       nota_fiscal_id: nota.id,
       numero_nfe: nota.numero_nota,
       data_faturamento: nota.data_emissao ?? saoPauloDate(nota.created_at ?? new Date()),
       valor_faturado: nota.valor,
-      perc_comissao: money(preposto.percentual_comissao),
-      valor_comissao: percentageOf(nota.valor, preposto.percentual_comissao),
+      perc_comissao: money(recebedor.percentual_comissao),
+      valor_comissao: percentageOf(nota.valor, recebedor.percentual_comissao),
       status: 'pendente',
       data_pagamento: null,
       movimento_id: null,
@@ -319,7 +328,7 @@ export class FaturamentoService {
         status: 'faturado',
       });
       await commissionRepo.save(commission);
-      await this.criarVendaPreposto(manager, order, savedNota);
+      await this.criarComissaoVendedor(manager, order, savedNota);
 
       await this.recalculateOrderStatus(manager, order);
 

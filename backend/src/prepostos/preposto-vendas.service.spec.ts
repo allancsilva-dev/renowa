@@ -7,6 +7,7 @@ import { Preposto } from './entities/preposto.entity';
 import { FinanceMovement } from '../finance/entities/finance-movement.entity';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { PagamentoVendaDto } from './dto/preposto-vendas.dto';
+import { User } from '../users/entities/user.entity';
 
 const tenantId = 'tenant-a';
 const uuid = '99999999-9999-4999-8999-999999999999';
@@ -31,12 +32,14 @@ function subject(current: PrepostoComissao | null, comissaoEmpresa: { status: st
     update: jest.fn().mockResolvedValue({ affected: 1 }),
   };
   const prepostoRepo = { findOne: jest.fn().mockResolvedValue({ id: 7, nome: 'Paula' }) };
+  const userRepo = { findOne: jest.fn().mockResolvedValue({ id: 8, nome: 'Carlos' }) };
   const manager = {
     query: jest.fn().mockResolvedValue(comissaoEmpresa ? [comissaoEmpresa] : []),
     getRepository: jest.fn((entity: unknown) => {
       if (entity === PrepostoComissao) return vendaRepo;
       if (entity === FinanceMovement) return movimentoRepo;
       if (entity === Preposto) return prepostoRepo;
+      if (entity === User) return userRepo;
       throw new Error('repo não mockado');
     }),
   };
@@ -52,12 +55,20 @@ describe('PrepostoVendasService — pagamento', () => {
     expect(vendaRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({ lock: { mode: 'pessimistic_write' } }));
     expect(movimentoRepo.save).toHaveBeenCalledWith(expect.objectContaining({
       tenant_id: tenantId, tipo: 'Custo Rotativo', valor: '30.00', data: '2026-10-10',
-      descricao: 'Comissão preposto Paula – NF NF-9',
+      descricao: 'Comissão vendedor Paula – NF NF-9',
     }));
     expect(vendaRepo.update).toHaveBeenCalledWith(
       { id: 3, tenant_id: tenantId },
       expect.objectContaining({ status: 'pago', data_pagamento: '2026-10-10', movimento_id: 44 }),
     );
+  });
+
+  it('paga usuário interno escolhido no pedido', async () => {
+    const { movimentoRepo, service } = subject(venda({ preposto_id: null, vendedor_id: 8 }));
+    await service.registrarPagamento(uuid, { data_pagamento: '2026-10-10', version: 2 }, tenantId);
+    expect(movimentoRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      descricao: 'Comissão vendedor Carlos – NF NF-9',
+    }));
   });
 
   it('não paga duas vezes nem paga comissão zerada', async () => {
@@ -135,7 +146,7 @@ describe('PrepostoVendasService — percentual', () => {
 describe('PrepostoVendasService — listagem', () => {
   function listSubject() {
     const qb: any = {};
-    for (const m of ['innerJoin', 'leftJoin', 'where', 'andWhere', 'select', 'addSelect', 'orderBy', 'addOrderBy', 'offset', 'limit']) {
+    for (const m of ['innerJoin', 'leftJoin', 'where', 'andWhere', 'select', 'addSelect', 'orderBy', 'addOrderBy', 'offset', 'limit', 'distinct']) {
       qb[m] = jest.fn().mockReturnValue(qb);
     }
     const clones: any[] = [];
@@ -174,6 +185,7 @@ describe('PrepostoVendasService — listagem', () => {
     });
     expect(result.data[0]).toEqual(expect.objectContaining({
       valor_comissao: '30.00', perc_comissao: '3.00', situacao: 'liberada', data_liberacao: '2026-10-08',
+      vendedor: { tipo: 'preposto', uuid: 'p1', nome: 'Paula' },
       pedido: { uuid: 'ped', numero_pedido: 42, cliente: 'Cliente', fornecedor: 'Fornecedor X' },
     }));
     expect(result.data[1]).toEqual(expect.objectContaining({ situacao: 'aguardando', data_liberacao: null }));
@@ -196,6 +208,25 @@ describe('PrepostoVendasService — listagem', () => {
     const { service } = listSubject();
     await expect(service.list(tenantId, { data_inicio: '2026-10-01' } as any)).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.list(tenantId, { data_inicio: '2026-10-02', data_fim: '2026-10-01' } as any)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('opções vêm somente de vendedores com NF no período e preservam o tipo', async () => {
+    const { qb, service } = listSubject();
+    qb.getRawMany.mockResolvedValueOnce([
+      { tipo: 'usuario', uuid: 'u1', nome: 'Carlos' },
+      { tipo: 'preposto', uuid: 'p1', nome: 'Paula' },
+    ]);
+    const result = await service.opcoes(tenantId, {
+      data_inicio: '2026-10-01', data_fim: '2026-10-31', status: 'liberada', search: 'a',
+    });
+    expect(qb.andWhere).toHaveBeenCalledWith('v.data_faturamento BETWEEN :inicio AND :fim', {
+      inicio: '2026-10-01', fim: '2026-10-31',
+    });
+    expect(qb.andWhere).toHaveBeenCalledWith("v.status = 'pendente' AND COALESCE((comissao_empresa.status = 'pago'), false)");
+    expect(result).toEqual([
+      { tipo: 'usuario', uuid: 'u1', nome: 'Carlos' },
+      { tipo: 'preposto', uuid: 'p1', nome: 'Paula' },
+    ]);
   });
 });
 

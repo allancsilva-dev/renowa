@@ -2,6 +2,7 @@ import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { VersionedBaseEntity } from '../../common/entities/versioned-base.entity';
 import { Preposto } from './preposto.entity';
 import { Order } from '../../orders/entities/order.entity';
+import { User } from '../../users/entities/user.entity';
 
 /**
  * Venda do preposto (0051): uma por nota fiscal ativa de pedido com preposto.
@@ -14,15 +15,25 @@ import { Order } from '../../orders/entities/order.entity';
 @Index(['tenant_id', 'uuid'], { unique: true })
 @Index(['tenant_id', 'updated_at'])
 export class PrepostoComissao extends VersionedBaseEntity {
-  @Column({ name: 'preposto_id', type: 'int' })
-  preposto_id: number;
+  @Column({ name: 'preposto_id', type: 'int', nullable: true })
+  preposto_id: number | null;
 
   @ManyToOne(() => Preposto)
   @JoinColumn([
     { name: 'tenant_id', referencedColumnName: 'tenant_id' },
     { name: 'preposto_id', referencedColumnName: 'id' },
   ])
-  preposto: Preposto;
+  preposto: Preposto | null;
+
+  @Column({ name: 'vendedor_id', type: 'int', nullable: true })
+  vendedor_id: number | null;
+
+  @ManyToOne(() => User)
+  @JoinColumn([
+    { name: 'tenant_id', referencedColumnName: 'tenant_id' },
+    { name: 'vendedor_id', referencedColumnName: 'id' },
+  ])
+  vendedor: User | null;
 
   @Column({ name: 'pedido_id', type: 'int' })
   pedido_id: number;

@@ -27,6 +27,9 @@ export class User extends BaseEntity {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   is_active: boolean;
 
+  @Column({ name: 'percentual_comissao', type: 'decimal', precision: 5, scale: 2, default: 0 })
+  percentual_comissao: string;
+
   @Column({ name: 'last_login_at', type: 'timestamptz', nullable: true })
   last_login_at: Date | null;
 

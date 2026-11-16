@@ -27,7 +27,7 @@ export class PrepostosController {
   @Get('vendas')
   @RequirePermission('prepostos.ver')
   async listVendas(@Query() query: ListPrepostoVendasDto, @CurrentUser() user: RequestUser) {
-    return this.vendasService.list(user.tenantId, query);
+    return this.vendasService.list(user.tenantId, { ...query, vendedor_tipo: 'preposto' });
   }
 
   @Patch('vendas/:uuid/percentual')
@@ -38,7 +38,7 @@ export class PrepostosController {
     @Body() dto: AlterarPercentualVendaDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.vendasService.alterarPercentual(uuid, dto, user.tenantId);
+    return this.vendasService.alterarPercentual(uuid, dto, user.tenantId, 'preposto');
   }
 
   /** Mexe no caixa: exige financeiro.editar além de enxergar prepostos. */
@@ -50,7 +50,7 @@ export class PrepostosController {
     @Body() dto: PagamentoVendaDto,
     @CurrentUser() user: RequestUser,
   ) {
-    return this.vendasService.registrarPagamento(uuid, dto, user.tenantId);
+    return this.vendasService.registrarPagamento(uuid, dto, user.tenantId, 'preposto');
   }
 
   @Post()

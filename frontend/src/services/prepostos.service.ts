@@ -43,7 +43,7 @@ export interface PrepostoVenda {
   valor_faturado: string;
   perc_comissao: string;
   valor_comissao: string;
-  preposto: { uuid: string; nome: string };
+  vendedor: { tipo: 'usuario' | 'preposto'; uuid: string; nome: string };
   pedido: { uuid: string; numero_pedido: number | null; cliente: string | null; fornecedor: string | null };
 }
 
@@ -62,20 +62,29 @@ export type PrepostoVendasResponse = PaginatedResponse<PrepostoVenda> & {
 };
 
 export async function fetchPrepostoVendas(params: {
-  page?: number; limit?: number; preposto_uuid?: string; status?: SituacaoVenda | 'pendente';
+  page?: number; limit?: number; vendedor_uuid?: string; vendedor_tipo?: 'usuario' | 'preposto'; status?: SituacaoVenda | 'pendente';
   fornecedor_id?: number; search?: string; data_inicio?: string; data_fim?: string;
 }): Promise<PrepostoVendasResponse> {
-  const { data } = await api.get<PrepostoVendasResponse>('/prepostos/vendas', { params });
+  const { data } = await api.get<PrepostoVendasResponse>('/vendedores/comissoes', { params });
+  return data;
+}
+
+export interface VendedorOpcao { tipo: 'usuario' | 'preposto'; uuid: string; nome: string }
+
+export async function fetchVendedoresOpcoes(params: {
+  data_inicio: string; data_fim: string; status?: SituacaoVenda | 'pendente'; search?: string;
+}): Promise<VendedorOpcao[]> {
+  const { data } = await api.get<VendedorOpcao[]>('/vendedores/comissoes/opcoes', { params });
   return data;
 }
 
 export async function alterarPercentualVenda(uuid: string, payload: { perc_comissao: number; version: number }) {
-  const { data } = await api.patch<ApiResponse<unknown>>(`/prepostos/vendas/${uuid}/percentual`, payload);
+  const { data } = await api.patch<ApiResponse<unknown>>(`/vendedores/comissoes/${uuid}/percentual`, payload);
   return data.data;
 }
 
 /** `data_pagamento` null estorna (apaga a saída no Financeiro). */
 export async function registrarPagamentoVenda(uuid: string, payload: { data_pagamento: string | null; version: number }) {
-  const { data } = await api.patch<ApiResponse<unknown>>(`/prepostos/vendas/${uuid}/pagamento`, payload);
+  const { data } = await api.patch<ApiResponse<unknown>>(`/vendedores/comissoes/${uuid}/pagamento`, payload);
   return data.data;
 }

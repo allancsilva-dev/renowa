@@ -17,6 +17,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { PasswordService } from '../auth/password.service';
 import { AuditService } from '../audit/audit.service';
 import { RequestUser } from '../common/types/jwt-payload.type';
+import { money } from '../common/decimal/decimal';
 
 @Injectable()
 export class UsersService {
@@ -206,6 +207,7 @@ export class UsersService {
     role: string;
     tenantId: string;
     active: boolean;
+    percentual_comissao: string;
   }>> {
     const users = await this.localUserRepo.find({
       where: { tenantId },
@@ -216,19 +218,20 @@ export class UsersService {
     const identities = users.length
       ? await this.userRepo.find({
           where: { tenant_id: tenantId, uuid: In(users.map((entry) => entry.authUserId)) },
-          select: { uuid: true, nome: true },
+          select: { uuid: true, nome: true, percentual_comissao: true },
         })
       : [];
-    const namesByAuthUserId = new Map(identities.map((identity) => [identity.uuid, identity.nome]));
+    const identitiesByUuid = new Map(identities.map((identity) => [identity.uuid, identity]));
 
     const result = users.map((entry) => ({
       id: entry.uuid,
       authUserId: entry.authUserId,
-      name: namesByAuthUserId.get(entry.authUserId) ?? entry.email,
+      name: identitiesByUuid.get(entry.authUserId)?.nome ?? entry.email,
       email: entry.email,
       role: entry.role?.name ?? 'viewer',
       tenantId: entry.tenantId,
       active: entry.active,
+      percentual_comissao: money(identitiesByUuid.get(entry.authUserId)?.percentual_comissao ?? 0),
     }));
     if (actor) await this.audit.record({ tenantId, actor, action: 'READ', resourceType: 'usuario',
       fields: ['email', 'role', 'active'], purpose: 'Administração de usuários do tenant', metadata: { resultCount: result.length } });
@@ -250,6 +253,7 @@ export class UsersService {
     role: string;
     tenantId: string;
     active: boolean;
+    percentual_comissao: string;
   }> {
     const senha_hash = await this.passwords.hash(dto.senha);
 
@@ -276,6 +280,7 @@ export class UsersService {
           senha_hash,
           roles: [roleName],
           is_active: true,
+          percentual_comissao: money(dto.percentual_comissao ?? 0),
         }),
       );
 
@@ -296,6 +301,7 @@ export class UsersService {
         role: role.name,
         tenantId,
         active: localUser.active,
+        percentual_comissao: money(savedUser.percentual_comissao),
       };
       if (actor) await this.audit.record({ tenantId, actor, action: 'CREATE', resourceType: 'usuario',
         resourceUuid: savedUser.uuid, fields: ['email', 'nome', 'roles'], purpose: 'Administração de usuários do tenant' }, manager);
@@ -366,6 +372,7 @@ export class UsersService {
     role: string;
     tenantId: string;
     active: boolean;
+    percentual_comissao: string;
   }> {
     const existing = await this.localUserRepo.findOne({
       where: { tenantId, uuid: userUuid },
@@ -381,6 +388,7 @@ export class UsersService {
 
     const senhaHash = dto.new_password ? await this.passwords.hash(dto.new_password) : undefined;
     const identityChanged = dto.role !== undefined || dto.active !== undefined || senhaHash !== undefined;
+    let percentualComissao = '0.00';
 
     await this.dataSource.transaction(async (manager) => {
       // Troca de perfil passa pela mesma resolução da criação: perfil existente
@@ -396,21 +404,42 @@ export class UsersService {
         active: dto.active ?? existing.active,
       });
 
-      if (identityChanged) {
+      const userRepo = manager.getRepository(User);
+      const identity = await userRepo.findOneOrFail({
+        where: { uuid: existing.authUserId, tenant_id: tenantId },
+      });
+      percentualComissao = money(dto.percentual_comissao ?? identity.percentual_comissao);
+
+      if (identityChanged || dto.percentual_comissao !== undefined) {
         const userPatch: Partial<User> = {
           roles: [nextRoleName],
           is_active: dto.active ?? existing.active,
         };
         if (senhaHash) userPatch.senha_hash = senhaHash;
-        await manager.getRepository(User).update(
+        if (dto.percentual_comissao !== undefined) userPatch.percentual_comissao = percentualComissao;
+        await userRepo.update(
           { uuid: existing.authUserId, tenant_id: tenantId },
           userPatch,
         );
-        await manager.getRepository(User).increment(
-          { uuid: existing.authUserId, tenant_id: tenantId },
-          'access_token_version',
-          1,
-        );
+        if (identityChanged) {
+          await userRepo.increment(
+            { uuid: existing.authUserId, tenant_id: tenantId },
+            'access_token_version',
+            1,
+          );
+        }
+        if (dto.percentual_comissao !== undefined) {
+          await manager.query(
+            `UPDATE preposto_comissoes
+                SET perc_comissao = $3,
+                    valor_comissao = ROUND(valor_faturado * $3 / 100, 2),
+                    version = version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE tenant_id = $1 AND vendedor_id = $2 AND deleted_at IS NULL
+                AND status = 'pendente' AND perc_comissao = 0`,
+            [tenantId, identity.id, percentualComissao],
+          );
+        }
         if (senhaHash || dto.active === false) {
           await manager.query(
             `UPDATE refresh_tokens SET revoked_at = COALESCE(revoked_at, clock_timestamp())
@@ -432,6 +461,7 @@ export class UsersService {
       role: nextRoleName,
       tenantId: updated.tenantId,
       active: updated.active,
+      percentual_comissao: percentualComissao,
     };
     if (actor) await this.audit.record({ tenantId, actor, action: 'UPDATE', resourceType: 'usuario',
       resourceUuid: updated.authUserId, fields: Object.keys(dto).filter((field) => field !== 'new_password').concat(dto.new_password ? ['senha_hash'] : []),

@@ -16,6 +16,8 @@ export type SituacaoVendaFiltro = (typeof SITUACOES_VENDA)[number];
 
 export class ListPrepostoVendasDto extends PaginationDto {
   @IsOptional() @IsUUID('4') preposto_uuid?: string;
+  @IsOptional() @IsUUID('4') vendedor_uuid?: string;
+  @IsOptional() @IsIn(['usuario', 'preposto']) vendedor_tipo?: 'usuario' | 'preposto';
   @IsOptional() @IsIn(SITUACOES_VENDA) status?: SituacaoVendaFiltro;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) fornecedor_id?: number;
   @IsOptional() @Matches(DATA) @IsDateString({ strict: true }) data_inicio?: string;
