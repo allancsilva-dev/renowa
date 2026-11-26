@@ -231,7 +231,7 @@ export default function PedidoForm() {
 
   function vendorFetcher(search: string, page: number): Promise<AsyncComboboxFetchResult> {
     const userOptions = users.map((user) => ({ value: user.authUserId, label: user.name }));
-    return sellerOptionsFetcher(userOptions, hasPermission('prepostos.ver'))(search, page);
+    return sellerOptionsFetcher(userOptions, false)(search, page);
   }
 
   function chooseProduct(itemUuid: string, productUuid: string | null, option: AsyncComboboxOption | null) {
