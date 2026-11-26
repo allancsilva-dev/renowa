@@ -28,6 +28,15 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.1',
+    date: '2026-11-26',
+    commit: '4180fa7',
+    items: [
+      { tipo: 'correcao', texto: 'Na aba Vendedores, a comissão aparece no mês em que a empresa recebeu o pagamento da nota fiscal.' },
+      { tipo: 'melhoria', texto: 'Ao preencher o vendedor do pedido, escolha entre os usuários já cadastrados.' },
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-11-16',
     commit: '5e011ec',

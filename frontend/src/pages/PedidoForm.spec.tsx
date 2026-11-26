@@ -654,18 +654,22 @@ describe('PedidoForm — preposto no campo Vendedor', () => {
     await screen.findByDisplayValue('Cliente Um');
   }
 
-  it('lista prepostos junto com os usuários e envia só preposto_uuid ao escolher um', async () => {
+  it('oferece apenas usuários existentes e envia vendedor_uuid ao escolher um', async () => {
     authState.gestor = true;
+    fetchAllPages.mockImplementation(async (path: string) => path === '/users'
+      ? [{ authUserId: 'user-1', name: 'Ana Vendedora', active: true }]
+      : path === '/fornecedores' ? [FORNECEDOR_A, FORNECEDOR_B] : [PRODUTO_A]);
     await montarEdicao(pedido());
 
     fireEvent.focus(screen.getByRole('combobox', { name: 'Vendedor' }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Paula Preposta · Preposto' }));
+    expect(screen.queryByRole('option', { name: 'Paula Preposta · Preposto' })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('option', { name: 'Ana Vendedora' }));
     fireEvent.submit(screen.getByRole('button', { name: 'Salvar pedido' }).closest('form')!);
 
     await waitFor(() => expect(saveOrder).toHaveBeenCalled());
     const payload = saveOrder.mock.calls.at(-1)![0] as Record<string, unknown>;
-    expect(payload.preposto_uuid).toBe('prep-1');
-    expect(payload.vendedor_uuid).toBeUndefined();
+    expect(payload.preposto_uuid).toBeNull();
+    expect(payload.vendedor_uuid).toBe('user-1');
   });
 
   it('carrega o preposto gravado no campo Vendedor', async () => {

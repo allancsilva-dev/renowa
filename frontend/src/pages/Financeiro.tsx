@@ -1080,7 +1080,7 @@ function VendedoresComissoes() {
   const totais = (meta as (typeof meta & { totais?: PrepostoVendasTotais }) | null)?.totais;
 
   const hoje = hojeLocal();
-  const dataMinima = acao?.venda.data_faturamento ?? null;
+  const dataMinima = acao?.venda.data_liberacao ?? acao?.venda.data_faturamento ?? null;
   const dataPagamentoValida = isDataCompleta(dataPagamento) && dataPagamento <= hoje && (!dataMinima || dataPagamento >= dataMinima);
 
   function abrir(tipo: AcaoVendedor['tipo'], venda: PrepostoVenda) {
@@ -1105,7 +1105,7 @@ function VendedoresComissoes() {
       request = () => alterarPercentualVenda(venda.uuid, { perc_comissao: Math.round(value * 100) / 100, version: venda.version });
     } else if (tipo === 'pagamento') {
       if (!dataPagamentoValida) {
-        setAcaoError('Informe uma data de pagamento completa, entre a data da NF e hoje.');
+        setAcaoError('Informe uma data de pagamento completa, entre o recebimento da empresa e hoje.');
         return;
       }
       request = () => registrarPagamentoVenda(venda.uuid, { data_pagamento: dataPagamento, version: venda.version });
@@ -1192,6 +1192,7 @@ function VendedoresComissoes() {
           </select>
         </label>
       </FinanceToolbar>
+      <p className='text-xs text-slate-500'>Aguardando empresa: mês da NF. Liberada ou paga: mês em que a empresa recebeu a comissão.</p>
       <WriteError message={fornecedoresError} />
       <WriteError message={pageError} />
 
@@ -1235,7 +1236,7 @@ function VendedoresComissoes() {
               <span className='flex flex-col items-start gap-1'>
                 <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${SITUACAO_VENDA[v.situacao].cls}`}>{SITUACAO_VENDA[v.situacao].label}</span>
                 {v.situacao === 'pago' && v.data_pagamento && <span className='whitespace-nowrap text-xs text-slate-500'>Pago em {fmtDate(v.data_pagamento)}</span>}
-                {v.situacao === 'liberada' && v.data_liberacao && <span className='whitespace-nowrap text-xs text-slate-500'>Empresa recebeu em {fmtDate(v.data_liberacao)}</span>}
+                {v.data_liberacao && <span className='whitespace-nowrap text-xs text-slate-500'>Empresa recebeu em {fmtDate(v.data_liberacao)}</span>}
               </span>
             ),
           },
