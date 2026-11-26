@@ -133,10 +133,23 @@ describe('Financeiro — aba Vendedores', () => {
     await waitFor(() => expect(mocks.pagamento).toHaveBeenCalledWith('v1', { data_pagamento: '2026-10-10', version: 2 }));
   });
 
+  it('bloqueia pagamento anterior ao recebimento, mesmo com NF de outro mês', async () => {
+    mocks.vendas.mockResolvedValue(resposta([venda({ data_faturamento: '2026-10-01', data_liberacao: '2026-11-20' })]));
+    await abrirVendedores();
+    await abrirMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar pagamento' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Data de pagamento')).toHaveAttribute('min', '2026-11-20');
+    fireEvent.change(within(dialog).getByLabelText('Data de pagamento'), { target: { value: '2026-11-19' } });
+    fireEvent.submit(within(dialog).getByRole('button', { name: 'Confirmar pagamento' }).closest('form')!);
+    expect(mocks.pagamento).not.toHaveBeenCalled();
+  });
+
   it('pago: só estorno; sem financeiro.editar não paga', async () => {
     mocks.vendas.mockResolvedValue(resposta([venda({ status: 'pago', situacao: 'pago', data_pagamento: '2026-10-10' })]));
     await abrirVendedores();
     expect(await screen.findByText('Pago em 10/10/2026')).toBeInTheDocument();
+    expect(screen.getByText('Empresa recebeu em 08/10/2026')).toBeInTheDocument();
     await abrirMenu();
     expect(screen.queryByRole('menuitem', { name: 'Editar percentual' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Estornar pagamento' }));

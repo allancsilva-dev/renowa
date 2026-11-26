@@ -20,7 +20,7 @@ function venda(overrides: Partial<PrepostoComissao> = {}): PrepostoComissao {
   } as PrepostoComissao;
 }
 
-function subject(current: PrepostoComissao | null, comissaoEmpresa: { status: string } | null = { status: 'pago' }) {
+function subject(current: PrepostoComissao | null, comissaoEmpresa: { status: string; data_pagamento?: string } | null = { status: 'pago', data_pagamento: '2026-10-08' }) {
   const vendaRepo = {
     findOne: jest.fn().mockResolvedValue(current),
     findOneOrFail: jest.fn().mockResolvedValue(current),
@@ -100,6 +100,15 @@ describe('PrepostoVendasService — pagamento', () => {
     await expect(antes.service.registrarPagamento(uuid, { data_pagamento: '2026-10-04', version: 2 }, tenantId))
       .rejects.toBeInstanceOf(BadRequestException);
     expect(antes.movimentoRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('não paga vendedor antes da data em que a empresa recebeu', async () => {
+    const { service, movimentoRepo } = subject(venda({ data_faturamento: '2026-10-01' }), {
+      status: 'pago', data_pagamento: '2026-11-20',
+    });
+    await expect(service.registrarPagamento(uuid, { data_pagamento: '2026-11-19', version: 2 }, tenantId))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(movimentoRepo.save).not.toHaveBeenCalled();
   });
 
   it('estornar volta a pendente e apaga a saída do Financeiro', async () => {
@@ -210,6 +219,15 @@ describe('PrepostoVendasService — listagem', () => {
     await expect(service.list(tenantId, { data_inicio: '2026-10-02', data_fim: '2026-10-01' } as any)).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('filtra e ordena liberadas e pagas pela data do recebimento, mantendo aguardando no mês da NF', async () => {
+    const { qb, service } = listSubject();
+    await service.list(tenantId, { data_inicio: '2026-12-01', data_fim: '2026-12-31' });
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('comissao_empresa.data_pagamento'), {
+      inicio: '2026-12-01', fim: '2026-12-31',
+    });
+    expect(qb.orderBy).toHaveBeenCalledWith(expect.stringContaining('comissao_empresa.data_pagamento'), 'DESC', 'NULLS LAST');
+  });
+
   it('opções vêm somente de vendedores com NF no período e preservam o tipo', async () => {
     const { qb, service } = listSubject();
     qb.getRawMany.mockResolvedValueOnce([
@@ -219,7 +237,7 @@ describe('PrepostoVendasService — listagem', () => {
     const result = await service.opcoes(tenantId, {
       data_inicio: '2026-10-01', data_fim: '2026-10-31', status: 'liberada', search: 'a',
     });
-    expect(qb.andWhere).toHaveBeenCalledWith('v.data_faturamento BETWEEN :inicio AND :fim', {
+    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('comissao_empresa.data_pagamento'), {
       inicio: '2026-10-01', fim: '2026-10-31',
     });
     expect(qb.andWhere).toHaveBeenCalledWith("v.status = 'pendente' AND COALESCE((comissao_empresa.status = 'pago'), false)");

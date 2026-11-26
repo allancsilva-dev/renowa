@@ -22,6 +22,8 @@ const TIPO_SAIDA = 'Custo Rotativo';
  * a comissão da empresa devolve a venda para "aguardando" sem sincronizar nada.
  */
 const LIBERADA_SQL = "(comissao_empresa.status = 'pago')";
+/** A comissão liberada continua no mês do recebimento mesmo depois do pagamento ao vendedor. */
+const DATA_REFERENCIA_SQL = `CASE WHEN COALESCE(${LIBERADA_SQL}, false) THEN COALESCE(comissao_empresa.data_pagamento, v.data_faturamento) ELSE v.data_faturamento END`;
 const COMISSAO_EMPRESA_NAO_PAGA =
   'A comissão da empresa desta nota ainda não foi paga. Registre o pagamento na aba Comissão para liberar o vendedor.';
 
@@ -93,7 +95,7 @@ export class PrepostoVendasService {
     }
     if (dto.fornecedor_id) qb.andWhere('pedido.fornecedor_id = :fornecedorId', { fornecedorId: dto.fornecedor_id });
     if (dto.data_inicio && dto.data_fim) {
-      qb.andWhere('v.data_faturamento BETWEEN :inicio AND :fim', { inicio: dto.data_inicio, fim: dto.data_fim });
+      qb.andWhere(`${DATA_REFERENCIA_SQL} BETWEEN :inicio AND :fim`, { inicio: dto.data_inicio, fim: dto.data_fim });
     }
     applySearch(qb, dto.search, {
       text: ['v.numero_nfe', 'CAST(pedido.numero_pedido AS TEXT)', 'pedido.numero_pedido_externo', 'preposto.nome', 'vendedor.nome', 'cliente.razao_social', 'fornecedor.razao_social'],
@@ -128,7 +130,7 @@ export class PrepostoVendasService {
         'pedido.uuid AS pedido_uuid', 'pedido.numero_pedido AS numero_pedido', 'cliente.razao_social AS cliente',
         'fornecedor.razao_social AS fornecedor',
       ])
-      .orderBy('v.data_faturamento', 'DESC', 'NULLS LAST')
+      .orderBy(DATA_REFERENCIA_SQL, 'DESC', 'NULLS LAST')
       .addOrderBy('v.id', 'DESC')
       .offset((page - 1) * limit)
       .limit(limit)
@@ -185,7 +187,7 @@ export class PrepostoVendasService {
       )
       .where('v.tenant_id = :tenantId', { tenantId })
       .andWhere('v.deleted_at IS NULL')
-      .andWhere('v.data_faturamento BETWEEN :inicio AND :fim', { inicio: dto.data_inicio, fim: dto.data_fim });
+      .andWhere(`${DATA_REFERENCIA_SQL} BETWEEN :inicio AND :fim`, { inicio: dto.data_inicio, fim: dto.data_fim });
     if (dto.status === 'pago') qb.andWhere("v.status = 'pago'");
     if (dto.status === 'pendente') qb.andWhere("v.status = 'pendente'");
     if (dto.status === 'liberada') qb.andWhere(`v.status = 'pendente' AND COALESCE(${LIBERADA_SQL}, false)`);
@@ -256,12 +258,18 @@ export class PrepostoVendasService {
         // FOR SHARE: o estorno da comissão da empresa espera este pagamento
         // terminar e então vê a venda paga (e recusa), em vez de cruzar com ele.
         const [comissaoEmpresa] = await manager.query(
-          `SELECT status FROM comissoes
+          `SELECT status, to_char(data_pagamento, 'YYYY-MM-DD') AS data_pagamento FROM comissoes
             WHERE tenant_id = $1 AND nota_fiscal_id = $2 AND deleted_at IS NULL
             LIMIT 1 FOR SHARE`,
           [tenantId, venda.nota_fiscal_id],
-        ) as Array<{ status: string }>;
+        ) as Array<{ status: string; data_pagamento: string | null }>;
         if (comissaoEmpresa?.status !== 'pago') throw new ConflictException(COMISSAO_EMPRESA_NAO_PAGA);
+        if (!comissaoEmpresa.data_pagamento) {
+          throw new ConflictException('A comissão da empresa está paga, mas não tem data de recebimento. Corrija o registro antes de pagar o vendedor.');
+        }
+        if (dto.data_pagamento < comissaoEmpresa.data_pagamento) {
+          throw new BadRequestException(`Data de pagamento ao vendedor não pode ser anterior ao recebimento da empresa (${comissaoEmpresa.data_pagamento.split('-').reverse().join('/')}).`);
+        }
         const preposto = venda.preposto_id ? await manager.getRepository(Preposto).findOne({
           where: { id: venda.preposto_id, tenant_id: tenantId }, withDeleted: true,
         }) : null;
