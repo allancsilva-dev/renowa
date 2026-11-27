@@ -28,6 +28,14 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: ReleaseNote[] = [
   {
+    version: '1.2.2',
+    date: '2026-11-27',
+    commit: '8dbe601',
+    items: [
+      { tipo: 'correcao', texto: 'No Financeiro, o filtro de vendedor da aba Vendedores voltou a funcionar e mostra todos os usuários.' },
+    ],
+  },
+  {
     version: '1.2.1',
     date: '2026-11-26',
     commit: '4180fa7',
