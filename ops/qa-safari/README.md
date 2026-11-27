@@ -7,7 +7,7 @@ os dois papéis (PDF do pedido e do SAC).
 
 ## Requisitos
 
-1. App rodando (skill `run-app`): Postgres `5433`, backend `3000`, frontend `5173`.
+1. App rodando (skill `run-app`): Postgres `7102`, backend `7100`, frontend `7101`.
 2. Safari com **uma aba logada** no app na **janela 1**. O driver acha a aba pela URL.
 3. Safari → Desenvolvedor → **Permitir JavaScript de Apple Events** habilitado.
 4. `pdftotext`/`pdfimages` (poppler) para conferir o conteúdo dos PDFs baixados.
@@ -23,7 +23,7 @@ cd ops/qa-safari
 ./run.sh reset           # zera o estado acumulado
 ```
 
-`APP_URL_MATCH` troca o alvo (padrão `localhost:5173`).
+`APP_URL_MATCH` troca o alvo (padrão `localhost:7101`).
 
 Relatório da execução: veja o resumo em `out/state.json`:
 

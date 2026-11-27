@@ -175,8 +175,8 @@ O Renowa é um sistema monorepo composto por três aplicações independentes qu
 
 | Aplicação  | Tecnologia              | Porta padrão |
 |------------|-------------------------|--------------|
-| `backend`  | NestJS + PostgreSQL      | `3000`       |
-| `frontend` | React + Vite + Tailwind  | `5173`       |
+| `backend`  | NestJS + PostgreSQL      | `7100`       |
+| `frontend` | React + Vite + Tailwind  | `7101`       |
 | `mobile`   | React Native + Expo      | gerenciada pelo Expo |
 
 A autenticação é delegada ao serviço externo **ZonaDev Auth** (`auth.zonadev.tech`), que emite tokens RS256 validados via JWKS. O app mobile utiliza um token HS256 próprio (30 dias) gerado pelo backend após a autenticação inicial.
@@ -284,13 +284,13 @@ cp .env.example .env
 
 ```env
 NODE_ENV=development
-PORT=3000
+PORT=7100
 
 # PostgreSQL
-DATABASE_URL=postgresql://renowa:devpassword@localhost:5433/renowa
+DATABASE_URL=postgresql://renowa:devpassword@localhost:7102/renowa
 
 # CORS — origens permitidas (separar por vírgula se múltiplas)
-CORS_ORIGIN=http://localhost:5173
+CORS_ORIGIN=http://localhost:7101
 
 # Auth nativa — access token web (JWT HS256, 15 min, cookie renowa_at)
 RENOWA_AT_SECRET=troque-por-segredo-forte-256-bits
@@ -307,7 +307,7 @@ RENOWA_JWT_SECRET=troque-por-outro-segredo-forte-256-bits
 #### Frontend (`frontend/.env`)
 
 ```env
-VITE_API_URL=http://localhost:3000/api
+VITE_API_URL=http://localhost:7100/api
 ```
 
 #### Mobile (`mobile/.env` / `app.json > extra`)
@@ -338,19 +338,19 @@ docker run -d --name renowa-dev-postgres \
   -e POSTGRES_DB=renowa \
   -e POSTGRES_USER=renowa \
   -e POSTGRES_PASSWORD=devpassword \
-  -p 5433:5432 \
+  -p 7102:5432 \
   postgres:15-alpine
 ```
 
-A porta `5433` (em vez de `5432`) evita conflito com um PostgreSQL nativo já instalado na máquina. Ajuste `DATABASE_URL` no `backend/.env` de acordo com a porta/senha escolhidas. Com `--restart unless-stopped`, o container volta a subir sozinho quando o Docker Desktop reinicia; os dados ficam persistidos enquanto o container não for removido (`docker rm`).
+A porta `7102` (em vez de `5432`) evita conflito com um PostgreSQL nativo já instalado na máquina. Ajuste `DATABASE_URL` no `backend/.env` de acordo com a porta/senha escolhidas. Com `--restart unless-stopped`, o container volta a subir sozinho quando o Docker Desktop reinicia; os dados ficam persistidos enquanto o container não for removido (`docker rm`).
 
 ### Executar todas as aplicações em paralelo
 
 ```bash
-# Backend (hot-reload na porta 3000)
+# Backend (hot-reload na porta 7100)
 npm run backend
 
-# Frontend (dev server na porta 5173)
+# Frontend (dev server na porta 7101)
 npm run frontend
 
 # Mobile (Expo — QR code para dispositivo físico)
@@ -377,7 +377,7 @@ npm run lint         # ESLint
 ```bash
 cd frontend
 
-npm run dev          # Dev server (Vite, porta 5173)
+npm run dev          # Dev server (Vite, porta 7101)
 npm run build        # Produção (tsc + vite build)
 npm run preview      # Preview do build de produção
 npm run lint         # ESLint
@@ -450,7 +450,7 @@ renowa/
 │               └── jwt-payload.type.ts
 │
 ├── frontend/
-│   ├── vite.config.ts            # Proxy /api → :3000, alias @/
+│   ├── vite.config.ts            # Proxy /api → :7100, alias @/
 │   ├── tsconfig.json
 │   ├── postcss.config.js
 │   ├── components.json           # Config shadcn/ui

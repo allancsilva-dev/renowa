@@ -6,6 +6,7 @@
 - Não altere arquivos do workspace `mobile` nem implemente funcionalidades para mobile.
 - Não inclua o mobile nas validações da tarefa.
 - Essa restrição só pode ser removida por uma nova instrução explícita do usuário.
+- Ao subir o ambiente local, use backend 7100, frontend 7101 e o banco Renowa 7102; não crie banco nem usuário temporário sem pedido explícito.
 
 ## Validação obrigatória após alterações de código
 
@@ -62,8 +63,8 @@ cd ops/qa-safari
 
 Pré-condições, todas verificáveis antes de começar:
 
-1. App de pé (skill `run-app`): Postgres `5433`, backend `3000` (`curl -s localhost:3000/api/health`), frontend `5173`.
-2. Uma aba do app **logada**, na **janela 1** do Safari. `run.sh` acha a aba pela URL (`APP_URL_MATCH`, padrão `localhost:5173`).
+1. App de pé (skill `run-app`): Postgres `7102`, backend `7100` (`curl -s localhost:7100/api/health`), frontend `7101`.
+2. Uma aba do app **logada**, na **janela 1** do Safari. `run.sh` acha a aba pela URL (`APP_URL_MATCH`, padrão `localhost:7101`).
 3. Safari → Desenvolvedor → **Permitir JavaScript de Apple Events**. Teste com `osascript -e 'tell application "Safari" to do JavaScript "location.href" in tab N of window 1'`.
 4. `pdftotext` e `pdfimages` (poppler) para conferir os PDFs baixados.
 
