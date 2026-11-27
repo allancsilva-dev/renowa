@@ -7,7 +7,7 @@
 set -u
 DIR="${0:a:h}"
 mkdir -p "$DIR/out"
-APP_URL_MATCH="${APP_URL_MATCH:-localhost:5173}"
+APP_URL_MATCH="${APP_URL_MATCH:-localhost:7101}"
 
 find_tab() {
   osascript <<OSA

@@ -45,7 +45,7 @@ async function bootstrap() {
     throw new Error('CORS_ORIGIN is required in production');
   }
   app.enableCors({
-    origin: corsOrigins ?? ['http://localhost:5173'],
+    origin: corsOrigins ?? ['http://localhost:7101'],
     credentials: true,
   });
 
