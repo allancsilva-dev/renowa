@@ -1156,9 +1156,6 @@ function VendedoresComissoes() {
     fornecedores.map((fornecedor) => ({ value: String(fornecedor.id), label: fornecedor.razao_social })), term, page,
   ));
   const vendedorFetcher = useCallback((term: string): Promise<AsyncComboboxFetchResult> => fetchVendedoresOpcoes({
-    data_inicio: periodo.inicio,
-    data_fim: periodo.fim,
-    status: status || undefined,
     search: term.trim() || undefined,
   }).then((options) => ({
     options: options.map((vendedor) => ({
@@ -1167,7 +1164,7 @@ function VendedoresComissoes() {
       description: vendedor.tipo === 'preposto' ? 'Preposto' : 'Usuário',
     })),
     hasMore: false,
-  })), [periodo, status]);
+  })), []);
 
   return (
     <div className='space-y-5'>
@@ -1180,7 +1177,7 @@ function VendedoresComissoes() {
           </RelationFilter>
         )}
         <RelationFilter label='Vendedor'>
-          <AsyncCombobox key={`${periodo.inicio}:${periodo.fim}:${status}`} value={vendedorKey} displayValue={vendedorLabel} onChange={(value, option) => { setVendedorKey(value); setVendedorLabel(option?.label ?? ''); }} fetcher={vendedorFetcher} ariaLabel='Filtrar por vendedor' placeholder='Todos vendedores' className={`${inputCls} min-h-11`} />
+          <AsyncCombobox value={vendedorKey} displayValue={vendedorLabel} onChange={(value, option) => { setVendedorKey(value); setVendedorLabel(option?.label ?? ''); }} fetcher={vendedorFetcher} ariaLabel='Filtrar por vendedor' placeholder='Todos vendedores' className={`${inputCls} min-h-11`} />
         </RelationFilter>
         <label className='flex min-w-0 flex-col gap-1 xl:w-44 xl:shrink-0'>
           <span className={labelCls}>Status</span>
