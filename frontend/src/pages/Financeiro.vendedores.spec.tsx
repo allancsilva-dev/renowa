@@ -95,7 +95,8 @@ describe('Financeiro — aba Vendedores', () => {
     expect(mocks.vendas).toHaveBeenCalledWith(expect.objectContaining({ data_inicio: expect.stringMatching(/^\d{4}-\d{2}-01$/), status: 'liberada' }));
 
     fireEvent.focus(screen.getByLabelText('Filtrar por vendedor'));
-    await waitFor(() => expect(mocks.vendedores).toHaveBeenCalledWith(expect.objectContaining({ status: 'liberada' })));
+    // O filtro lista todos os vendedores: não depende de período nem de status.
+    await waitFor(() => expect(mocks.vendedores).toHaveBeenCalledWith({ search: undefined }));
     fireEvent.click(await screen.findByRole('option', { name: /Paula/ }));
     await waitFor(() => expect(mocks.vendas).toHaveBeenLastCalledWith(expect.objectContaining({
       vendedor_tipo: 'usuario', vendedor_uuid: 'p1',

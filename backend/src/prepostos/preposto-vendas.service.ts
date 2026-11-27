@@ -8,6 +8,8 @@ import { User } from '../users/entities/user.entity';
 import { FinanceMovement } from '../finance/entities/finance-movement.entity';
 import { Commission } from '../finance/entities/commission.entity';
 import { AlterarPercentualVendaDto, ListPrepostoVendasDto, PagamentoVendaDto } from './dto/preposto-vendas.dto';
+import { OpcoesVendedoresDto } from './dto/opcoes-vendedores.dto';
+import { LocalUser } from '../rbac/entities/local-user.entity';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { money, percentageOf } from '../common/decimal/decimal';
 import { applySearch } from '../common/persistence/search-filter';
@@ -28,6 +30,11 @@ const COMISSAO_EMPRESA_NAO_PAGA =
   'A comissão da empresa desta nota ainda não foi paga. Registre o pagamento na aba Comissão para liberar o vendedor.';
 
 export type SituacaoVenda = 'aguardando' | 'liberada' | 'pago';
+
+export interface VendedorOpcao { tipo: 'usuario' | 'preposto'; uuid: string; nome: string }
+
+/** Teto do filtro "Vendedor"; acima disso o usuário refina pela busca. */
+const OPCOES_LIMITE = 100;
 
 export interface PrepostoVendaRow {
   uuid: string;
@@ -174,33 +181,46 @@ export class PrepostoVendasService {
     return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit), totais } };
   }
 
-  /** Vendedores que possuem NF no recorte atual; não expõe cadastro sem venda. */
-  async opcoes(tenantId: string, dto: ListPrepostoVendasDto) {
-    if (!dto.data_inicio || !dto.data_fim) throw new BadRequestException('Informe data_inicio e data_fim juntas.');
-    if (dto.data_inicio > dto.data_fim) throw new BadRequestException('data_inicio não pode ser posterior a data_fim.');
-    const qb = this.vendaRepo.createQueryBuilder('v')
-      .leftJoin('v.preposto', 'preposto')
-      .leftJoin('v.vendedor', 'vendedor')
-      .leftJoin(
-        Commission, 'comissao_empresa',
-        'comissao_empresa.tenant_id = v.tenant_id AND comissao_empresa.nota_fiscal_id = v.nota_fiscal_id AND comissao_empresa.deleted_at IS NULL',
-      )
-      .where('v.tenant_id = :tenantId', { tenantId })
-      .andWhere('v.deleted_at IS NULL')
-      .andWhere(`${DATA_REFERENCIA_SQL} BETWEEN :inicio AND :fim`, { inicio: dto.data_inicio, fim: dto.data_fim });
-    if (dto.status === 'pago') qb.andWhere("v.status = 'pago'");
-    if (dto.status === 'pendente') qb.andWhere("v.status = 'pendente'");
-    if (dto.status === 'liberada') qb.andWhere(`v.status = 'pendente' AND COALESCE(${LIBERADA_SQL}, false)`);
-    if (dto.status === 'aguardando') qb.andWhere(`v.status = 'pendente' AND NOT COALESCE(${LIBERADA_SQL}, false)`);
-    if (dto.search?.trim()) {
-      qb.andWhere('LOWER(COALESCE(vendedor.nome, preposto.nome)) LIKE :busca', { busca: `%${dto.search.trim().toLowerCase()}%` });
-    }
-    const rows = await qb.select([
-      "CASE WHEN v.vendedor_id IS NOT NULL THEN 'usuario' ELSE 'preposto' END AS tipo",
-      'COALESCE(vendedor.uuid, preposto.uuid) AS uuid',
-      'COALESCE(vendedor.nome, preposto.nome) AS nome',
-    ]).distinct(true).orderBy('COALESCE(vendedor.nome, preposto.nome)', 'ASC').limit(100).getRawMany();
-    return rows.map((row) => ({ tipo: row.tipo as 'usuario' | 'preposto', uuid: String(row.uuid), nome: String(row.nome) }));
+  /**
+   * Opções do filtro "Vendedor": todos os usuários do tenant, independente de
+   * período e status — o filtro existe para achar o vendedor, não para listar
+   * só quem já tem comissão no recorte.
+   *
+   * - Usuário: membro do tenant em `local_users` (o mesmo conjunto que o
+   *   pedido oferece como vendedor). Desativado só aparece se ainda tiver
+   *   comissão, para poder ser pago. Soft-deletado não aparece: `list()` filtra
+   *   por `vendedor.uuid` num join que já os exclui.
+   * - Preposto: só o legado que tem comissão.
+   * - Expõe apenas uuid e nome (sem e-mail ou papel).
+   */
+  async opcoes(tenantId: string, dto: OpcoesVendedoresDto): Promise<VendedorOpcao[]> {
+    const usuariosQb = this.dataSource.getRepository(User).createQueryBuilder('u')
+      .innerJoin(LocalUser, 'lu', 'lu.tenantId = u.tenant_id AND lu.authUserId = u.uuid AND lu.deletedAt IS NULL')
+      .select(['u.uuid AS uuid', 'u.nome AS nome'])
+      .where('u.tenant_id = :tenantId', { tenantId })
+      .andWhere(`((u.is_active = true AND lu.active = true) OR EXISTS (
+        SELECT 1 FROM preposto_comissoes vc
+         WHERE vc.tenant_id = u.tenant_id AND vc.vendedor_id = u.id AND vc.deleted_at IS NULL))`);
+    applySearch(usuariosQb, dto.search, { text: ['u.nome'] });
+
+    const prepostosQb = this.dataSource.getRepository(Preposto).createQueryBuilder('p')
+      .select(['p.uuid AS uuid', 'p.nome AS nome'])
+      .where('p.tenant_id = :tenantId', { tenantId })
+      .andWhere(`EXISTS (
+        SELECT 1 FROM preposto_comissoes pc
+         WHERE pc.tenant_id = p.tenant_id AND pc.preposto_id = p.id AND pc.deleted_at IS NULL)`);
+    applySearch(prepostosQb, dto.search, { text: ['p.nome'] });
+
+    const [usuarios, prepostos] = await Promise.all([
+      usuariosQb.orderBy('u.nome', 'ASC').limit(OPCOES_LIMITE).getRawMany<{ uuid: string; nome: string }>(),
+      prepostosQb.orderBy('p.nome', 'ASC').limit(OPCOES_LIMITE).getRawMany<{ uuid: string; nome: string }>(),
+    ]);
+    return [
+      ...usuarios.map((row) => ({ tipo: 'usuario' as const, uuid: String(row.uuid), nome: String(row.nome) })),
+      ...prepostos.map((row) => ({ tipo: 'preposto' as const, uuid: String(row.uuid), nome: String(row.nome) })),
+    ]
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+      .slice(0, OPCOES_LIMITE);
   }
 
   /** Percentual da venda (snapshot) — só enquanto não paga. */

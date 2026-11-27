@@ -71,11 +71,14 @@ export async function fetchPrepostoVendas(params: {
 
 export interface VendedorOpcao { tipo: 'usuario' | 'preposto'; uuid: string; nome: string }
 
-export async function fetchVendedoresOpcoes(params: {
-  data_inicio: string; data_fim: string; status?: SituacaoVenda | 'pendente'; search?: string;
-}): Promise<VendedorOpcao[]> {
-  const { data } = await api.get<VendedorOpcao[]>('/vendedores/comissoes/opcoes', { params });
-  return data;
+/**
+ * Todos os vendedores possíveis (usuários do tenant e prepostos legados com
+ * comissão), sem depender de período ou status. A resposta vem no envelope
+ * `{ data }` do ResponseInterceptor, como toda resposta que não é paginada.
+ */
+export async function fetchVendedoresOpcoes(params: { search?: string }): Promise<VendedorOpcao[]> {
+  const { data } = await api.get<ApiResponse<VendedorOpcao[]>>('/vendedores/comissoes/opcoes', { params });
+  return data.data;
 }
 
 export async function alterarPercentualVenda(uuid: string, payload: { perc_comissao: number; version: number }) {

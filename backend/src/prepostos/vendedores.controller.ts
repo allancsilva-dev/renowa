@@ -4,6 +4,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
 import { RequestUser } from '../common/types/jwt-payload.type';
 import { AlterarPercentualVendaDto, ListPrepostoVendasDto, PagamentoVendaDto } from './dto/preposto-vendas.dto';
+import { OpcoesVendedoresDto } from './dto/opcoes-vendedores.dto';
 import { PrepostoVendasService } from './preposto-vendas.service';
 
 const uuidPipe = new ParseUUIDPipe({ version: '4' });
@@ -15,7 +16,7 @@ export class VendedoresController {
 
   @Get('comissoes/opcoes')
   @RequirePermission('financeiro.ver')
-  async opcoes(@Query() query: ListPrepostoVendasDto, @CurrentUser() user: RequestUser) {
+  async opcoes(@Query() query: OpcoesVendedoresDto, @CurrentUser() user: RequestUser) {
     return this.vendasService.opcoes(user.tenantId, query);
   }
 

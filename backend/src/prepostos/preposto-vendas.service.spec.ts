@@ -7,6 +7,7 @@ import { Preposto } from './entities/preposto.entity';
 import { FinanceMovement } from '../finance/entities/finance-movement.entity';
 import { ConcurrentModificationException } from '../common/errors/concurrent-modification.exception';
 import { PagamentoVendaDto } from './dto/preposto-vendas.dto';
+import { OpcoesVendedoresDto } from './dto/opcoes-vendedores.dto';
 import { User } from '../users/entities/user.entity';
 
 const tenantId = 'tenant-a';
@@ -228,23 +229,81 @@ describe('PrepostoVendasService — listagem', () => {
     expect(qb.orderBy).toHaveBeenCalledWith(expect.stringContaining('comissao_empresa.data_pagamento'), 'DESC', 'NULLS LAST');
   });
 
-  it('opções vêm somente de vendedores com NF no período e preservam o tipo', async () => {
-    const { qb, service } = listSubject();
-    qb.getRawMany.mockResolvedValueOnce([
-      { tipo: 'usuario', uuid: 'u1', nome: 'Carlos' },
-      { tipo: 'preposto', uuid: 'p1', nome: 'Paula' },
-    ]);
-    const result = await service.opcoes(tenantId, {
-      data_inicio: '2026-10-01', data_fim: '2026-10-31', status: 'liberada', search: 'a',
-    });
-    expect(qb.andWhere).toHaveBeenCalledWith(expect.stringContaining('comissao_empresa.data_pagamento'), {
-      inicio: '2026-10-01', fim: '2026-10-31',
-    });
-    expect(qb.andWhere).toHaveBeenCalledWith("v.status = 'pendente' AND COALESCE((comissao_empresa.status = 'pago'), false)");
+  function opcoesSubject(usuarios: Array<{ uuid: string; nome: string }>, prepostos: Array<{ uuid: string; nome: string }>) {
+    const build = (rows: Array<{ uuid: string; nome: string }>) => {
+      const qb: any = {};
+      for (const m of ['innerJoin', 'select', 'where', 'andWhere', 'orderBy', 'limit']) qb[m] = jest.fn().mockReturnValue(qb);
+      qb.getRawMany = jest.fn().mockResolvedValue(rows);
+      return qb;
+    };
+    const usuariosQb = build(usuarios);
+    const prepostosQb = build(prepostos);
+    const dataSource = {
+      getRepository: jest.fn((entity) => ({
+        createQueryBuilder: jest.fn(() => (entity === User ? usuariosQb : prepostosQb)),
+      })),
+    };
+    return { usuariosQb, prepostosQb, service: new PrepostoVendasService({} as any, dataSource as any) };
+  }
+
+  it('opções listam todos os usuários do tenant, sem depender de período ou status', async () => {
+    const { usuariosQb, prepostosQb, service } = opcoesSubject(
+      [{ uuid: 'u2', nome: 'Carlos' }, { uuid: 'u1', nome: 'Álvaro' }],
+      [{ uuid: 'p1', nome: 'Paula' }],
+    );
+    const result = await service.opcoes(tenantId, {});
+
+    // Isolamento: as duas fontes filtram pelo tenant do usuário logado.
+    expect(usuariosQb.where).toHaveBeenCalledWith('u.tenant_id = :tenantId', { tenantId });
+    expect(prepostosQb.where).toHaveBeenCalledWith('p.tenant_id = :tenantId', { tenantId });
+    // Membro do tenant via local_users, no mesmo tenant.
+    expect(usuariosQb.innerJoin).toHaveBeenCalledWith(expect.anything(), 'lu', expect.stringContaining('lu.tenantId = u.tenant_id'));
+    // Ativo, ou desativado que ainda tem comissão a receber.
+    expect(usuariosQb.andWhere).toHaveBeenCalledWith(expect.stringMatching(/u\.is_active = true AND lu\.active = true\) OR EXISTS[\s\S]*vc\.vendedor_id = u\.id/));
+    // Preposto só entra se tiver comissão.
+    expect(prepostosQb.andWhere).toHaveBeenCalledWith(expect.stringMatching(/EXISTS[\s\S]*pc\.preposto_id = p\.id/));
+    // Sem termo, sem filtro de busca; nada de período/status.
+    expect(usuariosQb.andWhere).toHaveBeenCalledTimes(1);
+    expect(prepostosQb.andWhere).toHaveBeenCalledTimes(1);
+    expect(usuariosQb.select).toHaveBeenCalledWith(['u.uuid AS uuid', 'u.nome AS nome']);
     expect(result).toEqual([
-      { tipo: 'usuario', uuid: 'u1', nome: 'Carlos' },
+      { tipo: 'usuario', uuid: 'u1', nome: 'Álvaro' },
+      { tipo: 'usuario', uuid: 'u2', nome: 'Carlos' },
       { tipo: 'preposto', uuid: 'p1', nome: 'Paula' },
     ]);
+  });
+
+  it('opções aplicam a busca escapada nas duas fontes', async () => {
+    const { usuariosQb, prepostosQb, service } = opcoesSubject([], []);
+    await service.opcoes(tenantId, { search: '50%' });
+    expect(usuariosQb.andWhere).toHaveBeenCalledWith('(u.nome ILIKE :search)', { search: '%50\\%%' });
+    expect(prepostosQb.andWhere).toHaveBeenCalledWith('(p.nome ILIKE :search)', { search: '%50\\%%' });
+  });
+
+  it('opções param em 100 depois de juntar usuários e prepostos', async () => {
+    const pessoas = (prefixo: string) => Array.from({ length: 100 }, (_, i) => ({ uuid: `${prefixo}${i}`, nome: `${prefixo} ${String(i).padStart(3, '0')}` }));
+    const { usuariosQb, prepostosQb, service } = opcoesSubject(pessoas('Ana'), pessoas('Zeca'));
+    const result = await service.opcoes(tenantId, {});
+    expect(usuariosQb.limit).toHaveBeenCalledWith(100);
+    expect(prepostosQb.limit).toHaveBeenCalledWith(100);
+    expect(result).toHaveLength(100);
+    expect(result.every((opcao) => opcao.tipo === 'usuario')).toBe(true);
+  });
+});
+
+describe('OpcoesVendedoresDto', () => {
+  const pipe = { whitelist: true, forbidNonWhitelisted: true };
+
+  it('aceita vazio ou só a busca', async () => {
+    expect(await validate(plainToInstance(OpcoesVendedoresDto, {}), pipe)).toEqual([]);
+    expect(await validate(plainToInstance(OpcoesVendedoresDto, { search: 'Ana' }), pipe)).toEqual([]);
+  });
+
+  it('recusa período e busca acima de 100 caracteres', async () => {
+    const comPeriodo = await validate(plainToInstance(OpcoesVendedoresDto, { data_inicio: '2026-10-01' }), pipe);
+    expect(comPeriodo.map((e) => e.property)).toEqual(['data_inicio']);
+    const longa = await validate(plainToInstance(OpcoesVendedoresDto, { search: 'a'.repeat(101) }), pipe);
+    expect(longa.map((e) => e.property)).toEqual(['search']);
   });
 });
 
